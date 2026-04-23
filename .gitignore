@@ -1,0 +1,35 @@
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local editor / OS files
+.DS_Store
+.idea/
+.vscode/
+
+# Local secrets and environment config
+.env
+.env.*
+*.env
+secrets/
+secret/
+*.key
+*.pem
+
+# Local market data and generated reports
+data/*.csv
+reports/
