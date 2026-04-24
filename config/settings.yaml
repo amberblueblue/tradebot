@@ -24,7 +24,7 @@ paper:
   trade_log_file: logs/paper_trades.jsonl
 execution:
   enabled_symbols:
-    - VIRYUALUSDT
+    - VIRTUALUSDT
   fixed_order_quote_amount: 1000.0
   cash_usage_pct: 0.1
   max_positions: 3
