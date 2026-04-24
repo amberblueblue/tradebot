@@ -36,6 +36,10 @@ class Broker(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def get_open_orders(self) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
     def place_market_buy(self, symbol: str, qty: float) -> OrderResult:
         raise NotImplementedError
 

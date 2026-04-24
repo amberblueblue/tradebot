@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from execution.broker import Broker, OrderResult, Position
 
 
@@ -10,6 +12,9 @@ class LiveBroker(Broker):
         raise NotImplementedError("Live trading is intentionally not enabled in phase 1 step 2")
 
     def get_positions(self) -> list[Position]:
+        raise NotImplementedError("Live trading is intentionally not enabled in phase 1 step 2")
+
+    def get_open_orders(self) -> list[dict[str, Any]]:
         raise NotImplementedError("Live trading is intentionally not enabled in phase 1 step 2")
 
     def place_market_buy(self, symbol: str, qty: float) -> OrderResult:

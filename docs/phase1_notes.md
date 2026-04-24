@@ -13,7 +13,7 @@
 - `execution/`: broker 抽象、paper 模拟交易、后续 live broker 接口
 - `exchange/`: 交易所 API 封装，例如 Binance REST client
 - `logs/`: 本地运行日志输出目录
-- `runtime/`: 运行模式控制、broker 选择、最小 demo
+- `runtime/`: 运行模式控制、broker 选择、机器人 runtime 状态
 - `strategy/`: 策略信号、状态机、风控
 - `observability/`: 回测事件、指标、报表
 
@@ -26,6 +26,7 @@
   - 默认时间周期
   - 轮询间隔
   - paper 模式状态文件与日志文件
+  - execution 风控与执行参数
   - 策略参数
   - 风控参数
   - 指标参数
@@ -53,3 +54,5 @@
 - `live` 交易本阶段仅保留接口，不会真正下单
 - 模拟成交会写入 `logs/paper_trades.jsonl`
 - 模拟盘状态会保存在 `runtime/paper_state.json`
+- 执行层日志会写入 `logs/execution_events.jsonl`
+- 机器人 runtime 状态会保存在 `runtime/robot_state.json`

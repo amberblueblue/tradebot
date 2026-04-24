@@ -2,5 +2,6 @@
 
 from execution.broker import Broker, OrderResult, Position
 from execution.paper_broker import PaperBroker
+from execution.trader import TraderEngine
 
-__all__ = ["Broker", "OrderResult", "PaperBroker", "Position"]
+__all__ = ["Broker", "OrderResult", "PaperBroker", "Position", "TraderEngine"]

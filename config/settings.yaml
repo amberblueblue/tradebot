@@ -27,6 +27,25 @@ paper:
   state_file: runtime/paper_state.json
   trade_log_file: logs/paper_trades.jsonl
 
+execution:
+  enabled_symbols:
+    - BTCUSDT
+  fixed_order_quote_amount: 1000.0
+  cash_usage_pct: 0.1
+  max_positions: 3
+  stop_loss_pct: 3.0
+  take_profit_pct: 6.0
+  max_consecutive_errors: 3
+  runtime_state_file: runtime/robot_state.json
+  robot_initial_status: running
+  status_file: runtime/status.json
+
+logging:
+  level: INFO
+  system_log_file: logs/system.log
+  trade_log_file: logs/trade.log
+  error_log_file: logs/error.log
+
 live:
   enabled: false
 
@@ -54,6 +73,3 @@ risk:
   big_candle_body_lookback: 20
   profit_giveback_ratio: 0.5
   profit_protection_trigger_pct: 15.0
-
-logging:
-  level: INFO

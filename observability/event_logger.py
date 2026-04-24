@@ -1,6 +1,8 @@
 import json
 import os
 from copy import deepcopy
+from datetime import datetime, timezone
+from pathlib import Path
 
 
 EVENT_FIELDS = [
@@ -67,3 +69,35 @@ class EventLogger:
 
     def get_events(self):
         return deepcopy(self.events)
+
+
+class StructuredLogger:
+    def __init__(self, filepath: str):
+        self.path = Path(filepath)
+
+    def log(self, **payload):
+        event = {
+            "timestamp": payload.pop("timestamp", datetime.now(timezone.utc).isoformat()),
+            **payload,
+        }
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(event, ensure_ascii=False) + "\n")
+        return event
+
+
+class LogRouter:
+    def __init__(self, *, system_log: str, trade_log: str, error_log: str, mode: str):
+        self.mode = mode
+        self.system = StructuredLogger(system_log)
+        self.trade = StructuredLogger(trade_log)
+        self.error = StructuredLogger(error_log)
+
+    def log_system(self, *, symbol: str = "-", action: str, reason: str, **extra):
+        return self.system.log(symbol=symbol, action=action, reason=reason, mode=self.mode, **extra)
+
+    def log_trade(self, *, symbol: str, action: str, reason: str, **extra):
+        return self.trade.log(symbol=symbol, action=action, reason=reason, mode=self.mode, **extra)
+
+    def log_error(self, *, symbol: str = "-", action: str, reason: str, **extra):
+        return self.error.log(symbol=symbol, action=action, reason=reason, mode=self.mode, **extra)

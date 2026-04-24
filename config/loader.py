@@ -41,11 +41,24 @@ class ExecutionRuntimeConfig:
     mode: str
     exchange: ExchangeConfig
     symbol_list: tuple[str, ...]
+    enabled_symbols: tuple[str, ...]
     polling_interval_seconds: int
     logging_level: str
     paper_initial_cash: float
     paper_state_file: str
     paper_trade_log_file: str
+    fixed_order_quote_amount: float
+    cash_usage_pct: float
+    max_positions: int
+    stop_loss_pct: float
+    take_profit_pct: float
+    max_consecutive_errors: int
+    runtime_state_file: str
+    robot_initial_status: str
+    status_file: str
+    system_log_file: str
+    trade_log_file: str
+    error_log_file: str
     live_enabled: bool
 
 
@@ -207,8 +220,12 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
     settings = settings or load_project_config()
     market = settings.get("market", {})
     paper = settings.get("paper", {})
+    execution = settings.get("execution", {})
     live = settings.get("live", {})
+    logging = settings.get("logging", {})
     symbols_config = settings.get("symbols_config", {})
+    symbol_list = tuple(symbols_config.get("symbols", market.get("default_symbols", [])))
+    enabled_symbols = tuple(execution.get("enabled_symbols", symbol_list))
 
     return ExecutionRuntimeConfig(
         mode=str(settings.get("app", {}).get("mode", "backtest")),
@@ -220,12 +237,25 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
             recv_window=int(settings.get("exchange", {}).get("recv_window", 5000)),
         ),
         symbol_list=tuple(
-            symbols_config.get("symbols", market.get("default_symbols", []))
+            symbol_list
         ),
+        enabled_symbols=enabled_symbols,
         polling_interval_seconds=int(market.get("polling_interval_seconds", 60)),
         logging_level=str(settings.get("logging", {}).get("level", "INFO")),
         paper_initial_cash=float(paper.get("initial_cash", 10000.0)),
         paper_state_file=str(paper.get("state_file", "runtime/paper_state.json")),
         paper_trade_log_file=str(paper.get("trade_log_file", "logs/paper_trades.jsonl")),
+        fixed_order_quote_amount=float(execution.get("fixed_order_quote_amount", 1000.0)),
+        cash_usage_pct=float(execution.get("cash_usage_pct", 0.1)),
+        max_positions=int(execution.get("max_positions", 3)),
+        stop_loss_pct=float(execution.get("stop_loss_pct", 3.0)),
+        take_profit_pct=float(execution.get("take_profit_pct", 6.0)),
+        max_consecutive_errors=int(execution.get("max_consecutive_errors", 3)),
+        runtime_state_file=str(execution.get("runtime_state_file", "runtime/robot_state.json")),
+        robot_initial_status=str(execution.get("robot_initial_status", "running")),
+        status_file=str(execution.get("status_file", "runtime/status.json")),
+        system_log_file=str(logging.get("system_log_file", "logs/system.log")),
+        trade_log_file=str(logging.get("trade_log_file", "logs/trade.log")),
+        error_log_file=str(logging.get("error_log_file", "logs/error.log")),
         live_enabled=bool(live.get("enabled", False)),
     )
