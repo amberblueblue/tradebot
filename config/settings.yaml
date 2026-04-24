@@ -1,5 +1,5 @@
 app:
-  mode: backtest
+  mode: paper
 
 exchange:
   name: binance
@@ -9,9 +9,9 @@ exchange:
   recv_window: 5000
 
 market:
-  default_symbol: 币安人生
+  default_symbol: VIRTUALUSDT
   default_symbols:
-    - 币安人生
+    - VIRTUALUSDT
   timeframe:
     entry: 1h
     trend: 4h
@@ -29,7 +29,7 @@ paper:
 
 execution:
   enabled_symbols:
-    - BTCUSDT
+    - VIRTUALUSDT
   fixed_order_quote_amount: 1000.0
   cash_usage_pct: 0.1
   max_positions: 3

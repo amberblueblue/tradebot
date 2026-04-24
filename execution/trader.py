@@ -492,7 +492,7 @@ class TraderEngine:
         symbol = payload.get("symbol", "-")
         reason = str(payload.get("reason") or payload.get("status") or "")
         action = event_type
-        log_payload = {key: value for key, value in payload.items() if key not in {"reason"}}
+        log_payload = {key: value for key, value in payload.items() if key not in {"symbol", "reason"}}
         if event_type == "execution_error":
             self.logger.log_error(
                 symbol=symbol,
