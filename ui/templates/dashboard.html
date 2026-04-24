@@ -1,0 +1,117 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard | TraderBot Console{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-12">
+    <div class="hero-panel p-4 p-md-5 rounded-4">
+      <p class="text-uppercase small mb-2 text-secondary">Local Control Console</p>
+      <h1 class="display-6 mb-2">{{ project_name }}</h1>
+      <p class="text-secondary mb-0">Second phase MVP dashboard backed by phase 1 config and runtime state.</p>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Current Mode</h2>
+        <p class="fs-4 mb-0">{{ mode }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Bot Status</h2>
+        <p class="fs-4 mb-0">{{ bot_status }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Enabled Symbols</h2>
+        <p class="fs-5 mb-0">
+          {% if enabled_symbols %}
+            {{ enabled_symbols | join(", ") }}
+          {% else %}
+            none
+          {% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Current Time</h2>
+        <p class="fs-6 mb-0">{{ current_time.strftime("%Y-%m-%d %H:%M:%S %Z") }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Runtime Snapshot</h2>
+        <dl class="row mb-0">
+          <dt class="col-sm-4">Conservative Mode</dt>
+          <dd class="col-sm-8">{{ runtime_status.conservative_mode }}</dd>
+
+          <dt class="col-sm-4">Startup Synced</dt>
+          <dd class="col-sm-8">{{ runtime_status.startup_synced }}</dd>
+
+          <dt class="col-sm-4">Cash Balance</dt>
+          <dd class="col-sm-8">{{ runtime_status.last_sync.cash_balance }}</dd>
+
+          <dt class="col-sm-4">Last Sync</dt>
+          <dd class="col-sm-8">{{ runtime_status.last_sync.synced_at or "n/a" }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Configured Symbols</h2>
+        <ul class="list-group list-group-flush">
+          {% for symbol in enabled_symbols %}
+          <li class="list-group-item px-0">{{ symbol }}</li>
+          {% else %}
+          <li class="list-group-item px-0 text-secondary">No enabled symbols</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+          <div>
+            <h2 class="h5 mb-1">Bot Controls</h2>
+            <p class="text-secondary mb-0">These controls only update local runtime state.</p>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <form method="post" action="/bot/start">
+              <button class="btn btn-success" type="submit">Start</button>
+            </form>
+            <form method="post" action="/bot/pause">
+              <button class="btn btn-warning" type="submit">Pause</button>
+            </form>
+            <form method="post" action="/bot/stop">
+              <button class="btn btn-outline-danger" type="submit">Stop</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

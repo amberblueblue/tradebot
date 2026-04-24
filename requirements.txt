@@ -1,0 +1,5 @@
+pandas
+requests
+fastapi
+jinja2
+uvicorn

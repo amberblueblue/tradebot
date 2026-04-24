@@ -1,0 +1,101 @@
+{% extends "layout.html" %}
+
+{% block title %}Config | TraderBot Console{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-12">
+    <div class="hero-panel p-4 rounded-4">
+      <p class="text-uppercase small mb-2 text-secondary">Readonly Configuration</p>
+      <h1 class="display-6 mb-2">Config</h1>
+      <p class="text-secondary mb-0">Current application settings and symbol mappings loaded from YAML.</p>
+    </div>
+  </div>
+
+  {% if config_error %}
+  <div class="col-12">
+    <div class="alert alert-danger mb-0">
+      配置读取失败：{{ config_error }}
+    </div>
+  </div>
+  {% else %}
+  <div class="col-lg-7">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Settings</h2>
+        <dl class="row mb-0">
+          <dt class="col-sm-4">app.mode</dt>
+          <dd class="col-sm-8">{{ settings_view.app_mode }}</dd>
+
+          <dt class="col-sm-4">exchange.name</dt>
+          <dd class="col-sm-8">{{ settings_view.exchange_name }}</dd>
+
+          <dt class="col-sm-4">market.default_symbol</dt>
+          <dd class="col-sm-8">{{ settings_view.default_symbol }}</dd>
+
+          <dt class="col-sm-4">market.default_symbols</dt>
+          <dd class="col-sm-8">{{ settings_view.default_symbols | join(", ") }}</dd>
+
+          <dt class="col-sm-4">execution.enabled_symbols</dt>
+          <dd class="col-sm-8">{{ settings_view.enabled_symbols | join(", ") }}</dd>
+
+          <dt class="col-sm-4">polling interval</dt>
+          <dd class="col-sm-8">{{ settings_view.polling_interval_seconds }} seconds</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Risk Parameters</h2>
+        <ul class="list-group list-group-flush">
+          {% for key, value in settings_view.risk.items() %}
+          <li class="list-group-item px-0 d-flex justify-content-between">
+            <span>{{ key }}</span>
+            <span class="text-secondary">{{ value }}</span>
+          </li>
+          {% else %}
+          <li class="list-group-item px-0 text-secondary">No risk configuration</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Symbols YAML</h2>
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>1h Backtest File</th>
+                <th>4h Backtest File</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for symbol in symbols_view.get("symbols", []) %}
+              {% set symbol_config = symbols_view.get("symbol_files", {}).get(symbol, {}).get("backtest", {}) %}
+              <tr>
+                <td>{{ symbol }}</td>
+                <td>{{ symbol_config.get("1h", "n/a") }}</td>
+                <td>{{ symbol_config.get("4h", "n/a") }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="3" class="text-secondary">No symbol configuration</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
