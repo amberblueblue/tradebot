@@ -181,6 +181,16 @@ def validate_entry_order(
     notional = float(_decimal(normalized_price) * _decimal(normalized_quantity))
     min_notional = rules.notional_min or rules.min_notional
 
+    if symbol_config.order_amount < min_notional:
+        return _result(
+            False,
+            "order_amount_below_min_notional",
+            raw_quantity=raw_quantity,
+            normalized_quantity=normalized_quantity,
+            raw_price=raw_price,
+            normalized_price=normalized_price,
+            notional=notional,
+        )
     if not _is_step_aligned(normalized_price, rules.tick_size):
         return _result(
             False,

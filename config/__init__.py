@@ -2,6 +2,7 @@
 
 from config.loader import (
     BacktestRuntimeConfig,
+    BinanceConfig,
     ExecutionRuntimeConfig,
     ExchangeConfig,
     load_backtest_runtime,
@@ -11,6 +12,7 @@ from config.loader import (
 
 __all__ = [
     "BacktestRuntimeConfig",
+    "BinanceConfig",
     "ExecutionRuntimeConfig",
     "ExchangeConfig",
     "load_backtest_runtime",
