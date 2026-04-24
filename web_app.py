@@ -37,6 +37,7 @@ LOG_FILE_MAP = {
 }
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
+LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
 
 
 app = FastAPI(title="TraderBot Console")
@@ -87,6 +88,9 @@ def _dashboard_context() -> dict:
         "project_name": "TraderBot Local Console",
         "mode": execution_config.mode,
         "live_gate": live_gate,
+        "allow_live_trading": execution_config.allow_live_trading,
+        "live_confirm_env_var": LIVE_CONFIRM_ENV_VAR,
+        "live_confirm_env_is_yes": live_gate.confirm_env_ok,
         "is_live_mode": execution_config.mode == "live",
         "bot_status": runtime_status.get("robot_status", "unknown"),
         "is_error_status": runtime_status.get("robot_status") == ERROR,

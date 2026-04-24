@@ -91,8 +91,8 @@
             {{ live_gate.message }}
             <span class="d-block text-secondary">
               status={{ "passed" if live_gate.gate_passed else "blocked" }},
-              allow_live_trading={{ live_gate.allow_live_trading }},
-              TRADEBOT_CONFIRM_LIVE={{ "YES" if live_gate.confirm_env_ok else "not set" }}
+              allow_live_trading={{ allow_live_trading }},
+              {{ live_confirm_env_var }}={{ "YES" if live_confirm_env_is_yes else "not set" }}
             </span>
           </dd>
 

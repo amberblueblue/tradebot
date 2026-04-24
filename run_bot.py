@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 
 import feature_engine
@@ -8,9 +9,13 @@ from exchange.binance_client import BinanceClient
 from execution.trader import TraderEngine
 from observability.event_logger import LogRouter
 from runtime.sync import startup_sync
-from runtime.state import RuntimeStore, build_runtime_state, create_broker, get_live_gate_status
+from runtime.state import RuntimeStore, build_runtime_state, create_broker
 from storage.db import initialize_database
 from strategy.config import StrategyConfig
+
+
+LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
+LIVE_CONFIRM_VALUE = "YES"
 
 
 def ensure_runtime_mode_allowed(execution_config) -> None:
@@ -18,8 +23,16 @@ def ensure_runtime_mode_allowed(execution_config) -> None:
     if runtime_state.mode == "paper":
         return
 
-    live_gate = get_live_gate_status(execution_config)
-    raise RuntimeError(live_gate.message)
+    if runtime_state.mode == "live":
+        allow_live_trading = bool(execution_config.allow_live_trading)
+        confirm_live = os.environ.get(LIVE_CONFIRM_ENV_VAR) == LIVE_CONFIRM_VALUE
+        if not allow_live_trading:
+            raise RuntimeError("live mode blocked by safety.allow_live_trading=false")
+        if not confirm_live:
+            raise RuntimeError(f"live mode blocked because {LIVE_CONFIRM_ENV_VAR} is not {LIVE_CONFIRM_VALUE}")
+        raise RuntimeError("live broker not implemented")
+
+    raise RuntimeError(f"run_bot.py supports paper mode only, got app.mode={runtime_state.mode}")
 
 
 def main() -> None:
