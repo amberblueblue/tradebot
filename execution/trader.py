@@ -8,7 +8,12 @@ import pandas as pd
 
 import feature_engine
 import strategy.strategy as strategy
-from config.loader import ExecutionRuntimeConfig
+from config.loader import (
+    ExecutionRuntimeConfig,
+    SymbolTradingConfig,
+    load_symbols_config,
+    save_symbols_config,
+)
 from execution.broker import Broker, Position
 from observability.event_logger import LogRouter
 from strategy.config import StrategyConfig
@@ -48,6 +53,7 @@ class TraderEngine:
         self.strategy_config = strategy_config
         self.feature_config = feature_config
         self.execution_config = execution_config
+        self.symbol_configs = dict(execution_config.symbol_configs)
         self.logger = LogRouter(
             system_log=execution_config.system_log_file,
             trade_log=execution_config.trade_log_file,
@@ -56,6 +62,7 @@ class TraderEngine:
         )
 
     def run_once(self) -> None:
+        self._refresh_symbol_configs()
         positions = self._safe_get_positions()
         if positions is None:
             return
@@ -64,7 +71,7 @@ class TraderEngine:
         positions_by_symbol = {position.symbol: position for position in positions}
         self._sync_positions_with_runtime(positions_by_symbol)
 
-        for symbol in self.execution_config.enabled_symbols:
+        for symbol in self._tradable_symbols():
             try:
                 self._process_symbol(symbol, positions_by_symbol)
             except Exception as exc:
@@ -81,6 +88,13 @@ class TraderEngine:
             return None
 
     def _process_symbol(self, symbol: str, positions_by_symbol: dict[str, Position]) -> None:
+        symbol_config = self._get_symbol_config(symbol)
+        if not self._is_symbol_tradable(symbol_config):
+            self._log_event("symbol_skipped", symbol=symbol, reason="symbol_trading_disabled")
+            return
+        if self._enforce_max_loss_pause(symbol, symbol_config):
+            return
+
         execution_context = self._build_execution_context(symbol)
         runtime_symbol = self.runtime_store.get_symbol_state(symbol)
         current_position = positions_by_symbol.get(symbol)
@@ -145,8 +159,9 @@ class TraderEngine:
         )
 
     def _build_execution_context(self, symbol: str) -> ExecutionContext:
-        entry_interval = "1h"
-        trend_interval = "4h"
+        symbol_config = self._get_symbol_config(symbol)
+        entry_interval = symbol_config.signal_timeframe
+        trend_interval = symbol_config.trend_timeframe
         df_1h = self._klines_to_dataframe(
             self.market_client.get_klines(symbol, entry_interval, limit=300)
         )
@@ -206,7 +221,7 @@ class TraderEngine:
         )
 
     def _sync_positions_with_runtime(self, positions_by_symbol: dict[str, Position]) -> None:
-        for symbol in self.execution_config.enabled_symbols:
+        for symbol in self.symbol_configs:
             position = positions_by_symbol.get(symbol)
             runtime_symbol = self.runtime_store.get_symbol_state(symbol)
             if position is None and runtime_symbol["strategy_state"] == IN_POSITION:
@@ -264,6 +279,7 @@ class TraderEngine:
                 FULL_EXIT,
                 positions_by_symbol,
             )
+            self._enforce_max_loss_pause(symbol, self._get_symbol_config(symbol))
             return symbol not in positions_by_symbol
 
         if current_return >= self.execution_config.take_profit_pct / 100:
@@ -282,6 +298,7 @@ class TraderEngine:
                 FULL_EXIT,
                 positions_by_symbol,
             )
+            self._enforce_max_loss_pause(symbol, self._get_symbol_config(symbol))
             return symbol not in positions_by_symbol
         return False
 
@@ -291,7 +308,8 @@ class TraderEngine:
         execution_context: ExecutionContext,
         positions_by_symbol: dict[str, Position],
     ) -> None:
-        if symbol not in self.execution_config.enabled_symbols:
+        symbol_config = self._get_symbol_config(symbol)
+        if not self._is_symbol_tradable(symbol_config):
             self._log_event("order_blocked", symbol=symbol, reason="symbol_disabled")
             return
         if self.runtime_store.get_robot_status() != RUNNING:
@@ -314,7 +332,7 @@ class TraderEngine:
             return
 
         try:
-            qty = self._calculate_buy_qty(execution_context.current_price)
+            qty = self._calculate_buy_qty(symbol_config, execution_context.current_price)
         except Exception as exc:
             self._record_error(symbol, exc)
             return
@@ -382,6 +400,7 @@ class TraderEngine:
             action,
             positions_by_symbol,
         )
+        self._enforce_max_loss_pause(symbol, self._get_symbol_config(symbol))
 
     def _execute_sell(
         self,
@@ -448,15 +467,113 @@ class TraderEngine:
             trigger_price=current_price,
         )
 
-    def _calculate_buy_qty(self, current_price: float) -> float:
+    def _calculate_buy_qty(self, symbol_config: SymbolTradingConfig, current_price: float) -> float:
         cash_balance = self.broker.get_cash_balance()
-        quote_amount = self.execution_config.fixed_order_quote_amount
+        quote_amount = symbol_config.order_amount
         if quote_amount <= 0:
             quote_amount = cash_balance * self.execution_config.cash_usage_pct
         quote_amount = min(quote_amount, cash_balance)
         if quote_amount <= 0 or current_price <= 0:
             return 0.0
         return quote_amount / current_price
+
+    def _refresh_symbol_configs(self) -> None:
+        try:
+            symbols_config = load_symbols_config()
+        except Exception as exc:
+            self._record_error("SYSTEM", exc)
+            return
+        symbols = symbols_config.get("symbols", {})
+        if not isinstance(symbols, dict):
+            self.symbol_configs = {}
+            return
+        refreshed_configs: dict[str, SymbolTradingConfig] = {}
+        for symbol, symbol_config in symbols.items():
+            refreshed_configs[symbol] = SymbolTradingConfig(
+                symbol=symbol,
+                enabled=bool(symbol_config["enabled"]),
+                trend_timeframe=str(symbol_config["trend_timeframe"]),
+                signal_timeframe=str(symbol_config["signal_timeframe"]),
+                order_amount=float(symbol_config["order_amount"]),
+                max_loss_amount=float(symbol_config["max_loss_amount"]),
+                paused_by_loss=bool(symbol_config["paused_by_loss"]),
+            )
+        self.symbol_configs = refreshed_configs
+
+    def _get_symbol_config(self, symbol: str) -> SymbolTradingConfig:
+        if symbol in self.symbol_configs:
+            return self.symbol_configs[symbol]
+        raise ValueError(f"Missing symbol config for {symbol}")
+
+    def _tradable_symbols(self) -> tuple[str, ...]:
+        return tuple(
+            symbol
+            for symbol, symbol_config in self.symbol_configs.items()
+            if self._is_symbol_tradable(symbol_config)
+        )
+
+    def _is_symbol_tradable(self, symbol_config: SymbolTradingConfig) -> bool:
+        return symbol_config.enabled and not symbol_config.paused_by_loss
+
+    def _get_symbol_realized_pnl(self, symbol: str) -> float:
+        if hasattr(self.broker, "get_realized_pnl"):
+            return float(self.broker.get_realized_pnl(symbol))
+        runtime_symbol = self.runtime_store.get_symbol_state(symbol)
+        return float(runtime_symbol.get("realized_pnl", 0.0))
+
+    def _enforce_max_loss_pause(self, symbol: str, symbol_config: SymbolTradingConfig) -> bool:
+        realized_pnl = self._get_symbol_realized_pnl(symbol)
+        self.runtime_store.set_symbol_state(symbol, realized_pnl=realized_pnl)
+        if realized_pnl > -symbol_config.max_loss_amount:
+            return False
+
+        self._pause_symbol_by_loss(symbol, symbol_config, realized_pnl)
+        return True
+
+    def _pause_symbol_by_loss(
+        self,
+        symbol: str,
+        symbol_config: SymbolTradingConfig,
+        realized_pnl: float,
+    ) -> None:
+        if symbol_config.paused_by_loss:
+            return
+
+        symbols_config = load_symbols_config()
+        symbols = symbols_config.get("symbols", {})
+        if not isinstance(symbols, dict) or symbol not in symbols:
+            raise ValueError(f"Missing symbol config for {symbol}")
+        symbols[symbol]["paused_by_loss"] = True
+        save_symbols_config(symbols_config)
+
+        paused_config = SymbolTradingConfig(
+            symbol=symbol_config.symbol,
+            enabled=symbol_config.enabled,
+            trend_timeframe=symbol_config.trend_timeframe,
+            signal_timeframe=symbol_config.signal_timeframe,
+            order_amount=symbol_config.order_amount,
+            max_loss_amount=symbol_config.max_loss_amount,
+            paused_by_loss=True,
+        )
+        self.symbol_configs[symbol] = paused_config
+        self.runtime_store.set_symbol_state(symbol, paused_by_loss=True, realized_pnl=realized_pnl)
+        payload = {
+            "realized_pnl": realized_pnl,
+            "max_loss_amount": symbol_config.max_loss_amount,
+        }
+        self.logger.log_system(
+            symbol=symbol,
+            action="symbol_loss_paused",
+            reason="max_loss_amount_reached",
+            **payload,
+        )
+        self.logger.log_trade(
+            symbol=symbol,
+            action="symbol_loss_paused",
+            reason="max_loss_amount_reached",
+            **payload,
+        )
+        print(f"[symbol_loss_paused] {symbol} max_loss_amount_reached")
 
     def _is_duplicate_bar(self, symbol: str, current_bar_timestamp: str) -> bool:
         runtime_symbol = self.runtime_store.get_symbol_state(symbol)

@@ -8,6 +8,19 @@ from typing import Any
 CONFIG_DIR = Path(__file__).resolve().parent
 DEFAULT_SETTINGS_PATH = CONFIG_DIR / "settings.yaml"
 DEFAULT_SYMBOLS_PATH = CONFIG_DIR / "symbols.yaml"
+VALID_SYMBOL_TIMEFRAMES = ("5m", "15m", "1h", "4h", "1d")
+VALID_SYMBOL_TIMEFRAME_SET = frozenset(VALID_SYMBOL_TIMEFRAMES)
+
+
+@dataclass(frozen=True)
+class SymbolTradingConfig:
+    symbol: str
+    enabled: bool
+    trend_timeframe: str
+    signal_timeframe: str
+    order_amount: float
+    max_loss_amount: float
+    paused_by_loss: bool
 
 
 @dataclass(frozen=True)
@@ -42,6 +55,7 @@ class ExecutionRuntimeConfig:
     exchange: ExchangeConfig
     symbol_list: tuple[str, ...]
     enabled_symbols: tuple[str, ...]
+    symbol_configs: dict[str, SymbolTradingConfig]
     polling_interval_seconds: int
     logging_level: str
     paper_initial_cash: float
@@ -172,12 +186,202 @@ def _load_yaml_file(path: Path) -> dict[str, Any]:
     return parsed
 
 
+def _format_yaml_scalar(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    text = str(value)
+    if text == "":
+        return '""'
+    if all(char.isalnum() or char in {"_", ".", "/", ":", "-"} for char in text):
+        return text
+    return '"' + text.replace('"', '\\"') + '"'
+
+
+def dump_yaml(data: dict[str, Any]) -> str:
+    lines: list[str] = []
+
+    def write_value(value: Any, indent: int, key: str | None = None) -> None:
+        prefix = " " * indent
+        if isinstance(value, dict):
+            if key is not None:
+                lines.append(f"{prefix}{key}:")
+            child_indent = indent + (2 if key is not None else 0)
+            for child_key, child_value in value.items():
+                write_value(child_value, child_indent, str(child_key))
+            return
+        if isinstance(value, list):
+            if key is not None:
+                lines.append(f"{prefix}{key}:")
+                item_indent = indent + 2
+            else:
+                item_indent = indent
+            for item in value:
+                item_prefix = " " * item_indent
+                if isinstance(item, (dict, list)):
+                    lines.append(f"{item_prefix}-")
+                    write_value(item, item_indent + 2)
+                else:
+                    lines.append(f"{item_prefix}- {_format_yaml_scalar(item)}")
+            return
+        if key is None:
+            lines.append(f"{prefix}{_format_yaml_scalar(value)}")
+        else:
+            lines.append(f"{prefix}{key}: {_format_yaml_scalar(value)}")
+
+    for top_key, top_value in data.items():
+        write_value(top_value, 0, str(top_key))
+    return "\n".join(lines) + "\n"
+
+
+def save_symbols_config(symbols_config: dict[str, Any], symbols_path: Path | None = None) -> None:
+    path = symbols_path or DEFAULT_SYMBOLS_PATH
+    path.write_text(dump_yaml(symbols_config), encoding="utf-8")
+
+
+def _coerce_bool(value: Any, field_name: str, symbol: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"Invalid symbols.yaml: symbols.{symbol}.{field_name} must be true or false")
+
+
+def _coerce_positive_float(value: Any, field_name: str, symbol: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid symbols.yaml: symbols.{symbol}.{field_name} must be a number greater than 0")
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid symbols.yaml: symbols.{symbol}.{field_name} must be a number greater than 0"
+        ) from exc
+    if number <= 0:
+        raise ValueError(f"Invalid symbols.yaml: symbols.{symbol}.{field_name} must be greater than 0")
+    return number
+
+
+def _coerce_timeframe(value: Any, field_name: str, symbol: str) -> str:
+    timeframe = str(value)
+    if timeframe not in VALID_SYMBOL_TIMEFRAME_SET:
+        allowed = ", ".join(VALID_SYMBOL_TIMEFRAMES)
+        raise ValueError(
+            f"Invalid symbols.yaml: symbols.{symbol}.{field_name} must be one of: {allowed}"
+        )
+    return timeframe
+
+
+def _default_symbol_config(symbol: str) -> dict[str, Any]:
+    return {
+        "enabled": True,
+        "trend_timeframe": "4h",
+        "signal_timeframe": "15m",
+        "order_amount": 100,
+        "max_loss_amount": 20,
+        "paused_by_loss": False,
+    }
+
+
+def _validate_symbol_config(symbol: str, raw_config: Any) -> SymbolTradingConfig:
+    if not symbol or not isinstance(symbol, str):
+        raise ValueError("Invalid symbols.yaml: symbol names must be non-empty strings")
+    if not isinstance(raw_config, dict):
+        raise ValueError(f"Invalid symbols.yaml: symbols.{symbol} must be a mapping")
+
+    merged_config = _default_symbol_config(symbol)
+    merged_config.update(raw_config)
+    return SymbolTradingConfig(
+        symbol=symbol,
+        enabled=_coerce_bool(merged_config.get("enabled"), "enabled", symbol),
+        trend_timeframe=_coerce_timeframe(merged_config.get("trend_timeframe"), "trend_timeframe", symbol),
+        signal_timeframe=_coerce_timeframe(merged_config.get("signal_timeframe"), "signal_timeframe", symbol),
+        order_amount=_coerce_positive_float(merged_config.get("order_amount"), "order_amount", symbol),
+        max_loss_amount=_coerce_positive_float(merged_config.get("max_loss_amount"), "max_loss_amount", symbol),
+        paused_by_loss=_coerce_bool(merged_config.get("paused_by_loss"), "paused_by_loss", symbol),
+    )
+
+
+def load_symbols_config(symbols_path: Path | None = None) -> dict[str, Any]:
+    path = symbols_path or DEFAULT_SYMBOLS_PATH
+    raw_config = _load_yaml_file(path)
+    raw_symbols = raw_config.get("symbols")
+
+    if raw_symbols is None:
+        raise ValueError("Invalid symbols.yaml: missing top-level 'symbols' section")
+
+    if isinstance(raw_symbols, list):
+        migrated_symbols = {}
+        for raw_symbol in raw_symbols:
+            symbol = str(raw_symbol)
+            migrated_symbols[symbol] = _default_symbol_config(symbol)
+        raw_symbols = migrated_symbols
+    elif not isinstance(raw_symbols, dict):
+        raise ValueError("Invalid symbols.yaml: top-level 'symbols' must be a mapping or legacy list")
+
+    validated_symbols = {}
+    for symbol, symbol_config in raw_symbols.items():
+        validated = _validate_symbol_config(str(symbol), symbol_config)
+        validated_symbols[validated.symbol] = {
+            "enabled": validated.enabled,
+            "trend_timeframe": validated.trend_timeframe,
+            "signal_timeframe": validated.signal_timeframe,
+            "order_amount": validated.order_amount,
+            "max_loss_amount": validated.max_loss_amount,
+            "paused_by_loss": validated.paused_by_loss,
+        }
+
+    if not validated_symbols:
+        raise ValueError("Invalid symbols.yaml: top-level 'symbols' must contain at least one symbol")
+
+    normalized_config = dict(raw_config)
+    normalized_config["symbols"] = validated_symbols
+    return normalized_config
+
+
+def get_symbol_names(symbols_config: dict[str, Any]) -> tuple[str, ...]:
+    symbols = symbols_config.get("symbols", {})
+    if isinstance(symbols, dict):
+        return tuple(symbols.keys())
+    return tuple(str(symbol) for symbol in symbols)
+
+
+def get_enabled_symbol_names(symbols_config: dict[str, Any]) -> tuple[str, ...]:
+    symbols = symbols_config.get("symbols", {})
+    if not isinstance(symbols, dict):
+        return tuple(str(symbol) for symbol in symbols)
+    return tuple(
+        symbol
+        for symbol, symbol_config in symbols.items()
+        if isinstance(symbol_config, dict)
+        and bool(symbol_config.get("enabled", True))
+        and not bool(symbol_config.get("paused_by_loss", False))
+    )
+
+
+def get_symbol_trading_config(symbols_config: dict[str, Any], symbol: str) -> SymbolTradingConfig:
+    symbols = symbols_config.get("symbols", {})
+    if not isinstance(symbols, dict) or symbol not in symbols:
+        raise ValueError(f"Invalid symbols.yaml: symbols.{symbol} is not configured")
+    return _validate_symbol_config(symbol, symbols[symbol])
+
+
+def get_symbol_trading_configs(symbols_config: dict[str, Any]) -> dict[str, SymbolTradingConfig]:
+    symbols = symbols_config.get("symbols", {})
+    if not isinstance(symbols, dict):
+        return {}
+    return {
+        symbol: _validate_symbol_config(symbol, symbol_config)
+        for symbol, symbol_config in symbols.items()
+    }
+
+
 def load_project_config(
     settings_path: Path | None = None,
     symbols_path: Path | None = None,
 ) -> dict[str, Any]:
     settings = _load_yaml_file(settings_path or DEFAULT_SETTINGS_PATH)
-    symbols = _load_yaml_file(symbols_path or DEFAULT_SYMBOLS_PATH)
+    symbols = load_symbols_config(symbols_path or DEFAULT_SYMBOLS_PATH)
     settings["symbols_config"] = symbols
     return settings
 
@@ -192,7 +396,7 @@ def load_backtest_runtime(
     symbols_config = settings.get("symbols_config", {})
     symbol_files = symbols_config.get("symbol_files", {})
 
-    symbol_list = tuple(symbols_config.get("symbols", market.get("default_symbols", [])))
+    symbol_list = get_symbol_names(symbols_config) or tuple(market.get("default_symbols", []))
     selected_symbol = symbol or market.get("default_symbol") or (symbol_list[0] if symbol_list else "")
     symbol_data = symbol_files.get(selected_symbol, {}).get("backtest", {})
 
@@ -224,8 +428,19 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
     live = settings.get("live", {})
     logging = settings.get("logging", {})
     symbols_config = settings.get("symbols_config", {})
-    symbol_list = tuple(symbols_config.get("symbols", market.get("default_symbols", [])))
-    enabled_symbols = tuple(execution.get("enabled_symbols", symbol_list))
+    configured_symbol_names = get_symbol_names(symbols_config)
+    symbol_list = configured_symbol_names or tuple(market.get("default_symbols", []))
+    configured_enabled_symbols = tuple(execution.get("enabled_symbols", ()))
+    enabled_symbol_names = get_enabled_symbol_names(symbols_config)
+    enabled_symbols = configured_enabled_symbols or enabled_symbol_names or symbol_list
+    if configured_symbol_names:
+        enabled_symbols = tuple(
+            symbol
+            for symbol in enabled_symbols
+            if symbol in symbol_list and symbol in enabled_symbol_names
+        )
+    else:
+        enabled_symbols = tuple(symbol for symbol in enabled_symbols if symbol in symbol_list)
 
     return ExecutionRuntimeConfig(
         mode=str(settings.get("app", {}).get("mode", "backtest")),
@@ -240,6 +455,7 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
             symbol_list
         ),
         enabled_symbols=enabled_symbols,
+        symbol_configs=get_symbol_trading_configs(symbols_config),
         polling_interval_seconds=int(market.get("polling_interval_seconds", 60)),
         logging_level=str(settings.get("logging", {}).get("level", "INFO")),
         paper_initial_cash=float(paper.get("initial_cash", 10000.0)),

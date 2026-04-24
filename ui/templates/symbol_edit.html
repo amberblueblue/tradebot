@@ -1,0 +1,98 @@
+{% extends "layout.html" %}
+
+{% block title %}Edit {{ symbol }} | TraderBot Console{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-12">
+    <div class="hero-panel p-4 rounded-4">
+      <p class="text-uppercase small mb-2 text-secondary">Symbol Parameters</p>
+      <h1 class="display-6 mb-2">{{ symbol }}</h1>
+      <p class="text-secondary mb-0">Edit local trading parameters stored in config/symbols.yaml.</p>
+    </div>
+  </div>
+
+  {% if error %}
+  <div class="col-12">
+    <div class="alert alert-danger mb-0">{{ error }}</div>
+  </div>
+  {% endif %}
+
+  <div class="col-12 col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <form class="row g-3" method="post" action="/symbols/{{ symbol }}/edit">
+          <div class="col-md-6">
+            <label class="form-label" for="enabled">enabled</label>
+            <select class="form-select" id="enabled" name="enabled" required>
+              <option value="true" {% if symbol_config.enabled %}selected{% endif %}>true</option>
+              <option value="false" {% if not symbol_config.enabled %}selected{% endif %}>false</option>
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label" for="paused_by_loss">paused_by_loss</label>
+            <select class="form-select" id="paused_by_loss" name="paused_by_loss" required>
+              <option value="false" {% if not symbol_config.paused_by_loss %}selected{% endif %}>false</option>
+              <option value="true" {% if symbol_config.paused_by_loss %}selected{% endif %}>true</option>
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label" for="trend_timeframe">trend_timeframe</label>
+            <select class="form-select" id="trend_timeframe" name="trend_timeframe" required>
+              {% for timeframe in timeframes %}
+              <option value="{{ timeframe }}" {% if symbol_config.trend_timeframe == timeframe %}selected{% endif %}>{{ timeframe }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label" for="signal_timeframe">signal_timeframe</label>
+            <select class="form-select" id="signal_timeframe" name="signal_timeframe" required>
+              {% for timeframe in timeframes %}
+              <option value="{{ timeframe }}" {% if symbol_config.signal_timeframe == timeframe %}selected{% endif %}>{{ timeframe }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label" for="order_amount">order_amount</label>
+            <input
+              class="form-control"
+              id="order_amount"
+              name="order_amount"
+              type="number"
+              min="0.00000001"
+              step="0.00000001"
+              value="{{ symbol_config.order_amount }}"
+              required
+            >
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label" for="max_loss_amount">max_loss_amount</label>
+            <input
+              class="form-control"
+              id="max_loss_amount"
+              name="max_loss_amount"
+              type="number"
+              min="0.00000001"
+              step="0.00000001"
+              value="{{ symbol_config.max_loss_amount }}"
+              required
+            >
+          </div>
+
+          <div class="col-12">
+            <div class="d-flex flex-wrap gap-2">
+              <button class="btn btn-primary" type="submit">Save</button>
+              <a class="btn btn-outline-secondary" href="/symbols">Cancel</a>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

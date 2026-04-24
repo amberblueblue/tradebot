@@ -119,6 +119,17 @@ class PaperBroker(Broker):
             if order.get("status") not in {"FILLED", "CANCELLED"}
         ]
 
+    def get_realized_pnl(self, symbol: str) -> float:
+        total = 0.0
+        for order in self.state.orders:
+            if order.get("symbol") != symbol or order.get("side") != "SELL":
+                continue
+            metadata = order.get("metadata", {})
+            if not isinstance(metadata, dict):
+                continue
+            total += float(metadata.get("realized_pnl", 0.0))
+        return total
+
     def _new_order_event(
         self,
         *,

@@ -14,15 +14,29 @@
 
   <div class="col-12">
     <div class="card shadow-sm">
-      <div class="card-body d-flex flex-wrap gap-2">
-        {% for item in available_log_types %}
-        <a
-          class="btn {% if item == selected_log_type %}btn-dark{% else %}btn-outline-secondary{% endif %}"
-          href="/logs?log_type={{ item }}"
-        >
-          {{ item }}
-        </a>
-        {% endfor %}
+      <div class="card-body">
+        <form class="row gy-2 gx-3 align-items-end" method="get" action="/logs">
+          <div class="col-sm-6 col-lg-3">
+            <label class="form-label" for="log_type">Log Type</label>
+            <select class="form-select" id="log_type" name="log_type">
+              {% for item in available_log_types %}
+              <option value="{{ item }}" {% if item == selected_log_type %}selected{% endif %}>{{ item }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-sm-6 col-lg-4">
+            <label class="form-label" for="symbol">Symbol</label>
+            <select class="form-select" id="symbol" name="symbol">
+              <option value="all" {% if selected_symbol == "all" %}selected{% endif %}>全部币种</option>
+              {% for item in available_symbols %}
+              <option value="{{ item }}" {% if item == selected_symbol %}selected{% endif %}>{{ item }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-sm-12 col-lg-2">
+            <button class="btn btn-dark w-100" type="submit">Filter</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
@@ -32,7 +46,7 @@
       <div class="card-body">
         <h2 class="h5 mb-3">{{ selected_log_type|capitalize }} Log</h2>
         {% if not log_exists or not log_lines %}
-        <div class="alert alert-light border mb-0">暂无日志</div>
+        <div class="alert alert-light border mb-0">{{ empty_message }}</div>
         {% else %}
         <pre class="log-viewer mb-0">{% for line in log_lines %}{{ line }}
 {% endfor %}</pre>

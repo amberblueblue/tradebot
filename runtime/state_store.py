@@ -18,6 +18,8 @@ def _default_symbol_state() -> dict[str, Any]:
         "cooldown_remaining": 0,
         "last_bar_timestamp": None,
         "last_action_bar_timestamp": None,
+        "realized_pnl": 0.0,
+        "paused_by_loss": False,
     }
 
 
