@@ -17,6 +17,9 @@ DEFAULT_TICK_SIZE = "0.01"
 DEFAULT_MIN_QTY = "0.000001"
 DEFAULT_MAX_QTY = "100000000"
 DEFAULT_STEP_SIZE = "0.000001"
+DEFAULT_MARKET_MIN_QTY = "0"
+DEFAULT_MARKET_MAX_QTY = "0"
+DEFAULT_MARKET_STEP_SIZE = "0"
 DEFAULT_ERROR_LOG_FILE = "logs/error.log"
 DEFAULT_RULES_CACHE_TTL_SECONDS = 3600
 
@@ -28,14 +31,50 @@ class SymbolRules:
     lot_size_min_qty: float = float(DEFAULT_MIN_QTY)
     lot_size_max_qty: float = float(DEFAULT_MAX_QTY)
     lot_size_step_size: float = float(DEFAULT_STEP_SIZE)
-    market_lot_size_min_qty: float = float(DEFAULT_MIN_QTY)
-    market_lot_size_max_qty: float = float(DEFAULT_MAX_QTY)
-    market_lot_size_step_size: float = float(DEFAULT_STEP_SIZE)
+    market_lot_size_min_qty: float = float(DEFAULT_MARKET_MIN_QTY)
+    market_lot_size_max_qty: float = float(DEFAULT_MARKET_MAX_QTY)
+    market_lot_size_step_size: float = float(DEFAULT_MARKET_STEP_SIZE)
     min_notional: float = DEFAULT_MIN_NOTIONAL
     notional_min: float | None = None
     notional_max: float | None = None
     amount_precision: int = DEFAULT_AMOUNT_PRECISION
     quantity_precision: int = DEFAULT_QUANTITY_PRECISION
+
+    @property
+    def min_qty(self) -> float:
+        return self.market_lot_size_min_qty if self.market_lot_size_min_qty > 0 else self.lot_size_min_qty
+
+    @property
+    def max_qty(self) -> float:
+        return self.market_lot_size_max_qty if self.market_lot_size_max_qty > 0 else self.lot_size_max_qty
+
+    @property
+    def step_size(self) -> float:
+        return self.market_lot_size_step_size if self.market_lot_size_step_size > 0 else self.lot_size_step_size
+
+    @property
+    def effective_min_notional(self) -> float:
+        return self.notional_min or self.min_notional
+
+    @property
+    def tickSize(self) -> float:
+        return self.tick_size
+
+    @property
+    def stepSize(self) -> float:
+        return self.step_size
+
+    @property
+    def minQty(self) -> float:
+        return self.min_qty
+
+    @property
+    def maxQty(self) -> float:
+        return self.max_qty
+
+    @property
+    def minNotional(self) -> float:
+        return self.effective_min_notional
 
 
 @dataclass(frozen=True)
@@ -111,7 +150,7 @@ def _parse_symbol_rules(symbol: str, symbol_info: dict[str, Any]) -> SymbolRules
 
     market_lot_size = filters.get("MARKET_LOT_SIZE")
     if market_lot_size is None:
-        _log_rule_warning(symbol, "missing_MARKET_LOT_SIZE", fallback_step_size=DEFAULT_STEP_SIZE)
+        _log_rule_warning(symbol, "missing_MARKET_LOT_SIZE", fallback_step_size=DEFAULT_MARKET_STEP_SIZE)
         market_lot_size = {}
 
     min_notional_filter = filters.get("MIN_NOTIONAL")
@@ -161,19 +200,19 @@ def _parse_symbol_rules(symbol: str, symbol_info: dict[str, Any]) -> SymbolRules
         lot_size_step_size=float(lot_step_size),
         market_lot_size_min_qty=float(_decimal(
             market_lot_size.get("minQty"),
-            DEFAULT_MIN_QTY,
+            DEFAULT_MARKET_MIN_QTY,
             symbol=symbol,
             field="MARKET_LOT_SIZE_minQty",
         )),
         market_lot_size_max_qty=float(_decimal(
             market_lot_size.get("maxQty"),
-            DEFAULT_MAX_QTY,
+            DEFAULT_MARKET_MAX_QTY,
             symbol=symbol,
             field="MARKET_LOT_SIZE_maxQty",
         )),
         market_lot_size_step_size=float(_decimal(
             market_lot_size.get("stepSize"),
-            DEFAULT_STEP_SIZE,
+            DEFAULT_MARKET_STEP_SIZE,
             symbol=symbol,
             field="MARKET_LOT_SIZE_stepSize",
         )),

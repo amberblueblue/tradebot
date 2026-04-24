@@ -63,15 +63,15 @@ def _is_step_aligned(value: float, step: float) -> bool:
 
 
 def _effective_min_qty(rules: SymbolTradingRules) -> float:
-    return rules.market_lot_size_min_qty if rules.market_lot_size_min_qty > 0 else rules.lot_size_min_qty
+    return rules.min_qty
 
 
 def _effective_max_qty(rules: SymbolTradingRules) -> float:
-    return rules.market_lot_size_max_qty if rules.market_lot_size_max_qty > 0 else rules.lot_size_max_qty
+    return rules.max_qty
 
 
 def _effective_step_size(rules: SymbolTradingRules) -> float:
-    return rules.market_lot_size_step_size if rules.market_lot_size_step_size > 0 else rules.lot_size_step_size
+    return rules.step_size
 
 
 def validate_entry_order(
@@ -179,7 +179,7 @@ def validate_entry_order(
     max_qty = _effective_max_qty(rules)
     normalized_quantity = _round_down_to_step(raw_quantity, quantity_step_size)
     notional = float(_decimal(normalized_price) * _decimal(normalized_quantity))
-    min_notional = rules.notional_min or rules.min_notional
+    min_notional = rules.effective_min_notional
 
     if symbol_config.order_amount < min_notional:
         return _result(
