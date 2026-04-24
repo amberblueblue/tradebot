@@ -44,15 +44,20 @@ class BacktestRuntimeConfig:
 class ExchangeConfig:
     name: str
     base_url: str
-    api_key: str
-    api_secret: str
     recv_window: int
+    request_timeout_seconds: int
+
+
+@dataclass(frozen=True)
+class BinanceConfig:
+    rules_cache_ttl_seconds: int
 
 
 @dataclass(frozen=True)
 class ExecutionRuntimeConfig:
     mode: str
     exchange: ExchangeConfig
+    binance: BinanceConfig
     symbol_list: tuple[str, ...]
     enabled_symbols: tuple[str, ...]
     symbol_configs: dict[str, SymbolTradingConfig]
@@ -428,6 +433,7 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
     execution = settings.get("execution", {})
     safety = settings.get("safety", {})
     live = settings.get("live", {})
+    binance = settings.get("binance", {})
     logging = settings.get("logging", {})
     symbols_config = settings.get("symbols_config", {})
     configured_symbol_names = get_symbol_names(symbols_config)
@@ -449,9 +455,11 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
         exchange=ExchangeConfig(
             name=str(settings.get("exchange", {}).get("name", "binance")),
             base_url=str(settings.get("exchange", {}).get("base_url", "https://api.binance.com")),
-            api_key=str(settings.get("exchange", {}).get("api_key", "")),
-            api_secret=str(settings.get("exchange", {}).get("api_secret", "")),
             recv_window=int(settings.get("exchange", {}).get("recv_window", 5000)),
+            request_timeout_seconds=int(settings.get("exchange", {}).get("request_timeout_seconds", 10)),
+        ),
+        binance=BinanceConfig(
+            rules_cache_ttl_seconds=int(binance.get("rules_cache_ttl_seconds", 3600)),
         ),
         symbol_list=tuple(
             symbol_list

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 
 import feature_engine
-from config.loader import load_execution_runtime, load_project_config
+from config.loader import DEFAULT_SETTINGS_PATH, load_execution_runtime, load_project_config
 from exchange.binance_client import BinanceClient
 from execution.trader import TraderEngine
 from observability.event_logger import LogRouter
 from runtime.sync import startup_sync
-from runtime.state import RuntimeStore, build_runtime_state, create_broker
+from runtime.state import RuntimeStore, build_runtime_state, create_broker, get_live_gate_status
 from storage.db import initialize_database
 from strategy.config import StrategyConfig
 
@@ -24,24 +25,30 @@ def ensure_runtime_mode_allowed(execution_config) -> None:
         return
 
     if runtime_state.mode == "live":
-        allow_live_trading = bool(execution_config.allow_live_trading)
-        confirm_live = os.environ.get(LIVE_CONFIRM_ENV_VAR) == LIVE_CONFIRM_VALUE
-        if not allow_live_trading:
-            raise RuntimeError("live mode blocked by safety.allow_live_trading=false")
-        if not confirm_live:
-            raise RuntimeError(f"live mode blocked because {LIVE_CONFIRM_ENV_VAR} is not {LIVE_CONFIRM_VALUE}")
-        raise RuntimeError("live broker not implemented")
+        raise RuntimeError(get_live_gate_status(execution_config).message)
 
     raise RuntimeError(f"run_bot.py supports paper mode only, got app.mode={runtime_state.mode}")
 
 
-def main() -> None:
-    initialize_database()
+def main() -> int:
     settings = load_project_config()
     execution_config = load_execution_runtime(settings)
     runtime_state = build_runtime_state(execution_config)
-    ensure_runtime_mode_allowed(execution_config)
+    print(f"settings.yaml path: {DEFAULT_SETTINGS_PATH.resolve()}")
+    print(f"app.mode: {settings.get('app', {}).get('mode')}")
+    print(f"runtime_state.mode: {runtime_state.mode}")
+    print(f"safety.allow_live_trading: {execution_config.allow_live_trading}")
+    print(
+        f"{LIVE_CONFIRM_ENV_VAR} is YES: "
+        f"{os.environ.get(LIVE_CONFIRM_ENV_VAR) == LIVE_CONFIRM_VALUE}"
+    )
+    try:
+        ensure_runtime_mode_allowed(execution_config)
+    except RuntimeError as exc:
+        print(exc)
+        return 1
 
+    initialize_database()
     broker = create_broker(execution_config)
     runtime_store = RuntimeStore(
         execution_config.runtime_state_file,
@@ -52,9 +59,8 @@ def main() -> None:
     )
     client = BinanceClient(
         base_url=execution_config.exchange.base_url,
-        api_key=execution_config.exchange.api_key,
-        api_secret=execution_config.exchange.api_secret,
-        recv_window=execution_config.exchange.recv_window,
+        timeout=execution_config.exchange.request_timeout_seconds,
+        error_log_file=execution_config.error_log_file,
     )
     logger = LogRouter(
         system_log=execution_config.system_log_file,
@@ -91,7 +97,8 @@ def main() -> None:
         runtime_store.set_robot_status("stopped")
         logger.log_system(symbol="-", action="shutdown", reason="keyboard_interrupt")
         print("Bot stopped by user.")
+        return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -3,9 +3,10 @@ app:
 exchange:
   name: binance
   base_url: https://api.binance.com
-  api_key: ""
-  api_secret: ""
   recv_window: 5000
+  request_timeout_seconds: 10
+binance:
+  rules_cache_ttl_seconds: 3600
 market:
   default_symbol: VIRTUALUSDT
   default_symbols:

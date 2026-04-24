@@ -78,6 +78,47 @@
     </div>
   </div>
 
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+          <div>
+            <h2 class="h5 mb-1">Public Market Data</h2>
+            <p class="text-secondary mb-0">{{ public_market_data.base_url }}</p>
+          </div>
+          <div>
+            {% if public_market_data.error %}
+            <span class="badge text-bg-danger">API error</span>
+            {% else %}
+            <span class="badge text-bg-success">connected</span>
+            {% endif %}
+          </div>
+        </div>
+        <dl class="row mt-3 mb-0">
+          <dt class="col-sm-3">Ping</dt>
+          <dd class="col-sm-9">{{ "ok" if public_market_data.ping_ok else "failed" }}</dd>
+
+          <dt class="col-sm-3">Server Time</dt>
+          <dd class="col-sm-9">{{ public_market_data.server_time }}</dd>
+
+          <dt class="col-sm-3">Symbol</dt>
+          <dd class="col-sm-9">{{ public_market_data.symbol }}</dd>
+
+          <dt class="col-sm-3">Ticker Price</dt>
+          <dd class="col-sm-9">{{ public_market_data.ticker_price }}</dd>
+
+          <dt class="col-sm-3">Exchange Info</dt>
+          <dd class="col-sm-9">{{ "ok" if public_market_data.exchange_info_ok else "failed" }}</dd>
+
+          {% if public_market_data.error %}
+          <dt class="col-sm-3">Error</dt>
+          <dd class="col-sm-9 text-danger">{{ public_market_data.error }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+  </div>
+
   <div class="col-lg-7">
     <div class="card shadow-sm h-100">
       <div class="card-body">

@@ -20,6 +20,7 @@ from config.loader import (
     load_execution_runtime,
     load_project_config,
 )
+from exchange.binance_client import BinanceClient
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
 from runtime.state import RuntimeStore, build_runtime_state, get_live_gate_status
@@ -79,6 +80,56 @@ def _read_paper_state(state_file: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _public_market_data_status(settings: dict, execution_config) -> dict:
+    enabled_symbols = list(execution_config.enabled_symbols)
+    default_symbol = settings.get("market", {}).get("default_symbol")
+    symbol = enabled_symbols[0] if enabled_symbols else default_symbol
+    client = BinanceClient(
+        base_url=execution_config.exchange.base_url,
+        timeout=execution_config.exchange.request_timeout_seconds,
+        error_log_file=execution_config.error_log_file,
+    )
+    status = {
+        "base_url": execution_config.exchange.base_url,
+        "timeout_seconds": execution_config.exchange.request_timeout_seconds,
+        "symbol": symbol or "n/a",
+        "ping_ok": False,
+        "server_time": "n/a",
+        "ticker_price": "n/a",
+        "exchange_info_ok": False,
+        "error": None,
+    }
+    errors: list[str] = []
+
+    try:
+        status["ping_ok"] = bool(client.ping())
+    except Exception as exc:
+        errors.append(f"ping: {exc}")
+
+    try:
+        server_time = client.get_server_time()
+        status["server_time"] = server_time.get("serverTime", "n/a")
+    except Exception as exc:
+        errors.append(f"server_time: {exc}")
+
+    if symbol:
+        try:
+            ticker = client.get_ticker_price(symbol)
+            status["ticker_price"] = ticker.get("price", "n/a")
+        except Exception as exc:
+            errors.append(f"ticker_price: {exc}")
+
+        try:
+            client.get_symbol_info(symbol)
+            status["exchange_info_ok"] = True
+        except Exception as exc:
+            errors.append(f"exchangeInfo: {exc}")
+
+    if errors:
+        status["error"] = " | ".join(errors)
+    return status
+
+
 def _dashboard_context() -> dict:
     settings = load_project_config()
     execution_config = load_execution_runtime(settings)
@@ -97,6 +148,7 @@ def _dashboard_context() -> dict:
         "enabled_symbols": list(execution_config.enabled_symbols),
         "current_time": datetime.now(timezone.utc),
         "runtime_status": runtime_status,
+        "public_market_data": _public_market_data_status(settings, execution_config),
         "settings": settings,
     }
 
@@ -283,6 +335,11 @@ def _load_config_view() -> dict:
     settings_view = {
         "app_mode": settings.get("app", {}).get("mode"),
         "exchange_name": settings.get("exchange", {}).get("name"),
+        "exchange_base_url": settings.get("exchange", {}).get("base_url", "https://api.binance.com"),
+        "exchange_request_timeout_seconds": settings.get("exchange", {}).get(
+            "request_timeout_seconds",
+            10,
+        ),
         "default_symbol": settings.get("market", {}).get("default_symbol"),
         "default_symbols": settings.get("market", {}).get("default_symbols", []),
         "enabled_symbols": settings.get("execution", {}).get("enabled_symbols", []),

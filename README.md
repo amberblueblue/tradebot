@@ -123,3 +123,20 @@ API key 不应填写交易权限；如需填写测试或公共访问用途，也
 当前不需要 Binance API key，不支持实盘下单，也不会读取可交易 API key。
 
 K 线和指标仍然在内存中计算；SQLite 只保存交易、持仓、收益和图表展示数据。
+
+## Phase 4 Binance Public Market Data
+
+第四阶段只接入 Binance Spot 公共 API，用于本地 `paper` 模式的真实行情和交易规则校验。
+
+- 不需要 Binance API key
+- 不读取私钥
+- 不读取账户信息
+- 不支持实盘下单
+- 不实现 live broker
+- K 线数据来自 Binance 公共 API `/api/v3/klines`
+- ticker 当前价来自 Binance 公共 API `/api/v3/ticker/price`
+- 下单规则校验使用 Binance `exchangeInfo` 中的 `PRICE_FILTER`、`LOT_SIZE`、`MARKET_LOT_SIZE`、`MIN_NOTIONAL` 和 `NOTIONAL`
+- 交易规则只做进程内缓存，默认有效期 1 小时，可通过 `binance.rules_cache_ttl_seconds` 配置
+- SQLite 仍只保存交易、持仓、权益和收益数据，不保存 K 线，不保存交易规则
+
+Dashboard 会显示 Binance public API 状态，包括 `base_url`、ping、server time、主要 symbol、ticker price 和 exchangeInfo 获取状态。API 失败时会在页面显示错误原因，并写入 `logs/error.log`。

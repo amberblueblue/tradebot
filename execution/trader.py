@@ -186,6 +186,8 @@ class TraderEngine:
         df_4h = self._klines_to_dataframe(
             self.market_client.get_klines(symbol, trend_interval, limit=300)
         )
+        if df_1h.empty or df_4h.empty:
+            raise ValueError(f"Missing Binance kline data for {symbol}")
         df_1h = feature_engine.add_features(df_1h, config=self.feature_config)
         df_4h = feature_engine.add_features(df_4h, config=self.feature_config)
 
@@ -215,18 +217,25 @@ class TraderEngine:
         )
 
     def _klines_to_dataframe(self, klines: list[list[Any]]) -> pd.DataFrame:
+        if not isinstance(klines, list) or not klines:
+            raise ValueError("Binance returned no kline data")
+
         records = []
-        for item in klines:
-            records.append(
-                {
-                    "timestamp": pd.to_datetime(int(item[0]), unit="ms", utc=True),
-                    "open": float(item[1]),
-                    "high": float(item[2]),
-                    "low": float(item[3]),
-                    "close": float(item[4]),
-                    "volume": float(item[5]),
-                }
-            )
+        try:
+            for item in klines:
+                records.append(
+                    {
+                        "timestamp": pd.to_datetime(int(item[0]), unit="ms", utc=True),
+                        "open": float(item[1]),
+                        "high": float(item[2]),
+                        "low": float(item[3]),
+                        "close": float(item[4]),
+                        "volume": float(item[5]),
+                    }
+                )
+        except (IndexError, TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid Binance kline payload: {exc}") from exc
+
         return pd.DataFrame.from_records(records).sort_values("timestamp").reset_index(drop=True)
 
     def _build_position_state(self, runtime_symbol: dict[str, Any]) -> PositionState:
@@ -362,11 +371,18 @@ class TraderEngine:
                 "order_blocked",
                 symbol=symbol,
                 reason=validation.reason,
+                raw_quantity=validation.raw_quantity,
                 normalized_quantity=validation.normalized_quantity,
+                raw_price=validation.raw_price,
+                normalized_price=validation.normalized_price,
+                notional=validation.notional,
                 normalized_amount=validation.normalized_amount,
             )
             return
         qty = validation.normalized_quantity
+        if not self._refresh_paper_market_price(symbol):
+            self._log_event("order_blocked", symbol=symbol, reason="ticker_price_unavailable")
+            return
 
         self._record_entry_signal(
             symbol,
@@ -456,6 +472,10 @@ class TraderEngine:
         action: str = FULL_EXIT,
         positions_by_symbol: dict[str, Position] | None = None,
     ) -> None:
+        if not self._refresh_paper_market_price(symbol):
+            self._log_event("order_blocked", symbol=symbol, reason="ticker_price_unavailable")
+            return
+
         try:
             result = self.broker.place_market_sell(symbol, qty)
         except Exception as exc:
@@ -792,6 +812,25 @@ class TraderEngine:
     def _maybe_set_market_price(self, symbol: str, price: float) -> None:
         if hasattr(self.broker, "set_market_price"):
             self.broker.set_market_price(symbol, price)
+
+    def _refresh_paper_market_price(self, symbol: str) -> bool:
+        if self.execution_config.mode != "paper" or not hasattr(self.broker, "set_market_price"):
+            return True
+        try:
+            payload = self.market_client.get_ticker_price(symbol)
+            price = float(payload.get("price", 0.0))
+            if price <= 0:
+                raise ValueError(f"Invalid Binance ticker price for {symbol}: {payload}")
+            self.broker.set_market_price(symbol, price)
+            return True
+        except Exception as exc:
+            self.logger.log_error(
+                symbol=symbol,
+                action="ticker_price_unavailable",
+                reason="market_price_fetch_failed",
+                error=str(exc),
+            )
+            return False
 
     def _record_error(self, symbol: str, exc: Exception) -> None:
         consecutive_errors = self.runtime_store.increment_error(str(exc))
