@@ -27,7 +27,7 @@
             <label class="form-label" for="symbol">Symbol</label>
             <select class="form-select" id="symbol" name="symbol">
               {% for item in available_symbols %}
-              <option value="{{ item }}" {% if item == selected_symbol %}selected{% endif %}>{{ item }}</option>
+              <option value="{{ item }}"{% if item == selected_symbol %} selected{% endif %}>{{ item }}</option>
               {% endfor %}
             </select>
           </div>
@@ -145,7 +145,8 @@
   {% endif %}
 </div>
 
-{% if has_data or (selected_symbol and symbol_has_data) %}
+{% set should_load_charts = has_data or selected_symbol and symbol_has_data %}
+{% if should_load_charts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
   {% if has_data %}
@@ -198,7 +199,8 @@
   {% endif %}
 
   {% if selected_symbol and symbol_has_data %}
-  fetch("/api/symbol_pnl_curve?symbol={{ selected_symbol }}")
+  const selectedSymbol = {{ selected_symbol | tojson }};
+  fetch(`/api/symbol_pnl_curve?symbol=${encodeURIComponent(selectedSymbol)}`)
     .then((response) => response.json())
     .then((payload) => {
       const rows = payload.data || [];
