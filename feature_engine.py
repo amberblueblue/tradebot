@@ -1,14 +1,28 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any
+
 import pandas as pd
 
 
-ATR_PERIOD = 14
-MACD_FAST = 12
-MACD_SLOW = 26
-MACD_SIGNAL = 9
-RSI_PERIOD = 14
-SWING_ATR_MULTIPLIER = 1.5
+@dataclass(frozen=True)
+class FeatureConfig:
+    atr_period: int = 14
+    macd_fast: int = 12
+    macd_slow: int = 26
+    macd_signal: int = 9
+    rsi_period: int = 14
+    swing_atr_multiplier: float = 1.5
+
+    @classmethod
+    def from_dict(cls, values: dict[str, Any] | None = None) -> "FeatureConfig":
+        if not values:
+            return cls()
+
+        valid_fields = cls.__dataclass_fields__.keys()
+        filtered = {key: values[key] for key in valid_fields if key in values}
+        return cls(**filtered)
 
 
 def _pivot_high(series: pd.Series) -> pd.Series:
@@ -29,30 +43,40 @@ def _pivot_low(series: pd.Series) -> pd.Series:
     )
 
 
-def _atr_series(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+def _atr_series(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int,
+) -> pd.Series:
     prev_close = close.shift(1)
     true_range = pd.concat(
         [(high - low), (high - prev_close).abs(), (low - prev_close).abs()],
         axis=1,
     ).max(axis=1)
-    return true_range.rolling(window=ATR_PERIOD, min_periods=ATR_PERIOD).mean()
+    return true_range.rolling(window=period, min_periods=period).mean()
 
 
-def _macd(close: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series]:
-    ema_fast = close.ewm(span=MACD_FAST, adjust=False).mean()
-    ema_slow = close.ewm(span=MACD_SLOW, adjust=False).mean()
+def _macd(
+    close: pd.Series,
+    fast: int,
+    slow: int,
+    signal: int,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
     macd_line = ema_fast - ema_slow
-    macd_signal = macd_line.ewm(span=MACD_SIGNAL, adjust=False).mean()
-    macd_hist = macd_line - macd_signal
-    return macd_line, macd_signal, macd_hist
+    macd_signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    macd_hist = macd_line - macd_signal_line
+    return macd_line, macd_signal_line, macd_hist
 
 
-def _rsi(close: pd.Series) -> pd.Series:
+def _rsi(close: pd.Series, period: int) -> pd.Series:
     delta = close.diff()
     gains = delta.clip(lower=0)
     losses = -delta.clip(upper=0)
-    avg_gain = gains.ewm(alpha=1 / RSI_PERIOD, min_periods=RSI_PERIOD, adjust=False).mean()
-    avg_loss = losses.ewm(alpha=1 / RSI_PERIOD, min_periods=RSI_PERIOD, adjust=False).mean()
+    avg_gain = gains.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = losses.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0, pd.NA)
     rsi = 100 - (100 / (1 + rs))
     return rsi.fillna(100).where(avg_loss.ne(0), 100)
@@ -64,6 +88,7 @@ def _build_filtered_swings(
     atr: pd.Series,
     pivot_high_mask: pd.Series,
     pivot_low_mask: pd.Series,
+    swing_atr_multiplier: float,
 ) -> tuple[pd.Series, pd.Series]:
     swing_high = pd.Series(index=high.index, dtype="float64")
     swing_low = pd.Series(index=low.index, dtype="float64")
@@ -115,7 +140,7 @@ def _build_filtered_swings(
                 continue
 
             distance = abs(candidate_price - last_price)
-            if distance < current_atr * SWING_ATR_MULTIPLIER:
+            if distance < current_atr * swing_atr_multiplier:
                 continue
 
             if candidate_type == "high":
@@ -150,7 +175,11 @@ def _swing_structure_flags(
     return hh, hl
 
 
-def add_features(df: pd.DataFrame) -> pd.DataFrame:
+def add_features(
+    df: pd.DataFrame,
+    config: FeatureConfig | dict[str, Any] | None = None,
+) -> pd.DataFrame:
+    feature_config = config if isinstance(config, FeatureConfig) else FeatureConfig.from_dict(config)
     featured_df = df.copy()
     featured_df = featured_df.sort_values("timestamp").reset_index(drop=True)
     close = pd.to_numeric(featured_df["close"], errors="coerce")
@@ -159,12 +188,17 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
 
     featured_df["ema44"] = close.ewm(span=44, adjust=False).mean()
     featured_df["ema144"] = close.ewm(span=144, adjust=False).mean()
-    featured_df["atr"] = _atr_series(high, low, close)
-    macd_line, macd_signal, macd_hist = _macd(close)
+    featured_df["atr"] = _atr_series(high, low, close, feature_config.atr_period)
+    macd_line, macd_signal, macd_hist = _macd(
+        close,
+        feature_config.macd_fast,
+        feature_config.macd_slow,
+        feature_config.macd_signal,
+    )
     featured_df["macd_line"] = macd_line
     featured_df["macd_signal"] = macd_signal
     featured_df["macd_hist"] = macd_hist
-    featured_df["rsi"] = _rsi(close)
+    featured_df["rsi"] = _rsi(close, feature_config.rsi_period)
 
     pivot_high_mask = _pivot_high(high)
     pivot_low_mask = _pivot_low(low)
@@ -174,6 +208,7 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
         atr=featured_df["atr"],
         pivot_high_mask=pivot_high_mask,
         pivot_low_mask=pivot_low_mask,
+        swing_atr_multiplier=feature_config.swing_atr_multiplier,
     )
 
     featured_df["swing_high"] = swing_high

@@ -1,0 +1,13 @@
+symbols:
+  - 币安人生
+  - VIRTUAL
+
+symbol_files:
+  币安人生:
+    backtest:
+      1h: data/币安人生_1h.csv
+      4h: data/币安人生_4h.csv
+  VIRTUAL:
+    backtest:
+      1h: data/VIRTUAL_1h.csv
+      4h: data/VIRTUAL_4h.csv

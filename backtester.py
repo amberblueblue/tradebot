@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
 import feature_engine
 import strategy.strategy as strategy
+from config.loader import load_backtest_runtime, load_project_config
 from data_source import load_csv_data
 from observability import metrics as observability_metrics
 from observability.event_logger import EventLogger
@@ -24,18 +26,14 @@ from strategy.signals import (
 from strategy.state import IDLE
 
 
-DATA_FILE_1H = "data/币安人生_1h.csv"
-DATA_FILE_4H = "data/币安人生_4h.csv"
-INITIAL_CAPITAL = 10000.0
 INITIAL_STATE = IDLE
-REPORT_FILE = "reports/backtest_dashboard.html"
-LOG_FILE = "reports/backtest_events.json"
-SYMBOL = Path(DATA_FILE_1H).stem.rsplit("_", 1)[0]
 
-
-def load_data(file_path: str) -> pd.DataFrame:
+def load_data(
+    file_path: str,
+    feature_config: feature_engine.FeatureConfig | dict[str, Any] | None = None,
+) -> pd.DataFrame:
     df = load_csv_data(file_path)
-    return feature_engine.add_features(df)
+    return feature_engine.add_features(df, config=feature_config)
 
 
 def build_market_context(
@@ -97,9 +95,15 @@ def run_backtest(
     df_1h: pd.DataFrame,
     df_4h: pd.DataFrame,
     config: StrategyConfig | None = None,
+    *,
+    symbol: str = "",
+    initial_capital: float = 10000.0,
+    report_file: str = "reports/backtest_dashboard.html",
+    log_file: str = "logs/backtest_events.json",
 ) -> tuple[float, int, float]:
-    config = config or StrategyConfig()
-    cash = INITIAL_CAPITAL
+    config = config or StrategyConfig.from_settings()
+    resolved_symbol = symbol or "UNKNOWN"
+    cash = initial_capital
     position_size = 0.0
     entry_value = 0.0
     entry_bar_index = None
@@ -125,7 +129,7 @@ def run_backtest(
         event_base = {
             "timestamp": latest_bar["timestamp"],
             "bar_index": i,
-            "symbol": SYMBOL,
+            "symbol": resolved_symbol,
             "side": "LONG",
             "price": float(latest_bar["close"]),
         }
@@ -303,7 +307,7 @@ def run_backtest(
             timestamp=latest_bar["timestamp"],
             bar_index=len(df_1h) - 1,
             event_type="exit",
-            symbol=SYMBOL,
+            symbol=resolved_symbol,
             side="LONG",
             price=final_close,
             ema44_at_signal=_float_or_none(latest_bar.get("ema44")),
@@ -331,19 +335,19 @@ def run_backtest(
         )
 
     win_rate = (winning_trades / completed_trades * 100.0) if completed_trades else 0.0
-    log_path = logger.save_logs(LOG_FILE)
+    log_path = logger.save_logs(log_file)
     summary = observability_metrics.calculate_metrics(
-        logger.get_events(), initial_capital=INITIAL_CAPITAL
+        logger.get_events(), initial_capital=initial_capital
     )
     observability_metrics.print_metrics(summary)
     report_path = generate_report(
         df_1h,
         logger.get_events(),
         summary=summary,
-        output_path=REPORT_FILE,
-        initial_capital=INITIAL_CAPITAL,
+        output_path=report_file,
+        initial_capital=initial_capital,
     )
-    print(f"is_trend_potential count: {symbol_valid_count}")
+    print(f"trend_potential count: {symbol_valid_count}")
     print(f"trend_confirm valid count: {trend_confirm_valid_count}")
     print(f"trend_confirm warning count: {trend_confirm_warning_count}")
     print(f"trend_confirm invalid count: {trend_confirm_invalid_count}")
@@ -353,9 +357,25 @@ def run_backtest(
 
 
 def main():
-    df_1h = load_data(DATA_FILE_1H)
-    df_4h = load_data(DATA_FILE_4H)
-    final_capital, trade_count, win_rate = run_backtest(df_1h, df_4h)
+    settings = load_project_config()
+    runtime_config = load_backtest_runtime(settings)
+    strategy_config = StrategyConfig.from_settings(settings)
+    feature_config = feature_engine.FeatureConfig.from_dict(settings.get("feature_engine", {}))
+
+    Path(runtime_config.log_file).parent.mkdir(parents=True, exist_ok=True)
+    Path(runtime_config.report_file).parent.mkdir(parents=True, exist_ok=True)
+
+    df_1h = load_data(runtime_config.data_file_1h, feature_config=feature_config)
+    df_4h = load_data(runtime_config.data_file_4h, feature_config=feature_config)
+    final_capital, trade_count, win_rate = run_backtest(
+        df_1h,
+        df_4h,
+        config=strategy_config,
+        symbol=runtime_config.symbol,
+        initial_capital=runtime_config.initial_capital,
+        report_file=runtime_config.report_file,
+        log_file=runtime_config.log_file,
+    )
 
     print(f"Final capital: {final_capital:.2f} USDT")
     print(f"Trade count: {trade_count}")

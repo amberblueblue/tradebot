@@ -1,0 +1,59 @@
+app:
+  mode: backtest
+
+exchange:
+  name: binance
+  base_url: https://api.binance.com
+  api_key: ""
+  api_secret: ""
+  recv_window: 5000
+
+market:
+  default_symbol: 币安人生
+  default_symbols:
+    - 币安人生
+  timeframe:
+    entry: 1h
+    trend: 4h
+  polling_interval_seconds: 60
+
+backtest:
+  initial_capital: 10000.0
+  report_file: reports/backtest_dashboard.html
+  log_file: logs/backtest_events.json
+
+paper:
+  initial_cash: 10000.0
+  state_file: runtime/paper_state.json
+  trade_log_file: logs/paper_trades.jsonl
+
+live:
+  enabled: false
+
+feature_engine:
+  atr_period: 14
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  rsi_period: 14
+  swing_atr_multiplier: 1.5
+
+strategy:
+  ema_slope_lookback: 5
+  macd_decay_bars: 3
+  rsi_overheat: 80.0
+  entry_cooldown_bars: 8
+  max_hold_bars: 72
+  min_expected_return: 5.0
+
+risk:
+  stop_loss_pct: 20.0
+  partial1_sell_pct: 30.0
+  partial2_sell_pct: 50.0
+  big_candle_multiplier: 1.5
+  big_candle_body_lookback: 20
+  profit_giveback_ratio: 0.5
+  profit_protection_trigger_pct: 15.0
+
+logging:
+  level: INFO
