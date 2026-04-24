@@ -25,6 +25,8 @@ http://127.0.0.1:8000
 - 支持日志查看，并可按币种筛选 `system` / `trade` / `error` 日志
 - 支持配置查看
 - 支持币种管理页面 `/symbols`
+- 支持实时持仓页面 `/positions`
+- 支持收益看板 `/performance`
 - 支持添加、删除、启用、禁用币种
 - 支持编辑单币种参数：
   - `enabled`
@@ -37,6 +39,9 @@ http://127.0.0.1:8000
 - 每个币种可使用独立的信号周期、趋势周期、下单金额和最大亏损金额
 - 当 `enabled=false` 或 `paused_by_loss=true` 时，该币种不会交易
 - 当某个币种累计已实现亏损达到 `max_loss_amount` 时，会自动将该币种设置为 `paused_by_loss=true`，只暂停该币种，不停止整个机器人
+- 使用本地 SQLite 保存 paper 交易结果、持仓快照、权益快照和单币收益快照
+- `/positions` 优先读取当前 runtime / paper 状态，缺失时读取 SQLite 最近持仓快照
+- `/performance` 支持总权益曲线和单币收益曲线
 - 只支持 `paper` 模式
 - 不支持实盘交易
 
@@ -64,3 +69,22 @@ symbols:
 - `1d`
 
 当前项目仍然只支持本地 `paper` 模式。`live` 实盘交易没有启用，控制台操作不会直接下实盘订单。
+
+## Phase 2C SQLite Portfolio Data
+
+本地 SQLite 数据库位于：
+
+```text
+data/tradebot.sqlite3
+```
+
+SQLite 只用于保存交易结果和图表展示所需的数据：
+
+- `trades`
+- `position_snapshots`
+- `equity_snapshots`
+- `symbol_pnl_snapshots`
+
+K 线数据和指标数据不会写入 SQLite，仍然在运行时内存中计算。
+
+当前仍然只支持 `paper` 模式。数据库写入失败时会记录到 error log，不会直接让机器人崩溃；实盘交易仍未启用。

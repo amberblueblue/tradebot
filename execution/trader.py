@@ -21,6 +21,7 @@ from strategy.context import MarketContext
 from strategy.position import PositionState
 from strategy.risk import FULL_EXIT, PARTIAL_EXIT_30, PARTIAL_EXIT_50
 from strategy.state import IDLE, IN_POSITION
+from storage.repository import StorageRepository
 
 
 BUY_ACTION = "BUY"
@@ -60,6 +61,7 @@ class TraderEngine:
             error_log=execution_config.error_log_file,
             mode=execution_config.mode,
         )
+        self.storage: StorageRepository | None = self._build_storage()
 
     def run_once(self) -> None:
         self._refresh_symbol_configs()
@@ -77,6 +79,7 @@ class TraderEngine:
             except Exception as exc:
                 had_error = True
                 self._record_error(symbol, exc)
+        self._record_snapshots(positions_by_symbol)
         if not had_error:
             self.runtime_store.reset_consecutive_errors()
 
@@ -477,6 +480,72 @@ class TraderEngine:
             return 0.0
         return quote_amount / current_price
 
+    def _build_storage(self) -> StorageRepository | None:
+        try:
+            return StorageRepository()
+        except Exception as exc:
+            self._log_storage_error("SYSTEM", "storage_init_failed", exc)
+            return None
+
+    def _record_snapshots(self, positions_by_symbol: dict[str, Position]) -> None:
+        if self.execution_config.mode != "paper" or self.storage is None:
+            return
+
+        try:
+            cash = float(self.broker.get_cash_balance())
+            position_value = 0.0
+            realized_pnl_total = 0.0
+            unrealized_pnl_total = 0.0
+            snapshot_symbols = set(self.symbol_configs) | set(positions_by_symbol)
+
+            for symbol in sorted(snapshot_symbols):
+                position = positions_by_symbol.get(symbol)
+                realized_pnl = self._get_symbol_realized_pnl(symbol)
+                realized_pnl_total += realized_pnl
+                unrealized_pnl = 0.0
+
+                if position is not None and position.qty > 0:
+                    current_price = self._get_snapshot_price(symbol, position.avg_price)
+                    market_value = position.qty * current_price
+                    unrealized_pnl = (current_price - position.avg_price) * position.qty
+                    position_value += market_value
+                    unrealized_pnl_total += unrealized_pnl
+                    self.storage.record_position_snapshot(
+                        symbol=symbol,
+                        quantity=position.qty,
+                        avg_price=position.avg_price,
+                        current_price=current_price,
+                        market_value=market_value,
+                        unrealized_pnl=unrealized_pnl,
+                        mode=self.execution_config.mode,
+                    )
+
+                self.storage.record_symbol_pnl_snapshot(
+                    symbol=symbol,
+                    realized_pnl=realized_pnl,
+                    unrealized_pnl=unrealized_pnl,
+                    total_pnl=realized_pnl + unrealized_pnl,
+                    mode=self.execution_config.mode,
+                )
+
+            self.storage.record_equity_snapshot(
+                total_equity=cash + position_value,
+                cash=cash,
+                position_value=position_value,
+                realized_pnl=realized_pnl_total,
+                unrealized_pnl=unrealized_pnl_total,
+                mode=self.execution_config.mode,
+            )
+        except Exception as exc:
+            self._log_storage_error("SYSTEM", "record_snapshots_failed", exc)
+
+    def _get_snapshot_price(self, symbol: str, fallback_price: float) -> float:
+        if hasattr(self.broker, "get_market_price"):
+            current_price = self.broker.get_market_price(symbol)
+            if current_price is not None and current_price > 0:
+                return float(current_price)
+        return float(fallback_price)
+
     def _refresh_symbol_configs(self) -> None:
         try:
             symbols_config = load_symbols_config()
@@ -604,6 +673,14 @@ class TraderEngine:
                 status=ERROR_STOPPED,
                 reason="max_consecutive_errors_reached",
             )
+
+    def _log_storage_error(self, symbol: str, action: str, exc: Exception) -> None:
+        self.logger.log_error(
+            symbol=symbol,
+            action=action,
+            reason="sqlite_write_failed",
+            error=str(exc),
+        )
 
     def _log_event(self, event_type: str, **payload: Any) -> None:
         symbol = payload.get("symbol", "-")

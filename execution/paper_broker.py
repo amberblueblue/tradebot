@@ -9,6 +9,8 @@ from typing import Any
 from uuid import uuid4
 
 from execution.broker import Broker, OrderResult, Position
+from observability.event_logger import StructuredLogger
+from storage.repository import StorageRepository
 
 
 @dataclass
@@ -33,12 +35,26 @@ class PaperBroker(Broker):
         initial_cash: float = 10000.0,
         state_file: str = "runtime/paper_state.json",
         trade_log_file: str = "logs/paper_trades.jsonl",
+        error_log_file: str = "logs/error.log",
+        storage_db_file: str | None = None,
+        mode: str = "paper",
         price_feed: dict[str, float] | None = None,
     ) -> None:
         self.state_path = Path(state_file)
         self.trade_log_path = Path(trade_log_file)
+        self.error_logger = StructuredLogger(error_log_file)
+        self.storage_db_file = storage_db_file
+        self.mode = mode
         self.price_feed = dict(price_feed or {})
         self.state = self._load_state(initial_cash)
+        self.storage: StorageRepository | None = self._build_storage()
+
+    def _build_storage(self) -> StorageRepository | None:
+        try:
+            return StorageRepository(self.storage_db_file) if self.storage_db_file else StorageRepository()
+        except Exception as exc:
+            self._log_storage_error("SYSTEM", "storage_init_failed", exc)
+            return None
 
     def _load_state(self, initial_cash: float) -> PaperBrokerState:
         if not self.state_path.exists():
@@ -84,10 +100,46 @@ class PaperBroker(Broker):
         with self.trade_log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, ensure_ascii=False) + "\n")
 
+    def _log_storage_error(self, symbol: str, action: str, exc: Exception) -> None:
+        self.error_logger.log(
+            symbol=symbol,
+            action=action,
+            reason="sqlite_write_failed",
+            mode=self.mode,
+            error=str(exc),
+        )
+
+    def _record_trade_to_storage(self, order: dict[str, Any]) -> None:
+        if self.storage is None:
+            return
+        try:
+            metadata = order.get("metadata", {})
+            realized_pnl = 0.0
+            if isinstance(metadata, dict):
+                realized_pnl = float(metadata.get("realized_pnl", 0.0))
+            self.storage.record_trade(
+                timestamp=str(order["timestamp"]),
+                symbol=str(order["symbol"]),
+                side=str(order["side"]),
+                quantity=float(order["filled_qty"]),
+                price=float(order["average_price"]),
+                amount=float(order["filled_qty"]) * float(order["average_price"]),
+                fee=0.0,
+                realized_pnl=realized_pnl,
+                mode=self.mode,
+            )
+        except Exception as exc:
+            self._log_storage_error(str(order.get("symbol", "SYSTEM")), "record_trade_failed", exc)
+
     def set_market_price(self, symbol: str, price: float) -> None:
         if price <= 0:
             raise ValueError("price must be positive")
         self.price_feed[symbol] = float(price)
+
+    def get_market_price(self, symbol: str) -> float | None:
+        if symbol not in self.price_feed:
+            return None
+        return float(self.price_feed[symbol])
 
     def _resolve_price(self, symbol: str) -> float:
         if symbol not in self.price_feed:
@@ -193,6 +245,7 @@ class PaperBroker(Broker):
         self.state.orders.append(order)
         self._save_state()
         self._append_trade_log({**order, "cash_balance": self.state.cash_balance})
+        self._record_trade_to_storage(order)
         return self._to_order_result(order)
 
     def place_market_sell(self, symbol: str, qty: float) -> OrderResult:
@@ -232,6 +285,7 @@ class PaperBroker(Broker):
         self.state.orders.append(order)
         self._save_state()
         self._append_trade_log({**order, "cash_balance": self.state.cash_balance})
+        self._record_trade_to_storage(order)
         return self._to_order_result(order)
 
     def cancel_all_orders(self, symbol: str | None = None) -> list[str]:

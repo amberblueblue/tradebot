@@ -44,6 +44,8 @@ def create_broker(config: ExecutionRuntimeConfig) -> Broker:
             initial_cash=config.paper_initial_cash,
             state_file=config.paper_state_file,
             trade_log_file=config.paper_trade_log_file,
+            error_log_file=config.error_log_file,
+            mode=config.mode,
         )
     if state.mode == "live":
         if not state.is_live_enabled:

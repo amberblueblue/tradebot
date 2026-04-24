@@ -9,10 +9,12 @@ from execution.trader import TraderEngine
 from observability.event_logger import LogRouter
 from runtime.sync import startup_sync
 from runtime.state import RuntimeStore, build_runtime_state, create_broker
+from storage.db import initialize_database
 from strategy.config import StrategyConfig
 
 
 def main() -> None:
+    initialize_database()
     settings = load_project_config()
     execution_config = load_execution_runtime(settings)
     runtime_state = build_runtime_state(execution_config)

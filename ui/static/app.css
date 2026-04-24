@@ -23,3 +23,7 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+.performance-chart-wrap {
+  height: 360px;
+}

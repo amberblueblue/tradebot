@@ -1,14 +1,9 @@
 symbols:
-  VIRTUALUSDT:
-    enabled: true
-    trend_timeframe: "4h"
-    signal_timeframe: "15m"
-    order_amount: 100
-    max_loss_amount: 20
+  ORDIUSDT:
+    enabled: false
+    trend_timeframe: 1d
+    signal_timeframe: 4h
+    order_amount: 100.0
+    max_loss_amount: 20.0
     paused_by_loss: false
-
 symbol_files:
-  VIRTUALUSDT:
-    backtest:
-      1h: data/VIRTUAL_1h.csv
-      4h: data/VIRTUAL_4h.csv

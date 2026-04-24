@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, quote
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -23,6 +23,8 @@ from config.loader import (
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import PAUSED, RUNNING, STOPPED
 from runtime.state import RuntimeStore, build_runtime_state
+from storage.db import initialize_database
+from storage.repository import StorageRepository
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -42,6 +44,11 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
+@app.on_event("startup")
+def startup_database() -> None:
+    initialize_database()
+
+
 def _read_runtime_status(status_file: str) -> dict:
     path = Path(status_file)
     if not path.exists():
@@ -59,6 +66,13 @@ def _read_runtime_status(status_file: str) -> dict:
                 "synced_at": None,
             },
         }
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_paper_state(state_file: str) -> dict:
+    path = Path(state_file)
+    if not path.exists():
+        return {"cash_balance": 0.0, "positions": {}}
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -322,6 +336,132 @@ def _load_symbol_edit_context(
     }
 
 
+def _to_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _load_positions_view() -> dict:
+    try:
+        settings = load_project_config()
+        execution_config = load_execution_runtime(settings)
+        runtime_status = _read_runtime_status(execution_config.status_file)
+        paper_state = _read_paper_state(execution_config.paper_state_file)
+        sqlite_positions = StorageRepository().get_latest_position_snapshots(mode=execution_config.mode)
+    except Exception as exc:
+        return {
+            "config_error": str(exc),
+            "positions": [],
+        }
+
+    symbols_config = settings.get("symbols_config", {}).get("symbols", {})
+    if not isinstance(symbols_config, dict):
+        symbols_config = {}
+
+    paper_positions = paper_state.get("positions", {})
+    if not isinstance(paper_positions, dict):
+        paper_positions = {}
+
+    runtime_positions = runtime_status.get("last_sync", {}).get("positions", [])
+    runtime_position_symbols = {
+        str(position.get("symbol"))
+        for position in runtime_positions
+        if isinstance(position, dict) and position.get("symbol")
+    }
+    symbols = sorted(set(symbols_config) | set(paper_positions) | runtime_position_symbols | set(sqlite_positions))
+
+    rows = []
+    for symbol in symbols:
+        symbol_config = symbols_config.get(symbol, {})
+        paper_position = paper_positions.get(symbol, {})
+        sqlite_position = sqlite_positions.get(symbol, {})
+
+        quantity = _to_float(paper_position.get("qty"), _to_float(sqlite_position.get("quantity")))
+        avg_price = _to_float(paper_position.get("avg_price"), _to_float(sqlite_position.get("avg_price")))
+        current_price = _to_float(sqlite_position.get("current_price"), avg_price)
+        market_value = quantity * current_price if quantity > 0 else _to_float(sqlite_position.get("market_value"))
+        unrealized_pnl = (
+            (current_price - avg_price) * quantity
+            if quantity > 0
+            else _to_float(sqlite_position.get("unrealized_pnl"))
+        )
+
+        rows.append(
+            {
+                "symbol": symbol,
+                "enabled": bool(symbol_config.get("enabled", False)),
+                "paused_by_loss": bool(symbol_config.get("paused_by_loss", False)),
+                "quantity": quantity,
+                "avg_price": avg_price,
+                "current_price": current_price,
+                "market_value": market_value,
+                "unrealized_pnl": unrealized_pnl,
+                "order_amount": symbol_config.get("order_amount", "n/a"),
+                "max_loss_amount": symbol_config.get("max_loss_amount", "n/a"),
+            }
+        )
+
+    return {
+        "config_error": None,
+        "positions": rows,
+    }
+
+
+def _load_performance_view(symbol: str = "") -> dict:
+    try:
+        settings = load_project_config()
+        execution_config = load_execution_runtime(settings)
+        repository = StorageRepository()
+        latest = repository.get_latest_equity_snapshot(mode=execution_config.mode)
+        curve = repository.get_equity_curve(mode=execution_config.mode, limit=500)
+        available_symbols = _configured_symbol_names()
+    except Exception as exc:
+        return {
+            "config_error": str(exc),
+            "latest": None,
+            "cumulative_return": 0.0,
+            "has_data": False,
+            "available_symbols": (),
+            "selected_symbol": "",
+            "symbol_has_data": False,
+        }
+
+    selected_symbol = symbol.strip().upper()
+    if selected_symbol not in available_symbols:
+        selected_symbol = available_symbols[0] if available_symbols else ""
+    symbol_curve = (
+        repository.get_symbol_pnl_curve(symbol=selected_symbol, mode=execution_config.mode, limit=500)
+        if selected_symbol
+        else []
+    )
+
+    if latest is None:
+        return {
+            "config_error": None,
+            "latest": None,
+            "cumulative_return": 0.0,
+            "has_data": False,
+            "available_symbols": available_symbols,
+            "selected_symbol": selected_symbol,
+            "symbol_has_data": bool(symbol_curve),
+        }
+
+    first_equity = _to_float(curve[0].get("total_equity")) if curve else _to_float(latest.get("total_equity"))
+    current_equity = _to_float(latest.get("total_equity"))
+    cumulative_return = current_equity - first_equity
+    return {
+        "config_error": None,
+        "latest": latest,
+        "cumulative_return": cumulative_return,
+        "has_data": True,
+        "available_symbols": available_symbols,
+        "selected_symbol": selected_symbol,
+        "symbol_has_data": bool(symbol_curve),
+    }
+
+
 def _runtime_store():
     settings = load_project_config()
     execution_config = load_execution_runtime(settings)
@@ -372,6 +512,78 @@ def logs_page(request: Request, log_type: str = "system", symbol: str = "all"):
             "empty_message": "暂无日志" if symbol_filter is None else "该币种暂无日志",
         },
     )
+
+
+@app.get("/api/equity_curve")
+def equity_curve_api():
+    settings = load_project_config()
+    execution_config = load_execution_runtime(settings)
+    rows = StorageRepository().get_equity_curve(mode=execution_config.mode, limit=500)
+    return JSONResponse(
+        {
+            "data": [
+                {
+                    "timestamp": row.get("timestamp"),
+                    "total_equity": _to_float(row.get("total_equity")),
+                    "realized_pnl": _to_float(row.get("realized_pnl")),
+                    "unrealized_pnl": _to_float(row.get("unrealized_pnl")),
+                }
+                for row in rows
+            ]
+        }
+    )
+
+
+@app.get("/api/symbol_pnl_curve")
+def symbol_pnl_curve_api(symbol: str):
+    settings = load_project_config()
+    execution_config = load_execution_runtime(settings)
+    selected_symbol = symbol.strip().upper()
+    if selected_symbol not in _configured_symbol_names():
+        return JSONResponse({"data": []})
+    rows = StorageRepository().get_symbol_pnl_curve(
+        symbol=selected_symbol,
+        mode=execution_config.mode,
+        limit=500,
+    )
+    return JSONResponse(
+        {
+            "data": [
+                {
+                    "timestamp": row.get("timestamp"),
+                    "symbol": row.get("symbol"),
+                    "realized_pnl": _to_float(row.get("realized_pnl")),
+                    "unrealized_pnl": _to_float(row.get("unrealized_pnl")),
+                    "total_pnl": _to_float(row.get("total_pnl")),
+                }
+                for row in rows
+            ]
+        }
+    )
+
+
+@app.get("/performance", response_class=HTMLResponse)
+def performance_page(request: Request, symbol: str = ""):
+    context = _load_performance_view(symbol=symbol)
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+        }
+    )
+    return templates.TemplateResponse(request, "performance.html", context)
+
+
+@app.get("/positions", response_class=HTMLResponse)
+def positions_page(request: Request):
+    context = _load_positions_view()
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+        }
+    )
+    return templates.TemplateResponse(request, "positions.html", context)
 
 
 @app.get("/config", response_class=HTMLResponse)
