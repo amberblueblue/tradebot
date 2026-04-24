@@ -73,6 +73,7 @@ class ExecutionRuntimeConfig:
     system_log_file: str
     trade_log_file: str
     error_log_file: str
+    allow_live_trading: bool
     live_enabled: bool
 
 
@@ -425,6 +426,7 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
     market = settings.get("market", {})
     paper = settings.get("paper", {})
     execution = settings.get("execution", {})
+    safety = settings.get("safety", {})
     live = settings.get("live", {})
     logging = settings.get("logging", {})
     symbols_config = settings.get("symbols_config", {})
@@ -466,12 +468,15 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
         max_positions=int(execution.get("max_positions", 3)),
         stop_loss_pct=float(execution.get("stop_loss_pct", 3.0)),
         take_profit_pct=float(execution.get("take_profit_pct", 6.0)),
-        max_consecutive_errors=int(execution.get("max_consecutive_errors", 3)),
+        max_consecutive_errors=int(
+            safety.get("max_consecutive_errors", execution.get("max_consecutive_errors", 3))
+        ),
         runtime_state_file=str(execution.get("runtime_state_file", "runtime/robot_state.json")),
         robot_initial_status=str(execution.get("robot_initial_status", "running")),
         status_file=str(execution.get("status_file", "runtime/status.json")),
         system_log_file=str(logging.get("system_log_file", "logs/system.log")),
         trade_log_file=str(logging.get("trade_log_file", "logs/trade.log")),
         error_log_file=str(logging.get("error_log_file", "logs/error.log")),
+        allow_live_trading=bool(safety.get("allow_live_trading", False)),
         live_enabled=bool(live.get("enabled", False)),
     )

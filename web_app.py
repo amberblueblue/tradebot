@@ -21,8 +21,8 @@ from config.loader import (
     load_project_config,
 )
 from observability.event_logger import LogRouter, StructuredLogger
-from runtime.bot_state import PAUSED, RUNNING, STOPPED
-from runtime.state import RuntimeStore, build_runtime_state
+from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
+from runtime.state import RuntimeStore, build_runtime_state, get_live_gate_status
 from storage.db import initialize_database
 from storage.repository import StorageRepository
 
@@ -55,6 +55,8 @@ def _read_runtime_status(status_file: str) -> dict:
         return {
             "robot_status": "unknown",
             "conservative_mode": False,
+            "consecutive_errors": 0,
+            "last_error": None,
             "startup_synced": False,
             "symbols": {},
             "last_sync": {
@@ -80,10 +82,14 @@ def _dashboard_context() -> dict:
     settings = load_project_config()
     execution_config = load_execution_runtime(settings)
     runtime_status = _read_runtime_status(execution_config.status_file)
+    live_gate = get_live_gate_status(execution_config)
     return {
         "project_name": "TraderBot Local Console",
         "mode": execution_config.mode,
+        "live_gate": live_gate,
+        "is_live_mode": execution_config.mode == "live",
         "bot_status": runtime_status.get("robot_status", "unknown"),
+        "is_error_status": runtime_status.get("robot_status") == ERROR,
         "enabled_symbols": list(execution_config.enabled_symbols),
         "current_time": datetime.now(timezone.utc),
         "runtime_status": runtime_status,

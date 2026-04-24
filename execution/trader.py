@@ -11,16 +11,20 @@ import strategy.strategy as strategy
 from config.loader import (
     ExecutionRuntimeConfig,
     SymbolTradingConfig,
+    load_execution_runtime,
+    load_project_config,
     load_symbols_config,
     save_symbols_config,
 )
 from execution.broker import Broker, Position
+from execution.order_validator import validate_entry_order
 from observability.event_logger import LogRouter
 from strategy.config import StrategyConfig
 from strategy.context import MarketContext
 from strategy.position import PositionState
 from strategy.risk import FULL_EXIT, PARTIAL_EXIT_30, PARTIAL_EXIT_50
 from strategy.state import IDLE, IN_POSITION
+from runtime.signal_guard import ATTEMPTED, ENTRY_SIGNAL, EXECUTED, FAILED, build_signal_record, is_same_signal
 from storage.repository import StorageRepository
 
 
@@ -64,7 +68,9 @@ class TraderEngine:
         self.storage: StorageRepository | None = self._build_storage()
 
     def run_once(self) -> None:
-        self._refresh_symbol_configs()
+        if not self._reload_runtime_config():
+            return
+
         positions = self._safe_get_positions()
         if positions is None:
             return
@@ -73,14 +79,14 @@ class TraderEngine:
         positions_by_symbol = {position.symbol: position for position in positions}
         self._sync_positions_with_runtime(positions_by_symbol)
 
-        for symbol in self._tradable_symbols():
+        for symbol in self._active_symbols(positions_by_symbol):
             try:
                 self._process_symbol(symbol, positions_by_symbol)
             except Exception as exc:
                 had_error = True
                 self._record_error(symbol, exc)
-        self._record_snapshots(positions_by_symbol)
-        if not had_error:
+        snapshots_ok = self._record_snapshots(positions_by_symbol)
+        if not had_error and snapshots_ok:
             self.runtime_store.reset_consecutive_errors()
 
     def _safe_get_positions(self) -> list[Position] | None:
@@ -92,15 +98,16 @@ class TraderEngine:
 
     def _process_symbol(self, symbol: str, positions_by_symbol: dict[str, Position]) -> None:
         symbol_config = self._get_symbol_config(symbol)
-        if not self._is_symbol_tradable(symbol_config):
-            self._log_event("symbol_skipped", symbol=symbol, reason="symbol_trading_disabled")
-            return
-        if self._enforce_max_loss_pause(symbol, symbol_config):
-            return
+        current_position = positions_by_symbol.get(symbol)
+        if current_position is None:
+            if self._enforce_max_loss_pause(symbol, symbol_config):
+                return
+            if not self._is_symbol_tradable(symbol_config):
+                self._log_event("symbol_skipped", symbol=symbol, reason="symbol_trading_disabled")
+                return
 
         execution_context = self._build_execution_context(symbol)
         runtime_symbol = self.runtime_store.get_symbol_state(symbol)
-        current_position = positions_by_symbol.get(symbol)
 
         self._maybe_set_market_price(symbol, execution_context.current_price)
         self._sync_symbol_state(symbol, runtime_symbol, current_position, execution_context)
@@ -111,7 +118,15 @@ class TraderEngine:
             )
             return
 
+        if self._enforce_max_loss_pause(symbol, symbol_config):
+            return
+        if not self._is_symbol_tradable(symbol_config):
+            self._log_event("symbol_skipped", symbol=symbol, reason="symbol_trading_disabled")
+            return
+
         runtime_symbol = self.runtime_store.get_symbol_state(symbol)
+        if self._is_duplicate_entry_signal(symbol, execution_context.current_bar_timestamp):
+            return
         if self._is_duplicate_bar(symbol, execution_context.current_bar_timestamp):
             self._log_event(
                 "skip_duplicate_bar",
@@ -312,12 +327,6 @@ class TraderEngine:
         positions_by_symbol: dict[str, Position],
     ) -> None:
         symbol_config = self._get_symbol_config(symbol)
-        if not self._is_symbol_tradable(symbol_config):
-            self._log_event("order_blocked", symbol=symbol, reason="symbol_disabled")
-            return
-        if self.runtime_store.get_robot_status() != RUNNING:
-            self._log_event("order_blocked", symbol=symbol, reason="robot_not_running")
-            return
         if self.runtime_store.is_conservative_mode():
             self._log_event("order_blocked", symbol=symbol, reason="conservative_mode_enabled")
             return
@@ -327,11 +336,10 @@ class TraderEngine:
         if symbol in positions_by_symbol:
             self._log_event("order_blocked", symbol=symbol, reason="position_already_exists")
             return
-        if len(positions_by_symbol) >= self.execution_config.max_positions:
-            self._log_event("order_blocked", symbol=symbol, reason="max_positions_reached")
-            return
         if self._is_duplicate_action(symbol, execution_context.current_bar_timestamp):
             self._log_event("order_blocked", symbol=symbol, reason="duplicate_action_bar")
+            return
+        if self._is_duplicate_entry_signal(symbol, execution_context.current_bar_timestamp):
             return
 
         try:
@@ -339,13 +347,41 @@ class TraderEngine:
         except Exception as exc:
             self._record_error(symbol, exc)
             return
-        if qty <= 0:
-            self._log_event("order_blocked", symbol=symbol, reason="qty_not_positive")
-            return
 
+        validation = validate_entry_order(
+            symbol_config=symbol_config,
+            quantity=qty,
+            price=execution_context.current_price,
+            realized_pnl=self._get_symbol_realized_pnl(symbol),
+            current_position_count=len(positions_by_symbol),
+            max_positions=self.execution_config.max_positions,
+            bot_status=self.runtime_store.get_robot_status(),
+        )
+        if not validation.ok:
+            self._log_event(
+                "order_blocked",
+                symbol=symbol,
+                reason=validation.reason,
+                normalized_quantity=validation.normalized_quantity,
+                normalized_amount=validation.normalized_amount,
+            )
+            return
+        qty = validation.normalized_quantity
+
+        self._record_entry_signal(
+            symbol,
+            execution_context.current_bar_timestamp,
+            status=ATTEMPTED,
+        )
         try:
             result = self.broker.place_market_buy(symbol, qty)
         except Exception as exc:
+            self._record_entry_signal(
+                symbol,
+                execution_context.current_bar_timestamp,
+                status=FAILED,
+                error=str(exc),
+            )
             self._record_error(symbol, exc)
             return
 
@@ -359,6 +395,11 @@ class TraderEngine:
             max_unrealized_return=0.0,
             last_action_bar_timestamp=execution_context.current_bar_timestamp,
             cooldown_remaining=0,
+        )
+        self._record_entry_signal(
+            symbol,
+            execution_context.current_bar_timestamp,
+            status=EXECUTED,
         )
         positions_by_symbol[symbol] = Position(
             symbol=symbol,
@@ -487,9 +528,9 @@ class TraderEngine:
             self._log_storage_error("SYSTEM", "storage_init_failed", exc)
             return None
 
-    def _record_snapshots(self, positions_by_symbol: dict[str, Position]) -> None:
+    def _record_snapshots(self, positions_by_symbol: dict[str, Position]) -> bool:
         if self.execution_config.mode != "paper" or self.storage is None:
-            return
+            return True
 
         try:
             cash = float(self.broker.get_cash_balance())
@@ -536,8 +577,10 @@ class TraderEngine:
                 unrealized_pnl=unrealized_pnl_total,
                 mode=self.execution_config.mode,
             )
+            return True
         except Exception as exc:
             self._log_storage_error("SYSTEM", "record_snapshots_failed", exc)
+            return False
 
     def _get_snapshot_price(self, symbol: str, fallback_price: float) -> float:
         if hasattr(self.broker, "get_market_price"):
@@ -545,6 +588,45 @@ class TraderEngine:
             if current_price is not None and current_price > 0:
                 return float(current_price)
         return float(fallback_price)
+
+    def _reload_runtime_config(self) -> bool:
+        try:
+            settings = load_project_config()
+            execution_config = load_execution_runtime(settings)
+            if execution_config.mode != "paper":
+                raise ValueError("runtime hot reload supports paper mode only")
+            self.execution_config = execution_config
+            self.strategy_config = StrategyConfig.from_settings(settings)
+            self.feature_config = feature_engine.FeatureConfig.from_dict(settings.get("feature_engine", {}))
+            self.symbol_configs = dict(execution_config.symbol_configs)
+            self.logger = LogRouter(
+                system_log=execution_config.system_log_file,
+                trade_log=execution_config.trade_log_file,
+                error_log=execution_config.error_log_file,
+                mode=execution_config.mode,
+            )
+            return True
+        except Exception as exc:
+            self._handle_config_reload_error(exc)
+            return False
+
+    def _handle_config_reload_error(self, exc: Exception) -> None:
+        self.runtime_store.set_conservative_mode(True)
+        self.runtime_store.set_robot_status("paused")
+        consecutive_errors = self.runtime_store.increment_error(str(exc))
+        self.logger.log_error(
+            symbol="SYSTEM",
+            action="config_reload_failed",
+            reason="invalid_runtime_config",
+            error=str(exc),
+            consecutive_errors=consecutive_errors,
+        )
+        self._trip_error_circuit_if_needed(
+            "SYSTEM",
+            consecutive_errors,
+            trigger="config_reload_failed",
+        )
+        print(f"[config_reload_failed] SYSTEM {exc}")
 
     def _refresh_symbol_configs(self) -> None:
         try:
@@ -572,7 +654,15 @@ class TraderEngine:
     def _get_symbol_config(self, symbol: str) -> SymbolTradingConfig:
         if symbol in self.symbol_configs:
             return self.symbol_configs[symbol]
-        raise ValueError(f"Missing symbol config for {symbol}")
+        return SymbolTradingConfig(
+            symbol=symbol,
+            enabled=False,
+            trend_timeframe="4h",
+            signal_timeframe="15m",
+            order_amount=0.0,
+            max_loss_amount=float("inf"),
+            paused_by_loss=False,
+        )
 
     def _tradable_symbols(self) -> tuple[str, ...]:
         return tuple(
@@ -580,6 +670,9 @@ class TraderEngine:
             for symbol, symbol_config in self.symbol_configs.items()
             if self._is_symbol_tradable(symbol_config)
         )
+
+    def _active_symbols(self, positions_by_symbol: dict[str, Position]) -> tuple[str, ...]:
+        return tuple(sorted(set(self.symbol_configs) | set(positions_by_symbol)))
 
     def _is_symbol_tradable(self, symbol_config: SymbolTradingConfig) -> bool:
         return symbol_config.enabled and not symbol_config.paused_by_loss
@@ -652,6 +745,50 @@ class TraderEngine:
         runtime_symbol = self.runtime_store.get_symbol_state(symbol)
         return runtime_symbol["last_action_bar_timestamp"] == current_bar_timestamp
 
+    def _is_duplicate_entry_signal(self, symbol: str, signal_time: str) -> bool:
+        runtime_symbol = self.runtime_store.get_symbol_state(symbol)
+        record = runtime_symbol.get("last_signal")
+        if not is_same_signal(
+            record,
+            symbol=symbol,
+            signal_type=ENTRY_SIGNAL,
+            signal_time=signal_time,
+            action=BUY_ACTION,
+        ):
+            return False
+
+        self._log_event(
+            "order_blocked",
+            symbol=symbol,
+            reason="duplicate_entry_signal",
+            signal_type=ENTRY_SIGNAL,
+            signal_time=signal_time,
+            action=BUY_ACTION,
+            signal_status=record.get("status"),
+            last_executed_at=record.get("last_executed_at"),
+        )
+        return True
+
+    def _record_entry_signal(
+        self,
+        symbol: str,
+        signal_time: str,
+        *,
+        status: str,
+        error: str | None = None,
+    ) -> None:
+        self.runtime_store.set_symbol_state(
+            symbol,
+            last_signal=build_signal_record(
+                symbol=symbol,
+                signal_type=ENTRY_SIGNAL,
+                signal_time=signal_time,
+                action=BUY_ACTION,
+                status=status,
+                error=error,
+            ),
+        )
+
     def _maybe_set_market_price(self, symbol: str, price: float) -> None:
         if hasattr(self.broker, "set_market_price"):
             self.broker.set_market_price(symbol, price)
@@ -664,23 +801,34 @@ class TraderEngine:
             error=str(exc),
             consecutive_errors=consecutive_errors,
         )
-        if consecutive_errors >= self.execution_config.max_consecutive_errors:
-            self.runtime_store.set_robot_status(ERROR_STOPPED)
-            self.runtime_store.set_conservative_mode(True)
-            self._log_event(
-                "robot_status_changed",
-                symbol=symbol,
-                status=ERROR_STOPPED,
-                reason="max_consecutive_errors_reached",
-            )
+        self._trip_error_circuit_if_needed(symbol, consecutive_errors, trigger="execution_error")
 
     def _log_storage_error(self, symbol: str, action: str, exc: Exception) -> None:
+        consecutive_errors = self.runtime_store.increment_error(str(exc))
         self.logger.log_error(
             symbol=symbol,
             action=action,
             reason="sqlite_write_failed",
             error=str(exc),
+            consecutive_errors=consecutive_errors,
         )
+        self._trip_error_circuit_if_needed(symbol, consecutive_errors, trigger=action)
+
+    def _trip_error_circuit_if_needed(self, symbol: str, consecutive_errors: int, *, trigger: str) -> None:
+        if consecutive_errors < self.execution_config.max_consecutive_errors:
+            return
+        self.runtime_store.set_robot_status(ERROR_STOPPED)
+        self.runtime_store.set_conservative_mode(True)
+        self.logger.log_error(
+            symbol=symbol,
+            action="robot_status_changed",
+            reason="max_consecutive_errors_reached",
+            status=ERROR_STOPPED,
+            trigger=trigger,
+            consecutive_errors=consecutive_errors,
+            max_consecutive_errors=self.execution_config.max_consecutive_errors,
+        )
+        print(f"[robot_status_changed] {symbol} max_consecutive_errors_reached")
 
     def _log_event(self, event_type: str, **payload: Any) -> None:
         symbol = payload.get("symbol", "-")

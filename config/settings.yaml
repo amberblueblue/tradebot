@@ -33,6 +33,9 @@ execution:
   runtime_state_file: runtime/robot_state.json
   robot_initial_status: running
   status_file: runtime/status.json
+safety:
+  max_consecutive_errors: 3
+  allow_live_trading: false
 logging:
   level: INFO
   system_log_file: logs/system.log

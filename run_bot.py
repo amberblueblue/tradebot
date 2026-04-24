@@ -8,7 +8,7 @@ from exchange.binance_client import BinanceClient
 from execution.trader import TraderEngine
 from observability.event_logger import LogRouter
 from runtime.sync import startup_sync
-from runtime.state import RuntimeStore, build_runtime_state, create_broker
+from runtime.state import RuntimeStore, build_runtime_state, create_broker, get_live_gate_status
 from storage.db import initialize_database
 from strategy.config import StrategyConfig
 
@@ -19,7 +19,8 @@ def main() -> None:
     execution_config = load_execution_runtime(settings)
     runtime_state = build_runtime_state(execution_config)
     if runtime_state.mode != "paper":
-        raise RuntimeError("run_bot.py currently supports paper mode only")
+        live_gate = get_live_gate_status(execution_config)
+        raise RuntimeError(live_gate.message)
 
     broker = create_broker(execution_config)
     runtime_store = RuntimeStore(
@@ -61,8 +62,11 @@ def main() -> None:
     )
     try:
         while True:
-            trader.run_once()
-            time.sleep(execution_config.polling_interval_seconds)
+            try:
+                trader.run_once()
+            except Exception as exc:
+                trader._record_error("SYSTEM", exc)
+            time.sleep(trader.execution_config.polling_interval_seconds)
     except KeyboardInterrupt:
         runtime_store.set_robot_status("stopped")
         logger.log_system(symbol="-", action="shutdown", reason="keyboard_interrupt")

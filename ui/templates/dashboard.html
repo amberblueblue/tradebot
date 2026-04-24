@@ -12,6 +12,30 @@
     </div>
   </div>
 
+  {% if is_error_status %}
+  <div class="col-12">
+    <div class="alert alert-danger shadow-sm mb-0" role="alert">
+      <h2 class="h5 mb-2">Bot is in ERROR state</h2>
+      <p class="mb-1">New entries are blocked until the runtime state is recovered.</p>
+      <p class="mb-0">
+        Consecutive errors: {{ runtime_status.consecutive_errors or 0 }}
+        {% if runtime_status.last_error %}
+          | Last error: {{ runtime_status.last_error }}
+        {% endif %}
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if is_live_mode %}
+  <div class="col-12">
+    <div class="alert alert-warning shadow-sm mb-0" role="alert">
+      <h2 class="h5 mb-2">Live mode is not implemented</h2>
+      <p class="mb-0">{{ live_gate.message }}</p>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="col-md-6 col-xl-3">
     <div class="card shadow-sm h-100">
       <div class="card-body">
@@ -25,7 +49,7 @@
     <div class="card shadow-sm h-100">
       <div class="card-body">
         <h2 class="card-title h6 text-secondary">Bot Status</h2>
-        <p class="fs-4 mb-0">{{ bot_status }}</p>
+        <p class="fs-4 mb-0 {% if is_error_status %}text-danger fw-semibold{% endif %}">{{ bot_status }}</p>
       </div>
     </div>
   </div>
@@ -61,6 +85,21 @@
         <dl class="row mb-0">
           <dt class="col-sm-4">Conservative Mode</dt>
           <dd class="col-sm-8">{{ runtime_status.conservative_mode }}</dd>
+
+          <dt class="col-sm-4">Live Gate</dt>
+          <dd class="col-sm-8">
+            {{ live_gate.message }}
+            <span class="d-block text-secondary">
+              allow_live_trading={{ live_gate.allow_live_trading }},
+              TRADEBOT_CONFIRM_LIVE={{ "YES" if live_gate.confirm_env_ok else "not set" }}
+            </span>
+          </dd>
+
+          <dt class="col-sm-4">Consecutive Errors</dt>
+          <dd class="col-sm-8">{{ runtime_status.consecutive_errors or 0 }}</dd>
+
+          <dt class="col-sm-4">Last Error</dt>
+          <dd class="col-sm-8">{{ runtime_status.last_error or "n/a" }}</dd>
 
           <dt class="col-sm-4">Startup Synced</dt>
           <dd class="col-sm-8">{{ runtime_status.startup_synced }}</dd>

@@ -44,6 +44,8 @@ http://127.0.0.1:8000
 - `/performance` 支持总权益曲线和单币收益曲线
 - 只支持 `paper` 模式
 - 不支持实盘交易
+- Dashboard 会显示当前 mode 和 live gate 状态
+- 第三阶段加入配置热加载、重复信号保护、下单前规则校验、异常熔断和 live 硬保护
 
 ## Phase 2B Symbol Configuration
 
@@ -88,3 +90,36 @@ SQLite 只用于保存交易结果和图表展示所需的数据：
 K 线数据和指标数据不会写入 SQLite，仍然在运行时内存中计算。
 
 当前仍然只支持 `paper` 模式。数据库写入失败时会记录到 error log，不会直接让机器人崩溃；实盘交易仍未启用。
+
+## Live Trading Safety
+
+当前 live 模式未启用，不支持实盘交易。默认只允许 `paper` 模式运行。
+
+如果 `config/settings.yaml` 中配置了 `app.mode: live`，`run_bot.py` 会拒绝启动。未来只有同时满足以下条件，live gate 才会通过：
+
+- `app.mode=live`
+- `safety.allow_live_trading=true`
+- 环境变量 `TRADEBOT_CONFIRM_LIVE=YES`
+
+当前阶段即使 live gate 通过，也只会显示 `live gate passed but live broker not implemented`，不会真实下单，也不会实现 live broker。
+
+API key 不应填写交易权限；如需填写测试或公共访问用途，也不要授予现货/合约交易权限。
+
+## Phase 3 Safety Controls
+
+第三阶段增加了运行时安全控制，仍然只服务于本地 `paper` 模式：
+
+- 每次交易循环前重新读取 `config/settings.yaml` 和 `config/symbols.yaml`
+- 配置读取失败时暂停开新仓，并写入 error log
+- `enabled=false` 的币种不会新开仓
+- `paused_by_loss=true` 的币种不会新开仓
+- 同一个 symbol 在同一根信号 K 线内不会重复开同方向仓
+- 已有未平仓 position 时不会重复开同方向仓
+- 下单前会校验本地交易规则，包括最小交易额、价格、数量、最大持仓数量、最大亏损限制和 bot 状态
+- 默认本地规则为 `min_notional=5 USDT`、金额精度 `2`、数量精度 `6`
+- 连续错误达到 `safety.max_consecutive_errors` 后，bot 状态切换为 `error`，不再开新仓
+- `app.mode=live` 默认拒绝启动，Dashboard 会显示 live gate 状态
+
+当前不需要 Binance API key，不支持实盘下单，也不会读取可交易 API key。
+
+K 线和指标仍然在内存中计算；SQLite 只保存交易、持仓、收益和图表展示数据。
