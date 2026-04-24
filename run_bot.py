@@ -13,14 +13,21 @@ from storage.db import initialize_database
 from strategy.config import StrategyConfig
 
 
+def ensure_runtime_mode_allowed(execution_config) -> None:
+    runtime_state = build_runtime_state(execution_config)
+    if runtime_state.mode == "paper":
+        return
+
+    live_gate = get_live_gate_status(execution_config)
+    raise RuntimeError(live_gate.message)
+
+
 def main() -> None:
     initialize_database()
     settings = load_project_config()
     execution_config = load_execution_runtime(settings)
     runtime_state = build_runtime_state(execution_config)
-    if runtime_state.mode != "paper":
-        live_gate = get_live_gate_status(execution_config)
-        raise RuntimeError(live_gate.message)
+    ensure_runtime_mode_allowed(execution_config)
 
     broker = create_broker(execution_config)
     runtime_store = RuntimeStore(

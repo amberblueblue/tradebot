@@ -42,7 +42,7 @@ def get_live_gate_status(config: ExecutionRuntimeConfig) -> LiveGateStatus:
 
     gate_passed = config.allow_live_trading and confirm_env_ok
     if gate_passed:
-        message = "live gate passed but live broker not implemented"
+        message = "live broker not implemented"
     elif not config.allow_live_trading:
         message = "live mode blocked by safety.allow_live_trading=false"
     else:
