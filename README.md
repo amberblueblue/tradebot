@@ -194,9 +194,11 @@ Dashboard 会显示当前 broker：
 
 - `paper`：默认模式；本地 paper broker
 - `live_simulation`：live gate 通过，但未设置真实执行二次确认
-- `live_enabled`：所有 live 与真实执行确认条件都满足；当前仍然只使用 simulation
+- `live_enabled`：所有 live 与真实执行确认条件都满足；当前仍然只返回 `LiveBroker` simulation
 
 Dashboard 同时显示 live gate 状态和 `REAL TRADING ENABLED / DISABLED`。
+
+重要：第六阶段没有真实交易 broker。`runtime/state.py:create_broker()` 在当前阶段只会返回 `PaperBroker` 或 simulation-only `LiveBroker`，不会返回真实 Binance 下单 broker。
 
 ### Safety Gates
 
@@ -213,6 +215,8 @@ live 路径至少需要：
 - `TRADEBOT_EXECUTE_REAL=YES`
 
 任一 live gate 条件不满足时，系统使用 `PaperBroker`。即使所有条件满足，当前阶段也只调用 `LiveBroker` simulation。
+
+`TRADEBOT_EXECUTE_REAL=YES` 只影响 Dashboard 和启动日志里的真实交易状态显示，不会开启真实 Binance 下单 API。
 
 ### Order Risk Checks
 

@@ -22,6 +22,7 @@ class RuntimeState:
     broker_name: str
     is_live_enabled: bool
     is_real_trading_enabled: bool
+    uses_real_order_api: bool
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class LiveGateStatus:
     real_execute_env_ok: bool
     gate_passed: bool
     real_trading_enabled: bool
+    uses_real_order_api: bool
     broker_name: str
     message: str
 
@@ -51,6 +53,7 @@ def get_live_gate_status(config: ExecutionRuntimeConfig) -> LiveGateStatus:
             real_execute_env_ok=real_execute_env_ok,
             gate_passed=False,
             real_trading_enabled=False,
+            uses_real_order_api=False,
             broker_name="paper",
             message="paper mode only; live gate inactive",
         )
@@ -79,6 +82,7 @@ def get_live_gate_status(config: ExecutionRuntimeConfig) -> LiveGateStatus:
         real_execute_env_ok=real_execute_env_ok,
         gate_passed=gate_passed,
         real_trading_enabled=real_trading_enabled,
+        uses_real_order_api=False,
         broker_name="live_enabled" if real_trading_enabled else "live_simulation" if gate_passed else "paper",
         message=message,
     )
@@ -100,6 +104,7 @@ def build_runtime_state(config: ExecutionRuntimeConfig) -> RuntimeState:
         broker_name=broker_name,
         is_live_enabled=live_gate.gate_passed,
         is_real_trading_enabled=live_gate.real_trading_enabled,
+        uses_real_order_api=live_gate.uses_real_order_api,
     )
 
 

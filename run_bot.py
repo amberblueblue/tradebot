@@ -41,6 +41,8 @@ def main() -> int:
     print(f"runtime_state.mode: {runtime_state.mode}")
     print(f"runtime_state.broker: {runtime_state.broker_name}")
     print(f"runtime_state.real_trading_enabled: {runtime_state.is_real_trading_enabled}")
+    print(f"runtime_state.uses_real_order_api: {runtime_state.uses_real_order_api}")
+    print("execution_path: simulation_only; real Binance order API is not implemented")
     print(f"safety.allow_live_trading: {execution_config.allow_live_trading}")
     print(f"safety.live_execute_enabled: {execution_config.live_execute_enabled}")
     print(f"safety.require_manual_confirm: {execution_config.require_manual_confirm}")

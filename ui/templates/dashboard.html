@@ -30,11 +30,17 @@
   {% if is_live_mode %}
   <div class="col-12">
     <div class="alert alert-warning shadow-sm mb-0" role="alert">
-      <h2 class="h5 mb-2">Live mode is not implemented</h2>
-      <p class="mb-0">{{ live_gate.message }}</p>
+      <h2 class="h5 mb-2">Live mode is simulation only</h2>
+      <p class="mb-0">{{ live_gate.message }} Real Binance order API is not implemented and will not be called.</p>
     </div>
   </div>
   {% endif %}
+
+  <div class="col-12">
+    <div class="alert alert-info shadow-sm mb-0" role="alert">
+      Current execution is simulation-only. Real Binance order API: {{ "enabled" if uses_real_order_api else "disabled" }}.
+    </div>
+  </div>
 
   <div class="col-md-6 col-xl-3">
     <div class="card shadow-sm h-100">
@@ -61,6 +67,7 @@
         <p class="fs-5 mb-0 {% if real_trading_enabled %}text-danger fw-semibold{% else %}text-secondary{% endif %}">
           REAL TRADING {{ "ENABLED" if real_trading_enabled else "DISABLED" }}
         </p>
+        <p class="small text-secondary mb-0">Real order API disabled</p>
       </div>
     </div>
   </div>
@@ -235,7 +242,8 @@
               live_execute_enabled={{ live_execute_enabled }},
               require_manual_confirm={{ require_manual_confirm }},
               {{ live_confirm_env_var }}={{ "YES" if live_confirm_env_is_yes else "not set" }},
-              {{ real_execute_env_var }}={{ "YES" if real_execute_env_is_yes else "not set" }}
+              {{ real_execute_env_var }}={{ "YES" if real_execute_env_is_yes else "not set" }},
+              real_order_api={{ "enabled" if uses_real_order_api else "disabled" }}
             </span>
           </dd>
 

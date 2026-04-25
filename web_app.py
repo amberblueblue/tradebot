@@ -189,6 +189,7 @@ def _dashboard_context() -> dict:
         "real_execute_env_var": REAL_EXECUTE_ENV_VAR,
         "real_execute_env_is_yes": live_gate.real_execute_env_ok,
         "real_trading_enabled": live_gate.real_trading_enabled,
+        "uses_real_order_api": live_gate.uses_real_order_api,
         "is_live_mode": execution_config.mode == "live",
         "bot_status": runtime_status.get("robot_status", "unknown"),
         "is_error_status": runtime_status.get("robot_status") == ERROR,
