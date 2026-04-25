@@ -186,7 +186,7 @@ BINANCE_API_SECRET=your_read_only_api_secret_here
 
 ## Phase 6 Safe Live Execution Framework
 
-第六阶段增加了 live broker 骨架和多重安全保护，但仍然不支持真实下单。
+第六阶段增加了 live broker 骨架和多重安全保护。默认仍不真实下单，当前仍不支持真实实盘下单。
 
 ### Broker Modes
 
@@ -198,7 +198,7 @@ Dashboard 会显示当前 broker：
 
 Dashboard 同时显示 live gate 状态和 `REAL TRADING ENABLED / DISABLED`。
 
-重要：第六阶段没有真实交易 broker。`runtime/state.py:create_broker()` 在当前阶段只会返回 `PaperBroker` 或 simulation-only `LiveBroker`，不会返回真实 Binance 下单 broker。
+重要：第六阶段没有真实交易 broker。`runtime/state.py:create_broker()` 在当前阶段只会返回 `PaperBroker` 或 simulation-only `LiveBroker`，不会返回真实 Binance 下单 broker。`LiveBroker` 当前只做 simulation，不调用真实 Binance order API。
 
 ### Dashboard Checks
 
@@ -211,21 +211,18 @@ Dashboard 会明确显示：
 
 ### Safety Gates
 
-live 路径至少需要：
+live 路径需要多重开关：
 
 - `app.mode=live`
 - `safety.allow_live_trading=true`
 - `safety.live_execute_enabled=true`
 - `TRADEBOT_CONFIRM_LIVE=YES`
-
-真实执行状态还需要：
-
 - `safety.require_manual_confirm=true`
 - `TRADEBOT_EXECUTE_REAL=YES`
 
-任一 live gate 条件不满足时，系统使用 `PaperBroker`。即使所有条件满足，当前阶段也只调用 `LiveBroker` simulation。
+任一 live gate 条件不满足时，系统使用 `PaperBroker`。即使这些条件全部满足，当前阶段仍然只调用 `LiveBroker` simulation。
 
-`TRADEBOT_EXECUTE_REAL=YES` 只影响 Dashboard 和启动日志里的真实交易状态显示，不会开启真实 Binance 下单 API。
+`TRADEBOT_EXECUTE_REAL=YES` 只影响 Dashboard 和启动日志里的真实交易状态显示，不会开启真实 Binance order API。
 
 ### Order Risk Checks
 
