@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import os
 import time
 from hashlib import sha256
 from typing import Any
@@ -8,6 +9,7 @@ from urllib.parse import urlencode
 
 import requests
 
+from config.loader import load_project_config
 from config.secrets import BinanceReadOnlyCredentials, load_binance_readonly_credentials
 from observability.event_logger import StructuredLogger
 
@@ -16,6 +18,8 @@ DEFAULT_BASE_URL = "https://api.binance.com"
 DEFAULT_TIMEOUT_SECONDS = 10
 DEFAULT_ERROR_LOG_FILE = "logs/error.log"
 DEFAULT_RECV_WINDOW = 5000
+FINAL_REAL_ORDER_ENV_VAR = "TRADEBOT_FINAL_REAL_ORDER"
+FINAL_REAL_ORDER_ENV_VALUE = "YES"
 SUPPORTED_KLINE_INTERVALS = {"5m", "15m", "1h", "4h", "1d"}
 SENSITIVE_PARAM_KEYS = {"signature"}
 
@@ -26,6 +30,14 @@ class BinancePublicAPIError(RuntimeError):
 
 class BinancePrivateReadOnlyAPIError(RuntimeError):
     """Raised when Binance signed read-only account data cannot be fetched."""
+
+
+class BinanceTestOrderAPIError(RuntimeError):
+    """Raised when Binance signed test order validation cannot be completed."""
+
+
+class BinanceRealOrderAPIError(RuntimeError):
+    """Raised when Binance real order submission cannot be completed."""
 
 
 class BinanceClient:
@@ -192,6 +204,116 @@ class BinanceClient:
             )
             raise BinancePrivateReadOnlyAPIError(reason) from exc
 
+    def _signed_post_test_order(self, params: dict[str, Any]) -> Any:
+        path = "/api/v3/order/test"
+        credentials = self._require_readonly_credentials()
+        request_params = self._signed_params(params, credentials)
+        url = f"{self.base_url}{path}"
+        headers = {"X-MBX-APIKEY": credentials.api_key or ""}
+
+        try:
+            response = requests.post(
+                url,
+                params=request_params,
+                headers=headers,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            if not response.text.strip():
+                return {}
+            return response.json()
+        except requests.exceptions.HTTPError as exc:
+            response_text = exc.response.text if exc.response is not None else ""
+            status_code = exc.response.status_code if exc.response is not None else "unknown"
+            reason = f"Binance test order API returned HTTP {status_code} for {path}; body={response_text}"
+            self._log_error(
+                path=path,
+                reason=reason,
+                params=request_params,
+                action="binance_test_order_error",
+            )
+            raise BinanceTestOrderAPIError(reason) from exc
+        except requests.exceptions.RequestException as exc:
+            reason = f"Binance test order API request failed for {path}: {type(exc).__name__}"
+            self._log_error(
+                path=path,
+                reason=reason,
+                params=request_params,
+                action="binance_test_order_error",
+            )
+            raise BinanceTestOrderAPIError(reason) from exc
+        except ValueError as exc:
+            reason = f"Binance test order API returned invalid JSON for {path}: {exc}"
+            self._log_error(
+                path=path,
+                reason=reason,
+                params=request_params,
+                action="binance_test_order_error",
+            )
+            raise BinanceTestOrderAPIError(reason) from exc
+
+    def _signed_post_real_order(self, params: dict[str, Any]) -> Any:
+        path = "/api/v3/order"
+        credentials = self._require_readonly_credentials()
+        request_params = self._signed_params(params, credentials)
+        url = f"{self.base_url}{path}"
+        headers = {"X-MBX-APIKEY": credentials.api_key or ""}
+
+        try:
+            response = requests.post(
+                url,
+                params=request_params,
+                headers=headers,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as exc:
+            response_text = exc.response.text if exc.response is not None else ""
+            status_code = exc.response.status_code if exc.response is not None else "unknown"
+            reason = f"Binance real order API returned HTTP {status_code} for {path}; body={response_text}"
+            self._log_error(
+                path=path,
+                reason=reason,
+                params=request_params,
+                action="binance_real_order_error",
+            )
+            raise BinanceRealOrderAPIError(reason) from exc
+        except requests.exceptions.RequestException as exc:
+            reason = f"Binance real order API request failed for {path}: {type(exc).__name__}"
+            self._log_error(
+                path=path,
+                reason=reason,
+                params=request_params,
+                action="binance_real_order_error",
+            )
+            raise BinanceRealOrderAPIError(reason) from exc
+        except ValueError as exc:
+            reason = f"Binance real order API returned invalid JSON for {path}: {exc}"
+            self._log_error(
+                path=path,
+                reason=reason,
+                params=request_params,
+                action="binance_real_order_error",
+            )
+            raise BinanceRealOrderAPIError(reason) from exc
+
+    def _real_order_method_enabled(self) -> bool:
+        try:
+            settings = load_project_config()
+        except Exception as exc:
+            self._log_error(
+                path="/api/v3/order",
+                reason=f"real_order_method_blocked: config load failed: {exc}",
+                action="binance_real_order_blocked",
+            )
+            return False
+        safety = settings.get("safety", {})
+        return (
+            bool(safety.get("real_order_method_enabled", False))
+            and os.environ.get(FINAL_REAL_ORDER_ENV_VAR) == FINAL_REAL_ORDER_ENV_VALUE
+        )
+
     def ping(self) -> bool:
         self._request("/api/v3/ping")
         return True
@@ -218,6 +340,137 @@ class BinanceClient:
 
     def get_ticker_price(self, symbol: str) -> dict[str, Any]:
         return self._request("/api/v3/ticker/price", {"symbol": symbol.upper()})
+
+    def create_test_order(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float | None = None,
+        quote_order_qty: float | None = None,
+    ) -> dict[str, Any]:
+        normalized_symbol = symbol.upper()
+        normalized_side = side.upper()
+        normalized_type = order_type.upper()
+        result = {
+            "ok": False,
+            "symbol": normalized_symbol,
+            "side": normalized_side,
+            "type": normalized_type,
+            "dry_run_exchange_validated": False,
+            "raw_response": None,
+            "error": None,
+        }
+
+        params: dict[str, Any] = {
+            "symbol": normalized_symbol,
+            "side": normalized_side,
+            "type": normalized_type,
+        }
+        if normalized_type == "MARKET" and normalized_side == "BUY":
+            if quote_order_qty is None or quote_order_qty <= 0:
+                result["error"] = "MARKET BUY test order requires positive quoteOrderQty"
+                self._log_error(
+                    path="/api/v3/order/test",
+                    reason=str(result["error"]),
+                    params=params,
+                    action="binance_test_order_error",
+                )
+                return result
+            params["quoteOrderQty"] = quote_order_qty
+        elif normalized_type == "MARKET" and normalized_side == "SELL":
+            if quantity is None or quantity <= 0:
+                result["error"] = "MARKET SELL test order requires positive quantity"
+                self._log_error(
+                    path="/api/v3/order/test",
+                    reason=str(result["error"]),
+                    params=params,
+                    action="binance_test_order_error",
+                )
+                return result
+            params["quantity"] = quantity
+        else:
+            if quantity is not None:
+                params["quantity"] = quantity
+            if quote_order_qty is not None:
+                params["quoteOrderQty"] = quote_order_qty
+
+        try:
+            raw_response = self._signed_post_test_order(params)
+        except Exception as exc:
+            result["error"] = str(exc)
+            return result
+
+        result.update(
+            {
+                "ok": True,
+                "dry_run_exchange_validated": True,
+                "raw_response": raw_response,
+                "error": None,
+            }
+        )
+        return result
+
+    def create_order(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float | None = None,
+        quote_order_qty: float | None = None,
+    ) -> dict[str, Any]:
+        normalized_symbol = symbol.upper()
+        normalized_side = side.upper()
+        normalized_type = order_type.upper()
+        result = {
+            "ok": False,
+            "symbol": normalized_symbol,
+            "side": normalized_side,
+            "type": normalized_type,
+            "real_order_sent": False,
+            "raw_response": None,
+            "error": None,
+        }
+
+        if not self._real_order_method_enabled():
+            result["error"] = "real_order_method_blocked"
+            self._log_error(
+                path="/api/v3/order",
+                reason="real_order_method_blocked",
+                params={
+                    "symbol": normalized_symbol,
+                    "side": normalized_side,
+                    "type": normalized_type,
+                },
+                action="binance_real_order_blocked",
+            )
+            return result
+
+        params: dict[str, Any] = {
+            "symbol": normalized_symbol,
+            "side": normalized_side,
+            "type": normalized_type,
+        }
+        if quantity is not None:
+            params["quantity"] = quantity
+        if quote_order_qty is not None:
+            params["quoteOrderQty"] = quote_order_qty
+
+        try:
+            raw_response = self._signed_post_real_order(params)
+        except Exception as exc:
+            result["error"] = str(exc)
+            return result
+
+        result.update(
+            {
+                "ok": True,
+                "real_order_sent": True,
+                "raw_response": raw_response,
+                "error": None,
+            }
+        )
+        return result
 
     def get_klines(self, symbol: str, interval: str, limit: int = 500) -> list[list[Any]]:
         if interval not in SUPPORTED_KLINE_INTERVALS:

@@ -86,6 +86,28 @@
   <div class="col-md-6 col-xl-3">
     <div class="card shadow-sm h-100">
       <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Auto Strategy Real Order</h2>
+        <p class="fs-5 mb-0 text-secondary">{{ "ENABLED" if auto_strategy_real_order_enabled else "DISABLED" }}</p>
+        <p class="small text-secondary mb-0">Strategy uses simulation broker only</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Manual Real Order Command</h2>
+        <p class="fs-5 mb-0 {% if manual_real_order_available %}text-warning fw-semibold{% else %}text-secondary{% endif %}">
+          {{ "AVAILABLE" if manual_real_order_available else "BLOCKED" }}
+        </p>
+        <p class="small text-secondary mb-0">status.py command only</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
         <h2 class="card-title h6 text-secondary">Bot Status</h2>
         <p class="fs-4 mb-0 {% if is_error_status %}text-danger fw-semibold{% endif %}">{{ bot_status }}</p>
       </div>

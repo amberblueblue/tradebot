@@ -195,3 +195,20 @@ BINANCE_API_SECRET=your_read_only_api_secret_here
 - 已有 `risk.max_single_order_usdt` 单笔金额上限校验
 - 已有 `insufficient_balance` 余额不足校验
 - 当前仍不支持真实实盘下单
+
+## Phase 7 Pre-Trade Exchange Validation
+
+第七阶段开始进入真实下单前验证，但仍然不接入自动实盘交易。
+
+- 已支持 Binance `POST /api/v3/order/test`，用于让交易所验证订单参数，不产生真实订单
+- 已封装 `BinanceClient.create_order()` 对应真实 `POST /api/v3/order`
+- `create_order()` 默认不可用，必须同时满足 `safety.real_order_method_enabled=true` 和 `TRADEBOT_FINAL_REAL_ORDER=YES`
+- 如果条件不满足，`create_order()` 会直接返回 `real_order_method_blocked`
+- trader 自动流程当前不会调用 `create_order()`
+- `LiveBroker` 仍然保持 simulation，只输出 `[LIVE_ORDER_SIMULATION]`
+- 当前阶段不实现自动真实下单
+- 第七阶段真实下单仅限 `status.py --real-market-buy` 手动命令；自动策略仍然只使用 simulation，不允许调用真实 Binance order API
+- `status.py --exchange-test-order SYMBOL --side buy --amount AMOUNT` 会先跑本地 validator，再调用 Binance test order，且 `real_order_sent=false`
+- `status.py --real-market-buy SYMBOL --amount AMOUNT` 默认 blocked；只有所有 live 和 final-real-order 开关都打开才会继续
+- 手动真实 MARKET BUY 必须满足 `app.mode=live`、`safety.allow_live_trading=true`、`safety.live_execute_enabled=true`、`safety.real_order_method_enabled=true`、`TRADEBOT_CONFIRM_LIVE=YES`、`TRADEBOT_EXECUTE_REAL=YES`、`TRADEBOT_FINAL_REAL_ORDER=YES`
+- 强烈建议首次真实手动买入 `amount <= 6 USDT`

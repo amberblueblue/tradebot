@@ -53,6 +53,8 @@ class TraderEngine:
         feature_config: feature_engine.FeatureConfig,
         execution_config: ExecutionRuntimeConfig,
     ) -> None:
+        if hasattr(broker, "create_order"):
+            raise RuntimeError("auto strategy real order is disabled; broker must not expose create_order")
         self.broker = broker
         self.market_client = market_client
         self.runtime_store = runtime_store

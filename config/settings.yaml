@@ -39,6 +39,7 @@ safety:
   allow_live_trading: false
   live_execute_enabled: false
   require_manual_confirm: true
+  real_order_method_enabled: false
   max_consecutive_errors: 3
 logging:
   level: INFO

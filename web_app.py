@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -44,6 +45,7 @@ SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
 LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
 REAL_EXECUTE_ENV_VAR = "TRADEBOT_EXECUTE_REAL"
+FINAL_REAL_ORDER_ENV_VAR = "TRADEBOT_FINAL_REAL_ORDER"
 DASHBOARD_MARKET_DATA_TIMEOUT_SECONDS = 1
 DASHBOARD_MARKET_DATA_CACHE_SECONDS = 60
 _MARKET_DATA_CACHE: dict[str, object] = {
@@ -176,6 +178,16 @@ def _dashboard_context() -> dict:
     runtime_status = _read_runtime_status(execution_config.status_file)
     live_gate = get_live_gate_status(execution_config)
     runtime_state = build_runtime_state(execution_config)
+    safety = settings.get("safety", {})
+    manual_real_order_available = (
+        execution_config.mode == "live"
+        and execution_config.allow_live_trading
+        and execution_config.live_execute_enabled
+        and bool(safety.get("real_order_method_enabled", False))
+        and live_gate.confirm_env_ok
+        and live_gate.real_execute_env_ok
+        and os.environ.get(FINAL_REAL_ORDER_ENV_VAR) == "YES"
+    )
     return {
         "project_name": "TraderBot Local Console",
         "mode": execution_config.mode,
@@ -190,6 +202,8 @@ def _dashboard_context() -> dict:
         "real_execute_env_is_yes": live_gate.real_execute_env_ok,
         "real_trading_enabled": live_gate.real_trading_enabled,
         "uses_real_order_api": live_gate.uses_real_order_api,
+        "auto_strategy_real_order_enabled": False,
+        "manual_real_order_available": manual_real_order_available,
         "is_live_mode": execution_config.mode == "live",
         "bot_status": runtime_status.get("robot_status", "unknown"),
         "is_error_status": runtime_status.get("robot_status") == ERROR,
