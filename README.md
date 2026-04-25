@@ -186,61 +186,12 @@ BINANCE_API_SECRET=your_read_only_api_secret_here
 
 ## Phase 6 Safe Live Execution Framework
 
-第六阶段增加了 live broker 骨架和多重安全保护。默认仍不真实下单，当前仍不支持真实实盘下单。
+第六阶段增加了安全 live execution framework，但默认仍不真实下单，当前仍不支持真实实盘下单。
 
-### Broker Modes
-
-Dashboard 会显示当前 broker：
-
-- `paper`：默认模式；本地 paper broker
-- `live_simulation`：live gate 通过，但未设置真实执行二次确认
-- `live_enabled`：所有 live 与真实执行确认条件都满足；当前仍然只返回 `LiveBroker` simulation
-
-Dashboard 同时显示 live gate 状态和 `REAL TRADING ENABLED / DISABLED`。
-
-重要：第六阶段没有真实交易 broker。`runtime/state.py:create_broker()` 在当前阶段只会返回 `PaperBroker` 或 simulation-only `LiveBroker`，不会返回真实 Binance 下单 broker。`LiveBroker` 当前只做 simulation，不调用真实 Binance order API。
-
-### Dashboard Checks
-
-Dashboard 会明确显示：
-
-- 当前 broker：`paper` / `live_simulation` / `live_enabled`
-- `TRADEBOT_EXECUTE_REAL` 是否为 `YES`
-- real trading 状态：`REAL TRADING ENABLED` / `REAL TRADING DISABLED`
-- 当前不会真实下单，`LiveBroker` 仍然是 simulation
-
-### Safety Gates
-
-live 路径需要多重开关：
-
-- `app.mode=live`
-- `safety.allow_live_trading=true`
-- `safety.live_execute_enabled=true`
-- `TRADEBOT_CONFIRM_LIVE=YES`
-- `safety.require_manual_confirm=true`
-- `TRADEBOT_EXECUTE_REAL=YES`
-
-任一 live gate 条件不满足时，系统使用 `PaperBroker`。即使这些条件全部满足，当前阶段仍然只调用 `LiveBroker` simulation。
-
-`TRADEBOT_EXECUTE_REAL=YES` 只影响 Dashboard 和启动日志里的真实交易状态显示，不会开启真实 Binance order API。
-
-### Order Risk Checks
-
-下单前会执行额外风控：
-
-- `risk.max_single_order_usdt` 限制单笔最大 USDT 金额，默认 `20`
-- `order_amount > max_single_order_usdt` 会拒绝，reason 为 `max_single_order_usdt_exceeded`
-- live simulation 下会通过 Binance 只读 API `get_account_balances()` 检查 USDT 可用余额
-- `USDT free < order_amount` 会拒绝，reason 为 `insufficient_balance`
-- 余额查询失败时按保守失败处理，不自动借贷
-
-### Explicit Non-Goals
-
-当前阶段不会：
-
-- 调用 Binance 真实下单 API
-- 调用 Binance 真实撤单 API
-- 自动借贷
-- 通过 Dashboard 启用实盘下单
-
-即使配置了 Binance API key，当前项目也只会使用只读账户查询和 simulation broker。
+- `LiveBroker` 当前只做 simulation，只输出 `[LIVE_ORDER_SIMULATION]`
+- 当前不调用真实 Binance order API
+- live 路径需要多重开关：`app.mode=live`、`safety.allow_live_trading=true`、`safety.live_execute_enabled=true`、`TRADEBOT_CONFIRM_LIVE=YES`、`TRADEBOT_EXECUTE_REAL=YES`
+- 即使多重开关全部满足，当前阶段仍然只使用 `LiveBroker` simulation
+- 已有 `risk.max_single_order_usdt` 单笔金额上限校验
+- 已有 `insufficient_balance` 余额不足校验
+- 当前仍不支持真实实盘下单
