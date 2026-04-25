@@ -119,6 +119,36 @@
     </div>
   </div>
 
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+          <div>
+            <h2 class="h5 mb-1">Binance Account API</h2>
+            <p class="text-secondary mb-0">Read-only credentials from environment or local .env.</p>
+          </div>
+          <div>
+            {% if binance_credentials.configured %}
+            <span class="badge text-bg-success">configured</span>
+            {% else %}
+            <span class="badge text-bg-secondary">not configured</span>
+            {% endif %}
+          </div>
+        </div>
+        <dl class="row mt-3 mb-0">
+          <dt class="col-sm-3">API Key</dt>
+          <dd class="col-sm-9">{{ "configured" if binance_credentials.api_key_configured else "missing" }}</dd>
+
+          <dt class="col-sm-3">API Secret</dt>
+          <dd class="col-sm-9">{{ "configured" if binance_credentials.api_secret_configured else "missing" }}</dd>
+
+          <dt class="col-sm-3">Mode</dt>
+          <dd class="col-sm-9">read-only account queries only</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
   <div class="col-lg-7">
     <div class="card shadow-sm h-100">
       <div class="card-body">

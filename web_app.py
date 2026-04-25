@@ -22,6 +22,7 @@ from config.loader import (
     load_execution_runtime,
     load_project_config,
 )
+from config.secrets import load_binance_readonly_credentials
 from exchange.binance_client import BinanceClient
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
@@ -175,6 +176,7 @@ def _dashboard_context() -> dict:
         "current_time": datetime.now(timezone.utc),
         "runtime_status": runtime_status,
         "public_market_data": _public_market_data_status(settings, execution_config),
+        "binance_credentials": load_binance_readonly_credentials().public_status(),
         "settings": settings,
     }
 
