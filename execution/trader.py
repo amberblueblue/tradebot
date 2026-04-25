@@ -17,6 +17,7 @@ from config.loader import (
     save_symbols_config,
 )
 from execution.broker import Broker, Position
+from execution.live_broker import LiveBroker
 from execution.order_validator import validate_entry_order
 from observability.event_logger import LogRouter
 from strategy.config import StrategyConfig
@@ -364,7 +365,9 @@ class TraderEngine:
             realized_pnl=self._get_symbol_realized_pnl(symbol),
             current_position_count=len(positions_by_symbol),
             max_positions=self.execution_config.max_positions,
+            max_single_order_usdt=self.execution_config.max_single_order_usdt,
             bot_status=self.runtime_store.get_robot_status(),
+            usdt_available_balance=self._get_usdt_available_balance_for_order(symbol),
         )
         if not validation.ok:
             self._log_event(
@@ -378,6 +381,8 @@ class TraderEngine:
                 notional=validation.notional,
                 min_notional=validation.min_notional,
                 order_amount=validation.order_amount,
+                max_single_order_usdt=validation.max_single_order_usdt,
+                usdt_available_balance=validation.usdt_available_balance,
                 normalized_amount=validation.normalized_amount,
             )
             return
@@ -534,6 +539,11 @@ class TraderEngine:
         )
 
     def _calculate_buy_qty(self, symbol_config: SymbolTradingConfig, current_price: float) -> float:
+        if isinstance(self.broker, LiveBroker):
+            if symbol_config.order_amount <= 0 or current_price <= 0:
+                return 0.0
+            return symbol_config.order_amount / current_price
+
         cash_balance = self.broker.get_cash_balance()
         quote_amount = symbol_config.order_amount
         if quote_amount <= 0:
@@ -542,6 +552,24 @@ class TraderEngine:
         if quote_amount <= 0 or current_price <= 0:
             return 0.0
         return quote_amount / current_price
+
+    def _get_usdt_available_balance_for_order(self, symbol: str) -> float | None:
+        if not isinstance(self.broker, LiveBroker):
+            return None
+        try:
+            balances = self.market_client.get_account_balances()
+            for balance in balances:
+                if str(balance.get("asset", "")).upper() == "USDT":
+                    return float(balance.get("free", 0) or 0)
+            return 0.0
+        except Exception as exc:
+            self.logger.log_error(
+                symbol=symbol,
+                action="balance_check_failed",
+                reason="readonly_account_balance_unavailable",
+                error=str(exc),
+            )
+            return 0.0
 
     def _build_storage(self) -> StorageRepository | None:
         try:
@@ -902,7 +930,13 @@ class TraderEngine:
         if event_type == "order_blocked":
             details = " ".join(
                 f"{key}={payload[key]}"
-                for key in ("order_amount", "min_notional", "notional")
+                for key in (
+                    "order_amount",
+                    "max_single_order_usdt",
+                    "usdt_available_balance",
+                    "min_notional",
+                    "notional",
+                )
                 if key in payload
             )
             print(f"[{event_type}] {symbol} {reason} {details}".strip())

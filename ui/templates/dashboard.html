@@ -48,6 +48,26 @@
   <div class="col-md-6 col-xl-3">
     <div class="card shadow-sm h-100">
       <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Current Broker</h2>
+        <p class="fs-4 mb-0">{{ current_broker }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Real Trading</h2>
+        <p class="fs-5 mb-0 {% if real_trading_enabled %}text-danger fw-semibold{% else %}text-secondary{% endif %}">
+          REAL TRADING {{ "ENABLED" if real_trading_enabled else "DISABLED" }}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
         <h2 class="card-title h6 text-secondary">Bot Status</h2>
         <p class="fs-4 mb-0 {% if is_error_status %}text-danger fw-semibold{% endif %}">{{ bot_status }}</p>
       </div>
@@ -212,7 +232,10 @@
             <span class="d-block text-secondary">
               status={{ "passed" if live_gate.gate_passed else "blocked" }},
               allow_live_trading={{ allow_live_trading }},
-              {{ live_confirm_env_var }}={{ "YES" if live_confirm_env_is_yes else "not set" }}
+              live_execute_enabled={{ live_execute_enabled }},
+              require_manual_confirm={{ require_manual_confirm }},
+              {{ live_confirm_env_var }}={{ "YES" if live_confirm_env_is_yes else "not set" }},
+              {{ real_execute_env_var }}={{ "YES" if real_execute_env_is_yes else "not set" }}
             </span>
           </dd>
 

@@ -69,7 +69,9 @@ def load_dotenv_values(path: Path = DEFAULT_ENV_PATH) -> dict[str, str]:
 
 def _secret_from_environment_or_dotenv(name: str, dotenv_values: dict[str, str]) -> str | None:
     value = os.environ.get(name)
-    if value is None:
+    if value is not None:
+        value = value.strip()
+    if not value:
         value = dotenv_values.get(name)
     if value is None:
         return None
@@ -83,3 +85,16 @@ def load_binance_readonly_credentials(env_path: Path = DEFAULT_ENV_PATH) -> Bina
         api_key=_secret_from_environment_or_dotenv(BINANCE_API_KEY_ENV, dotenv_values),
         api_secret=_secret_from_environment_or_dotenv(BINANCE_API_SECRET_ENV, dotenv_values),
     )
+
+
+def main() -> None:
+    env_path = DEFAULT_ENV_PATH
+    credentials = load_binance_readonly_credentials(env_path)
+    print(f".env path: {env_path}")
+    print(f".env exists: {str(env_path.exists()).lower()}")
+    print(f"api_key_configured: {str(credentials.api_key_configured).lower()}")
+    print(f"api_secret_configured: {str(credentials.api_secret_configured).lower()}")
+
+
+if __name__ == "__main__":
+    main()

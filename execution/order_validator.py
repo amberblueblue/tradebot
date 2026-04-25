@@ -18,6 +18,8 @@ class OrderValidationResult:
     notional: float
     min_notional: float
     order_amount: float
+    max_single_order_usdt: float
+    usdt_available_balance: float | None
     normalized_amount: float
 
 
@@ -32,6 +34,8 @@ def _result(
     notional: float,
     min_notional: float = 0.0,
     order_amount: float = 0.0,
+    max_single_order_usdt: float = 0.0,
+    usdt_available_balance: float | None = None,
 ) -> OrderValidationResult:
     return OrderValidationResult(
         ok=ok,
@@ -43,6 +47,8 @@ def _result(
         notional=notional,
         min_notional=min_notional,
         order_amount=order_amount,
+        max_single_order_usdt=max_single_order_usdt,
+        usdt_available_balance=usdt_available_balance,
         normalized_amount=notional,
     )
 
@@ -88,7 +94,9 @@ def validate_entry_order(
     realized_pnl: float,
     current_position_count: int,
     max_positions: int,
+    max_single_order_usdt: float,
     bot_status: str,
+    usdt_available_balance: float | None = None,
     rules: SymbolTradingRules | None = None,
 ) -> OrderValidationResult:
     rules = rules or fetch_symbol_rules(symbol_config.symbol)
@@ -99,6 +107,8 @@ def validate_entry_order(
     notional = 0.0
     min_notional = rules.effective_min_notional
     order_amount = float(symbol_config.order_amount)
+    single_order_limit = float(max_single_order_usdt)
+    available_balance = None if usdt_available_balance is None else float(usdt_available_balance)
 
     if bot_status != "running":
         return _result(
@@ -111,6 +121,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if not symbol_config.enabled:
         return _result(
@@ -123,6 +135,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if symbol_config.paused_by_loss:
         return _result(
@@ -135,6 +149,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if symbol_config.order_amount <= 0:
         return _result(
@@ -147,6 +163,50 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
+        )
+    if single_order_limit <= 0:
+        return _result(
+            False,
+            "max_single_order_usdt_not_positive",
+            raw_quantity=raw_quantity,
+            normalized_quantity=normalized_quantity,
+            raw_price=raw_price,
+            normalized_price=normalized_price,
+            notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
+        )
+    if order_amount > single_order_limit:
+        return _result(
+            False,
+            "max_single_order_usdt_exceeded",
+            raw_quantity=raw_quantity,
+            normalized_quantity=normalized_quantity,
+            raw_price=raw_price,
+            normalized_price=normalized_price,
+            notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
+        )
+    if available_balance is not None and available_balance < order_amount:
+        return _result(
+            False,
+            "insufficient_balance",
+            raw_quantity=raw_quantity,
+            normalized_quantity=normalized_quantity,
+            raw_price=raw_price,
+            normalized_price=normalized_price,
+            notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if quantity <= 0:
         return _result(
@@ -159,6 +219,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if price <= 0:
         return _result(
@@ -171,6 +233,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if realized_pnl <= -symbol_config.max_loss_amount:
         return _result(
@@ -183,6 +247,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if current_position_count >= max_positions:
         return _result(
@@ -195,6 +261,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
 
     normalized_price = _round_down_to_step(raw_price, rules.tick_size)
@@ -214,6 +282,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if raw_price != normalized_price or not _is_step_aligned(raw_price, rules.tick_size):
         return _result(
@@ -226,6 +296,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if raw_quantity != normalized_quantity or not _is_step_aligned(raw_quantity, quantity_step_size):
         return _result(
@@ -238,6 +310,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if raw_quantity < min_qty or normalized_quantity < min_qty:
         return _result(
@@ -250,6 +324,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if raw_quantity > max_qty or normalized_quantity > max_qty:
         return _result(
@@ -262,6 +338,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if normalized_quantity <= 0:
         return _result(
@@ -274,6 +352,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if notional < min_notional:
         return _result(
@@ -286,6 +366,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
     if rules.notional_max is not None and rules.notional_max > 0 and notional > rules.notional_max:
         return _result(
@@ -298,6 +380,8 @@ def validate_entry_order(
             notional=notional,
             min_notional=min_notional,
             order_amount=order_amount,
+            max_single_order_usdt=single_order_limit,
+            usdt_available_balance=available_balance,
         )
 
     return _result(
@@ -310,4 +394,6 @@ def validate_entry_order(
         notional=notional,
         min_notional=min_notional,
         order_amount=order_amount,
+        max_single_order_usdt=single_order_limit,
+        usdt_available_balance=available_balance,
     )

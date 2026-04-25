@@ -144,9 +144,6 @@ def startup_sync(
     if not execution_config.enabled_symbols:
         warnings.append("no_enabled_symbols")
 
-    if execution_config.mode == "live" and not execution_config.live_enabled:
-        warnings.append("live_mode_not_enabled")
-
     snapshot = SyncSnapshot(
         cash_balance=float(cash_balance),
         positions=positions,

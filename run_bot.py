@@ -10,13 +10,15 @@ from exchange.binance_client import BinanceClient
 from execution.trader import TraderEngine
 from observability.event_logger import LogRouter
 from runtime.sync import startup_account_reconciliation, startup_sync
-from runtime.state import RuntimeStore, build_runtime_state, create_broker, get_live_gate_status
+from runtime.state import RuntimeStore, build_runtime_state, create_broker
 from storage.db import initialize_database
 from strategy.config import StrategyConfig
 
 
 LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
 LIVE_CONFIRM_VALUE = "YES"
+REAL_EXECUTE_ENV_VAR = "TRADEBOT_EXECUTE_REAL"
+REAL_EXECUTE_VALUE = "YES"
 
 
 def ensure_runtime_mode_allowed(execution_config) -> None:
@@ -25,7 +27,7 @@ def ensure_runtime_mode_allowed(execution_config) -> None:
         return
 
     if runtime_state.mode == "live":
-        raise RuntimeError(get_live_gate_status(execution_config).message)
+        return
 
     raise RuntimeError(f"run_bot.py supports paper mode only, got app.mode={runtime_state.mode}")
 
@@ -37,10 +39,18 @@ def main() -> int:
     print(f"settings.yaml path: {DEFAULT_SETTINGS_PATH.resolve()}")
     print(f"app.mode: {settings.get('app', {}).get('mode')}")
     print(f"runtime_state.mode: {runtime_state.mode}")
+    print(f"runtime_state.broker: {runtime_state.broker_name}")
+    print(f"runtime_state.real_trading_enabled: {runtime_state.is_real_trading_enabled}")
     print(f"safety.allow_live_trading: {execution_config.allow_live_trading}")
+    print(f"safety.live_execute_enabled: {execution_config.live_execute_enabled}")
+    print(f"safety.require_manual_confirm: {execution_config.require_manual_confirm}")
     print(
         f"{LIVE_CONFIRM_ENV_VAR} is YES: "
         f"{os.environ.get(LIVE_CONFIRM_ENV_VAR) == LIVE_CONFIRM_VALUE}"
+    )
+    print(
+        f"{REAL_EXECUTE_ENV_VAR} is YES: "
+        f"{os.environ.get(REAL_EXECUTE_ENV_VAR) == REAL_EXECUTE_VALUE}"
     )
     try:
         ensure_runtime_mode_allowed(execution_config)

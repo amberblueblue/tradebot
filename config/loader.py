@@ -71,6 +71,7 @@ class ExecutionRuntimeConfig:
     max_positions: int
     stop_loss_pct: float
     take_profit_pct: float
+    max_single_order_usdt: float
     max_consecutive_errors: int
     runtime_state_file: str
     robot_initial_status: str
@@ -79,6 +80,8 @@ class ExecutionRuntimeConfig:
     trade_log_file: str
     error_log_file: str
     allow_live_trading: bool
+    live_execute_enabled: bool
+    require_manual_confirm: bool
     live_enabled: bool
 
 
@@ -476,6 +479,7 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
         max_positions=int(execution.get("max_positions", 3)),
         stop_loss_pct=float(execution.get("stop_loss_pct", 3.0)),
         take_profit_pct=float(execution.get("take_profit_pct", 6.0)),
+        max_single_order_usdt=float(settings.get("risk", {}).get("max_single_order_usdt", 20.0)),
         max_consecutive_errors=int(
             safety.get("max_consecutive_errors", execution.get("max_consecutive_errors", 3))
         ),
@@ -486,5 +490,7 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
         trade_log_file=str(logging.get("trade_log_file", "logs/trade.log")),
         error_log_file=str(logging.get("error_log_file", "logs/error.log")),
         allow_live_trading=bool(safety.get("allow_live_trading", False)),
+        live_execute_enabled=bool(safety.get("live_execute_enabled", False)),
+        require_manual_confirm=bool(safety.get("require_manual_confirm", True)),
         live_enabled=bool(live.get("enabled", False)),
     )

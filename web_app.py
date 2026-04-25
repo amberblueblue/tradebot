@@ -43,6 +43,7 @@ LOG_FILE_MAP = {
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
 LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
+REAL_EXECUTE_ENV_VAR = "TRADEBOT_EXECUTE_REAL"
 DASHBOARD_MARKET_DATA_TIMEOUT_SECONDS = 1
 DASHBOARD_MARKET_DATA_CACHE_SECONDS = 60
 _MARKET_DATA_CACHE: dict[str, object] = {
@@ -66,6 +67,7 @@ def _read_runtime_status(status_file: str) -> dict:
     if not path.exists():
         return {
             "robot_status": "unknown",
+            "broker_name": "paper",
             "conservative_mode": False,
             "consecutive_errors": 0,
             "last_error": None,
@@ -173,13 +175,20 @@ def _dashboard_context() -> dict:
     execution_config = load_execution_runtime(settings)
     runtime_status = _read_runtime_status(execution_config.status_file)
     live_gate = get_live_gate_status(execution_config)
+    runtime_state = build_runtime_state(execution_config)
     return {
         "project_name": "TraderBot Local Console",
         "mode": execution_config.mode,
+        "current_broker": runtime_state.broker_name,
         "live_gate": live_gate,
         "allow_live_trading": execution_config.allow_live_trading,
+        "live_execute_enabled": execution_config.live_execute_enabled,
+        "require_manual_confirm": execution_config.require_manual_confirm,
         "live_confirm_env_var": LIVE_CONFIRM_ENV_VAR,
         "live_confirm_env_is_yes": live_gate.confirm_env_ok,
+        "real_execute_env_var": REAL_EXECUTE_ENV_VAR,
+        "real_execute_env_is_yes": live_gate.real_execute_env_ok,
+        "real_trading_enabled": live_gate.real_trading_enabled,
         "is_live_mode": execution_config.mode == "live",
         "bot_status": runtime_status.get("robot_status", "unknown"),
         "is_error_status": runtime_status.get("robot_status") == ERROR,

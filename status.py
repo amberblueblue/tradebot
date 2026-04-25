@@ -153,6 +153,7 @@ def _validate_order_dry_run(symbol: str, side: str, amount: float) -> dict:
         realized_pnl=0.0,
         current_position_count=0,
         max_positions=execution_config.max_positions,
+        max_single_order_usdt=execution_config.max_single_order_usdt,
         bot_status="running",
         rules=rules,
     )
@@ -168,6 +169,8 @@ def _validate_order_dry_run(symbol: str, side: str, amount: float) -> dict:
         "normalized_quantity": validation.normalized_quantity,
         "notional": validation.notional,
         "min_notional": validation.min_notional,
+        "order_amount": validation.order_amount,
+        "max_single_order_usdt": validation.max_single_order_usdt,
         "rules": {
             "tick_size": rules.tick_size,
             "step_size": rules.step_size,
