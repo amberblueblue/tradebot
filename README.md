@@ -200,6 +200,15 @@ Dashboard 同时显示 live gate 状态和 `REAL TRADING ENABLED / DISABLED`。
 
 重要：第六阶段没有真实交易 broker。`runtime/state.py:create_broker()` 在当前阶段只会返回 `PaperBroker` 或 simulation-only `LiveBroker`，不会返回真实 Binance 下单 broker。
 
+### Dashboard Checks
+
+Dashboard 会明确显示：
+
+- 当前 broker：`paper` / `live_simulation` / `live_enabled`
+- `TRADEBOT_EXECUTE_REAL` 是否为 `YES`
+- real trading 状态：`REAL TRADING ENABLED` / `REAL TRADING DISABLED`
+- 当前不会真实下单，`LiveBroker` 仍然是 simulation
+
 ### Safety Gates
 
 live 路径至少需要：

@@ -56,6 +56,7 @@
       <div class="card-body">
         <h2 class="card-title h6 text-secondary">Current Broker</h2>
         <p class="fs-4 mb-0">{{ current_broker }}</p>
+        <p class="small text-secondary mb-0">paper / live_simulation / live_enabled</p>
       </div>
     </div>
   </div>
@@ -68,6 +69,16 @@
           REAL TRADING {{ "ENABLED" if real_trading_enabled else "DISABLED" }}
         </p>
         <p class="small text-secondary mb-0">Real order API disabled</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">TRADEBOT_EXECUTE_REAL</h2>
+        <p class="fs-5 mb-0">{{ "YES" if real_execute_env_is_yes else "not set" }}</p>
+        <p class="small text-secondary mb-0">LiveBroker remains simulation</p>
       </div>
     </div>
   </div>
