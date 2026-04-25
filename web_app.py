@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from pathlib import Path
 from collections import deque
@@ -39,6 +41,12 @@ LOG_FILE_MAP = {
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
 LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
+DASHBOARD_MARKET_DATA_TIMEOUT_SECONDS = 1
+DASHBOARD_MARKET_DATA_CACHE_SECONDS = 60
+_MARKET_DATA_CACHE: dict[str, object] = {
+    "expires_at": 0.0,
+    "status": None,
+}
 
 
 app = FastAPI(title="TraderBot Console")
@@ -81,12 +89,19 @@ def _read_paper_state(state_file: str) -> dict:
 
 
 def _public_market_data_status(settings: dict, execution_config) -> dict:
+    cached_status = _MARKET_DATA_CACHE.get("status")
+    if cached_status is not None and time.monotonic() < float(_MARKET_DATA_CACHE["expires_at"]):
+        return dict(cached_status)
+
     enabled_symbols = list(execution_config.enabled_symbols)
     default_symbol = settings.get("market", {}).get("default_symbol")
     symbol = enabled_symbols[0] if enabled_symbols else default_symbol
     client = BinanceClient(
         base_url=execution_config.exchange.base_url,
-        timeout=execution_config.exchange.request_timeout_seconds,
+        timeout=min(
+            execution_config.exchange.request_timeout_seconds,
+            DASHBOARD_MARKET_DATA_TIMEOUT_SECONDS,
+        ),
         error_log_file=execution_config.error_log_file,
     )
     status = {
@@ -99,34 +114,45 @@ def _public_market_data_status(settings: dict, execution_config) -> dict:
         "exchange_info_ok": False,
         "error": None,
     }
-    errors: list[str] = []
-
-    try:
-        status["ping_ok"] = bool(client.ping())
-    except Exception as exc:
-        errors.append(f"ping: {exc}")
-
-    try:
-        server_time = client.get_server_time()
-        status["server_time"] = server_time.get("serverTime", "n/a")
-    except Exception as exc:
-        errors.append(f"server_time: {exc}")
-
+    checks = {
+        "ping": client.ping,
+        "server_time": client.get_server_time,
+    }
     if symbol:
-        try:
-            ticker = client.get_ticker_price(symbol)
-            status["ticker_price"] = ticker.get("price", "n/a")
-        except Exception as exc:
-            errors.append(f"ticker_price: {exc}")
+        checks["ticker_price"] = lambda: client.get_ticker_price(symbol)
+        checks["exchangeInfo"] = lambda: client.get_symbol_info(symbol)
 
+    errors: list[str] = []
+    executor = ThreadPoolExecutor(max_workers=len(checks))
+    futures = {executor.submit(check): name for name, check in checks.items()}
+    done, pending = wait(futures, timeout=DASHBOARD_MARKET_DATA_TIMEOUT_SECONDS)
+
+    for future in pending:
+        future.cancel()
+        errors.append(f"{futures[future]}: request timed out")
+    executor.shutdown(wait=False, cancel_futures=True)
+
+    for future in done:
+        check_name = futures[future]
         try:
-            client.get_symbol_info(symbol)
-            status["exchange_info_ok"] = True
+            result = future.result()
         except Exception as exc:
-            errors.append(f"exchangeInfo: {exc}")
+            errors.append(f"{check_name}: {exc}")
+            continue
+
+        if check_name == "ping":
+            status["ping_ok"] = bool(result)
+        elif check_name == "server_time":
+            status["server_time"] = result.get("serverTime", "n/a")
+        elif check_name == "ticker_price":
+            status["ticker_price"] = result.get("price", "n/a")
+        elif check_name == "exchangeInfo":
+            status["exchange_info_ok"] = True
 
     if errors:
         status["error"] = " | ".join(errors)
+    _MARKET_DATA_CACHE["status"] = dict(status)
+    _MARKET_DATA_CACHE["expires_at"] = time.monotonic() + DASHBOARD_MARKET_DATA_CACHE_SECONDS
     return status
 
 

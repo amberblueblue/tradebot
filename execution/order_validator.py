@@ -16,6 +16,8 @@ class OrderValidationResult:
     raw_price: float
     normalized_price: float
     notional: float
+    min_notional: float
+    order_amount: float
     normalized_amount: float
 
 
@@ -28,6 +30,8 @@ def _result(
     raw_price: float,
     normalized_price: float,
     notional: float,
+    min_notional: float = 0.0,
+    order_amount: float = 0.0,
 ) -> OrderValidationResult:
     return OrderValidationResult(
         ok=ok,
@@ -37,6 +41,8 @@ def _result(
         raw_price=raw_price,
         normalized_price=normalized_price,
         notional=notional,
+        min_notional=min_notional,
+        order_amount=order_amount,
         normalized_amount=notional,
     )
 
@@ -91,6 +97,8 @@ def validate_entry_order(
     normalized_quantity = 0.0
     normalized_price = 0.0
     notional = 0.0
+    min_notional = rules.effective_min_notional
+    order_amount = float(symbol_config.order_amount)
 
     if bot_status != "running":
         return _result(
@@ -101,6 +109,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if not symbol_config.enabled:
         return _result(
@@ -111,6 +121,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if symbol_config.paused_by_loss:
         return _result(
@@ -121,6 +133,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if symbol_config.order_amount <= 0:
         return _result(
@@ -131,6 +145,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if quantity <= 0:
         return _result(
@@ -141,6 +157,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if price <= 0:
         return _result(
@@ -151,6 +169,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if realized_pnl <= -symbol_config.max_loss_amount:
         return _result(
@@ -161,6 +181,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if current_position_count >= max_positions:
         return _result(
@@ -171,6 +193,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
 
     normalized_price = _round_down_to_step(raw_price, rules.tick_size)
@@ -179,8 +203,6 @@ def validate_entry_order(
     max_qty = _effective_max_qty(rules)
     normalized_quantity = _round_down_to_step(raw_quantity, quantity_step_size)
     notional = float(_decimal(normalized_price) * _decimal(normalized_quantity))
-    min_notional = rules.effective_min_notional
-
     if symbol_config.order_amount < min_notional:
         return _result(
             False,
@@ -190,6 +212,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if raw_price != normalized_price or not _is_step_aligned(raw_price, rules.tick_size):
         return _result(
@@ -200,6 +224,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if raw_quantity != normalized_quantity or not _is_step_aligned(raw_quantity, quantity_step_size):
         return _result(
@@ -210,6 +236,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if raw_quantity < min_qty or normalized_quantity < min_qty:
         return _result(
@@ -220,6 +248,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if raw_quantity > max_qty or normalized_quantity > max_qty:
         return _result(
@@ -230,6 +260,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if normalized_quantity <= 0:
         return _result(
@@ -240,6 +272,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if notional < min_notional:
         return _result(
@@ -250,6 +284,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
     if rules.notional_max is not None and rules.notional_max > 0 and notional > rules.notional_max:
         return _result(
@@ -260,6 +296,8 @@ def validate_entry_order(
             raw_price=raw_price,
             normalized_price=normalized_price,
             notional=notional,
+            min_notional=min_notional,
+            order_amount=order_amount,
         )
 
     return _result(
@@ -270,4 +308,6 @@ def validate_entry_order(
         raw_price=raw_price,
         normalized_price=normalized_price,
         notional=notional,
+        min_notional=min_notional,
+        order_amount=order_amount,
     )

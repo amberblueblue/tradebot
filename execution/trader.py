@@ -376,6 +376,8 @@ class TraderEngine:
                 raw_price=validation.raw_price,
                 normalized_price=validation.normalized_price,
                 notional=validation.notional,
+                min_notional=validation.min_notional,
+                order_amount=validation.order_amount,
                 normalized_amount=validation.normalized_amount,
             )
             return
@@ -692,7 +694,7 @@ class TraderEngine:
         )
 
     def _active_symbols(self, positions_by_symbol: dict[str, Position]) -> tuple[str, ...]:
-        return tuple(sorted(set(self.symbol_configs) | set(positions_by_symbol)))
+        return self._tradable_symbols()
 
     def _is_symbol_tradable(self, symbol_config: SymbolTradingConfig) -> bool:
         return symbol_config.enabled and not symbol_config.paused_by_loss
@@ -897,4 +899,12 @@ class TraderEngine:
             )
 
         reason = payload.get("reason") or payload.get("status") or ""
+        if event_type == "order_blocked":
+            details = " ".join(
+                f"{key}={payload[key]}"
+                for key in ("order_amount", "min_notional", "notional")
+                if key in payload
+            )
+            print(f"[{event_type}] {symbol} {reason} {details}".strip())
+            return
         print(f"[{event_type}] {symbol} {reason}".strip())
