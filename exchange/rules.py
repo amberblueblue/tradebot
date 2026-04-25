@@ -242,6 +242,10 @@ def _parse_symbol_rules(symbol: str, symbol_info: dict[str, Any]) -> SymbolRules
     )
 
 
+def parse_symbol_rules(symbol: str, symbol_info: dict[str, Any]) -> SymbolRules:
+    return _parse_symbol_rules(symbol, symbol_info)
+
+
 def get_default_symbol_rules(symbol: str) -> SymbolRules:
     return SymbolRules(symbol=symbol.upper())
 
@@ -316,14 +320,14 @@ def normalize_price(symbol: str, price: float) -> float:
 
 def normalize_quantity(symbol: str, quantity: float) -> float:
     rules = fetch_symbol_rules(symbol)
-    normalized = _round_down_to_step(Decimal(str(quantity)), Decimal(str(rules.lot_size_step_size)))
+    normalized = _round_down_to_step(Decimal(str(quantity)), Decimal(str(rules.step_size)))
     return float(normalized)
 
 
 def validate_notional(symbol: str, price: float, quantity: float) -> bool:
     rules = fetch_symbol_rules(symbol)
     notional = Decimal(str(price)) * Decimal(str(quantity))
-    min_notional = Decimal(str(rules.notional_min or rules.min_notional))
+    min_notional = Decimal(str(rules.effective_min_notional))
     if notional < min_notional:
         return False
     if (

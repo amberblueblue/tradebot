@@ -191,7 +191,7 @@ def validate_entry_order(
             normalized_price=normalized_price,
             notional=notional,
         )
-    if not _is_step_aligned(normalized_price, rules.tick_size):
+    if raw_price != normalized_price or not _is_step_aligned(raw_price, rules.tick_size):
         return _result(
             False,
             "price_tick_size_mismatch",
@@ -201,7 +201,7 @@ def validate_entry_order(
             normalized_price=normalized_price,
             notional=notional,
         )
-    if not _is_step_aligned(normalized_quantity, quantity_step_size):
+    if raw_quantity != normalized_quantity or not _is_step_aligned(raw_quantity, quantity_step_size):
         return _result(
             False,
             "quantity_step_size_mismatch",
