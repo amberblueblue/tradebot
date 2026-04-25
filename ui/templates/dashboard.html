@@ -149,6 +149,55 @@
     </div>
   </div>
 
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+          <div>
+            <h2 class="h5 mb-1">Startup Account Reconciliation</h2>
+            <p class="text-secondary mb-0">Read-only Binance account check at bot startup.</p>
+          </div>
+          <div>
+            {% if account_reconciliation.status == "ok" %}
+            <span class="badge text-bg-success">ok</span>
+            {% elif account_reconciliation.status == "warning" %}
+            <span class="badge text-bg-warning">warning</span>
+            {% elif account_reconciliation.status == "failed" %}
+            <span class="badge text-bg-danger">failed</span>
+            {% elif account_reconciliation.status == "not_configured" %}
+            <span class="badge text-bg-secondary">not configured</span>
+            {% else %}
+            <span class="badge text-bg-secondary">{{ account_reconciliation.status or "unknown" }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <dl class="row mt-3 mb-0">
+          <dt class="col-sm-3">Checked At</dt>
+          <dd class="col-sm-9">{{ account_reconciliation.checked_at or "n/a" }}</dd>
+
+          <dt class="col-sm-3">Query</dt>
+          <dd class="col-sm-9">{{ "success" if account_reconciliation.query_ok else "not run or failed" }}</dd>
+
+          <dt class="col-sm-3">Non-zero Assets</dt>
+          <dd class="col-sm-9">{{ account_reconciliation.nonzero_assets | length }}</dd>
+
+          <dt class="col-sm-3">Open Orders</dt>
+          <dd class="col-sm-9">{{ account_reconciliation.open_orders | length }}</dd>
+
+          {% if account_reconciliation.warnings %}
+          <dt class="col-sm-3">Warnings</dt>
+          <dd class="col-sm-9 text-warning">{{ account_reconciliation.warnings | join(", ") }}</dd>
+          {% endif %}
+
+          {% if account_reconciliation.error %}
+          <dt class="col-sm-3">Error</dt>
+          <dd class="col-sm-9 text-danger">{{ account_reconciliation.error }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+  </div>
+
   <div class="col-lg-7">
     <div class="card shadow-sm h-100">
       <div class="card-body">

@@ -4,7 +4,16 @@ import json
 from pathlib import Path
 from typing import Any
 
-from runtime.bot_state import BotState, ERROR, PAUSED, RUNNING, STOPPED, SyncSnapshot, VALID_BOT_STATUSES
+from runtime.bot_state import (
+    AccountReconciliationSnapshot,
+    BotState,
+    ERROR,
+    PAUSED,
+    RUNNING,
+    STOPPED,
+    SyncSnapshot,
+    VALID_BOT_STATUSES,
+)
 
 
 def _default_symbol_state() -> dict[str, Any]:
@@ -55,6 +64,9 @@ class StateStore:
 
         payload = json.loads(self.state_path.read_text(encoding="utf-8"))
         snapshot = SyncSnapshot(**payload.get("last_sync", {}))
+        account_reconciliation = AccountReconciliationSnapshot(
+            **payload.get("account_reconciliation", {})
+        )
         state = BotState(
             robot_status=payload.get("robot_status", self.initial_status),
             mode=payload.get("mode", self.mode),
@@ -65,6 +77,7 @@ class StateStore:
             startup_synced=bool(payload.get("startup_synced", False)),
             symbols=dict(payload.get("symbols", {})),
             last_sync=snapshot,
+            account_reconciliation=account_reconciliation,
         )
         if state.robot_status not in VALID_BOT_STATUSES:
             state.robot_status = PAUSED
@@ -103,6 +116,10 @@ class StateStore:
     def set_sync_snapshot(self, snapshot: SyncSnapshot) -> None:
         self.state.last_sync = snapshot
         self.state.startup_synced = True
+        self.save()
+
+    def set_account_reconciliation_snapshot(self, snapshot: AccountReconciliationSnapshot) -> None:
+        self.state.account_reconciliation = snapshot
         self.save()
 
     def get_symbol_state(self, symbol: str) -> dict[str, Any]:
@@ -153,4 +170,5 @@ __all__ = [
     "StateStore",
     "RuntimeStore",
     "SyncSnapshot",
+    "AccountReconciliationSnapshot",
 ]

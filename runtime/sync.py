@@ -1,11 +1,125 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime, timezone
+from typing import Any
 
 from config.loader import ExecutionRuntimeConfig
+from config.secrets import load_binance_readonly_credentials
+from exchange.binance_client import BinanceClient, BinancePrivateReadOnlyAPIError
 from execution.broker import Broker
 from observability.event_logger import LogRouter
-from runtime.bot_state import PAUSED, SyncSnapshot
+from runtime.bot_state import AccountReconciliationSnapshot, PAUSED, SyncSnapshot
+
+
+def _balance_total(balance: dict[str, Any]) -> float:
+    try:
+        free = float(balance.get("free", 0) or 0)
+        locked = float(balance.get("locked", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return free + locked
+
+
+def _nonzero_asset_rows(balances: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for balance in balances:
+        asset = str(balance.get("asset", "")).strip()
+        total = _balance_total(balance)
+        if not asset or total <= 0:
+            continue
+        rows.append(
+            {
+                "asset": asset,
+                "free": float(balance.get("free", 0) or 0),
+                "locked": float(balance.get("locked", 0) or 0),
+                "total": total,
+            }
+        )
+    return sorted(rows, key=lambda row: row["asset"])
+
+
+def startup_account_reconciliation(
+    *,
+    execution_config: ExecutionRuntimeConfig,
+    runtime_store,
+    logger: LogRouter,
+) -> AccountReconciliationSnapshot:
+    credentials = load_binance_readonly_credentials()
+    if not credentials.configured:
+        snapshot = AccountReconciliationSnapshot(
+            configured=False,
+            query_ok=False,
+            status="not_configured",
+            warnings=[],
+            error=None,
+            checked_at=None,
+        )
+        runtime_store.set_account_reconciliation_snapshot(snapshot)
+        return snapshot
+
+    checked_at = datetime.now(timezone.utc).isoformat()
+    try:
+        client = BinanceClient(
+            base_url=execution_config.exchange.base_url,
+            timeout=execution_config.exchange.request_timeout_seconds,
+            error_log_file=execution_config.error_log_file,
+            recv_window=execution_config.exchange.recv_window,
+            credentials=credentials,
+        )
+        balances = client.get_account_balances()
+        open_orders = client.get_open_orders()
+        nonzero_assets = _nonzero_asset_rows(balances)
+        warnings = []
+        if nonzero_assets:
+            warnings.append("real_account_nonzero_assets")
+        if open_orders:
+            warnings.append("real_account_open_orders")
+
+        snapshot = AccountReconciliationSnapshot(
+            configured=True,
+            query_ok=True,
+            status="warning" if warnings else "ok",
+            warnings=warnings,
+            error=None,
+            nonzero_assets=nonzero_assets,
+            open_orders=open_orders,
+            checked_at=checked_at,
+        )
+        runtime_store.set_account_reconciliation_snapshot(snapshot)
+        logger.log_system(
+            symbol="-",
+            action="startup_account_reconciliation",
+            reason=snapshot.status,
+            snapshot=asdict(snapshot),
+        )
+        return snapshot
+    except BinancePrivateReadOnlyAPIError as exc:
+        error_message = str(exc)
+    except Exception as exc:
+        error_message = f"startup_account_reconciliation_failed: {exc}"
+        logger.log_error(
+            symbol="-",
+            action="startup_account_reconciliation_error",
+            reason=error_message,
+        )
+
+    snapshot = AccountReconciliationSnapshot(
+        configured=True,
+        query_ok=False,
+        status="failed",
+        warnings=["account_reconciliation_failed"],
+        error=error_message,
+        checked_at=checked_at,
+    )
+    runtime_store.set_account_reconciliation_snapshot(snapshot)
+    logger.log_system(
+        symbol="-",
+        action="startup_account_reconciliation_warning",
+        reason=error_message,
+        snapshot=asdict(snapshot),
+    )
+    return snapshot
 
 
 def startup_sync(

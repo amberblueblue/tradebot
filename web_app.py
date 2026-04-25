@@ -24,6 +24,7 @@ from config.loader import (
 )
 from config.secrets import load_binance_readonly_credentials
 from exchange.binance_client import BinanceClient
+from exchange.binance_client import BinancePrivateReadOnlyAPIError
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
 from runtime.state import RuntimeStore, build_runtime_state, get_live_gate_status
@@ -77,6 +78,16 @@ def _read_runtime_status(status_file: str) -> dict:
                 "enabled_symbols": [],
                 "warnings": ["runtime_status_not_found"],
                 "synced_at": None,
+            },
+            "account_reconciliation": {
+                "configured": False,
+                "query_ok": False,
+                "status": "unknown",
+                "warnings": ["runtime_status_not_found"],
+                "error": None,
+                "nonzero_assets": [],
+                "open_orders": [],
+                "checked_at": None,
             },
         }
     return json.loads(path.read_text(encoding="utf-8"))
@@ -175,6 +186,7 @@ def _dashboard_context() -> dict:
         "enabled_symbols": list(execution_config.enabled_symbols),
         "current_time": datetime.now(timezone.utc),
         "runtime_status": runtime_status,
+        "account_reconciliation": runtime_status.get("account_reconciliation", {}),
         "public_market_data": _public_market_data_status(settings, execution_config),
         "binance_credentials": load_binance_readonly_credentials().public_status(),
         "settings": settings,
@@ -504,6 +516,68 @@ def _load_positions_view() -> dict:
     }
 
 
+def _format_balance_row(balance: dict) -> dict:
+    free = _to_float(balance.get("free"))
+    locked = _to_float(balance.get("locked"))
+    return {
+        "asset": str(balance.get("asset", "")),
+        "free": free,
+        "locked": locked,
+        "total": free + locked,
+    }
+
+
+def _load_account_view() -> dict:
+    credentials = load_binance_readonly_credentials()
+    credentials_status = credentials.public_status()
+    context = {
+        "credentials": credentials_status,
+        "query_ok": False,
+        "query_error": None,
+        "usdt_balance": None,
+        "nonzero_balances": [],
+        "updated_at": None,
+    }
+    if not credentials.configured:
+        context["query_error"] = "BINANCE_API_KEY and BINANCE_API_SECRET are required for read-only account queries."
+        return context
+
+    try:
+        settings = load_project_config()
+        execution_config = load_execution_runtime(settings)
+        client = BinanceClient(
+            base_url=execution_config.exchange.base_url,
+            timeout=execution_config.exchange.request_timeout_seconds,
+            error_log_file=execution_config.error_log_file,
+            recv_window=execution_config.exchange.recv_window,
+            credentials=credentials,
+        )
+        balances = client.get_account_balances()
+    except BinancePrivateReadOnlyAPIError as exc:
+        context["query_error"] = str(exc)
+        return context
+    except Exception as exc:
+        context["query_error"] = f"Account query failed: {exc}"
+        return context
+
+    rows = [_format_balance_row(balance) for balance in balances]
+    nonzero_rows = sorted(
+        [row for row in rows if row["asset"] and row["total"] > 0],
+        key=lambda row: row["asset"],
+    )
+    usdt_balance = next((row for row in rows if row["asset"] == "USDT"), None)
+    context.update(
+        {
+            "query_ok": True,
+            "query_error": None,
+            "usdt_balance": usdt_balance or {"asset": "USDT", "free": 0.0, "locked": 0.0, "total": 0.0},
+            "nonzero_balances": nonzero_rows,
+            "updated_at": datetime.now(timezone.utc),
+        }
+    )
+    return context
+
+
 def _load_performance_view(symbol: str = "") -> dict:
     try:
         settings = load_project_config()
@@ -679,6 +753,18 @@ def positions_page(request: Request):
         }
     )
     return templates.TemplateResponse(request, "positions.html", context)
+
+
+@app.get("/account", response_class=HTMLResponse)
+def account_page(request: Request):
+    context = _load_account_view()
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+        }
+    )
+    return templates.TemplateResponse(request, "account.html", context)
 
 
 @app.get("/config", response_class=HTMLResponse)

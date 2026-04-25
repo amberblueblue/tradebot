@@ -23,6 +23,18 @@ class SyncSnapshot:
 
 
 @dataclass
+class AccountReconciliationSnapshot:
+    configured: bool = False
+    query_ok: bool = False
+    status: str = "not_configured"
+    warnings: list[str] = field(default_factory=list)
+    error: str | None = None
+    nonzero_assets: list[dict[str, Any]] = field(default_factory=list)
+    open_orders: list[dict[str, Any]] = field(default_factory=list)
+    checked_at: str | None = None
+
+
+@dataclass
 class BotState:
     robot_status: str = RUNNING
     mode: str = "paper"
@@ -33,6 +45,7 @@ class BotState:
     startup_synced: bool = False
     symbols: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_sync: SyncSnapshot = field(default_factory=SyncSnapshot)
+    account_reconciliation: AccountReconciliationSnapshot = field(default_factory=AccountReconciliationSnapshot)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

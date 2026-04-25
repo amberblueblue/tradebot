@@ -9,7 +9,7 @@ from config.loader import DEFAULT_SETTINGS_PATH, load_execution_runtime, load_pr
 from exchange.binance_client import BinanceClient
 from execution.trader import TraderEngine
 from observability.event_logger import LogRouter
-from runtime.sync import startup_sync
+from runtime.sync import startup_account_reconciliation, startup_sync
 from runtime.state import RuntimeStore, build_runtime_state, create_broker, get_live_gate_status
 from storage.db import initialize_database
 from strategy.config import StrategyConfig
@@ -70,6 +70,11 @@ def main() -> int:
     )
     startup_sync(
         broker=broker,
+        execution_config=execution_config,
+        runtime_store=runtime_store,
+        logger=logger,
+    )
+    startup_account_reconciliation(
         execution_config=execution_config,
         runtime_store=runtime_store,
         logger=logger,
