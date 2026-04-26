@@ -63,10 +63,12 @@ rsync -av --delete \
   --exclude "scripts/uninstall_launchd.sh" \
   --exclude "scripts/status_prod.sh" \
   --exclude "runtime/*.pid" \
+  --exclude "runtime/*.json" \
   "$DEV_DIR/" "$PROD_DIR/"
 
 log_step "starting prod"
 "$PROD_DIR/scripts/install_launchd.sh"
 
 log_step "checking status"
+sleep 3
 "$PROD_DIR/scripts/status_prod.sh"

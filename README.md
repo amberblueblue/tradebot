@@ -232,4 +232,4 @@ bash scripts/deploy_to_prod.sh
 - `starting prod`：调用 `/Users/eason/traderbot_prod/scripts/install_launchd.sh`
 - `checking status`：调用 `/Users/eason/traderbot_prod/scripts/status_prod.sh`
 
-同步时会排除 `.env`、`logs/`、`data/tradebot.sqlite3`、`.venv/`、`__pycache__/`、`.git/`、`.DS_Store`、生产 launchd plist、生产启动脚本和 pid 文件，不会覆盖生产 API key、生产日志、生产数据库、生产虚拟环境或生产自启动管理文件。
+同步时会排除 `.env`、`logs/`、`data/tradebot.sqlite3`、`.venv/`、`__pycache__/`、`.git/`、`.DS_Store`、生产 launchd plist、生产启动脚本、pid 文件和 `runtime/*.json`，不会覆盖生产 API key、生产日志、生产数据库、生产虚拟环境、生产运行态或生产自启动管理文件。
