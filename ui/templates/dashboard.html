@@ -4,14 +4,6 @@
 
 {% block content %}
 <div class="row g-4">
-  <div class="col-12">
-    <div class="hero-panel p-4 p-md-5 rounded-4">
-      <p class="text-uppercase small mb-2 text-secondary">Local Control Console</p>
-      <h1 class="display-6 mb-2">{{ project_name }}</h1>
-      <p class="text-secondary mb-0">Second phase MVP dashboard backed by phase 1 config and runtime state.</p>
-    </div>
-  </div>
-
   {% if is_error_status %}
   <div class="col-12">
     <div class="alert alert-danger shadow-sm mb-0" role="alert">
@@ -62,115 +54,143 @@
     </div>
   </div>
 
-  <div class="col-md-6 col-xl-3">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="card-title h6 text-secondary">Current Mode</h2>
-        <p class="fs-4 mb-0">{{ mode }}</p>
+  <div class="col-12">
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-5 g-4">
+      <div class="col">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h2 class="card-title h6 text-secondary">Bot Status</h2>
+            <p class="fs-4 mb-0 {% if is_error_status %}text-danger fw-semibold{% endif %}">{{ bot_status }}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h2 class="card-title h6 text-secondary">Account Risk Status</h2>
+            <p class="fs-5 mb-1 {% if account_risk.account_risk_blocked %}text-danger fw-semibold{% else %}text-success{% endif %}">
+              {{ "BLOCKED" if account_risk.account_risk_blocked else "OK" }}
+            </p>
+            <p class="small text-secondary mb-0">Consecutive losses: {{ account_risk.consecutive_losing_trades }}</p>
+            {% if not account_risk.account_risk_blocked %}
+            <form method="post" action="/api/account_risk/reset" class="mt-2">
+              <button type="submit" class="btn btn-sm btn-outline-secondary">Reset Account Risk</button>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h2 class="card-title h6 text-secondary">Current Mode</h2>
+            <p class="fs-4 mb-0">{{ mode }}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h2 class="card-title h6 text-secondary">Real Trading</h2>
+            <p class="fs-5 mb-0 {% if real_trading_enabled %}text-danger fw-semibold{% else %}text-secondary{% endif %}">
+              REAL TRADING {{ "ENABLED" if real_trading_enabled else "DISABLED" }}
+            </p>
+            <p class="small text-secondary mb-0">Real order API disabled</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h2 class="card-title h6 text-secondary">Current Broker</h2>
+            <p class="fs-4 mb-0">{{ current_broker }}</p>
+            <p class="small text-secondary mb-0">paper / live_simulation / live_enabled</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h2 class="card-title h6 text-secondary">TRADEBOT_EXECUTE_REAL</h2>
+            <p class="fs-5 mb-0">{{ "YES" if real_execute_env_is_yes else "not set" }}</p>
+            <p class="small text-secondary mb-0">LiveBroker remains simulation</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h2 class="card-title h6 text-secondary">Auto Strategy Real Order</h2>
+            <p class="fs-5 mb-0 text-secondary">{{ "ENABLED" if auto_strategy_real_order_enabled else "DISABLED" }}</p>
+            <p class="small text-secondary mb-0">Strategy uses simulation broker only</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h2 class="card-title h6 text-secondary">Manual Real Order Command</h2>
+            <p class="fs-5 mb-0 {% if manual_real_order_available %}text-warning fw-semibold{% else %}text-secondary{% endif %}">
+              {{ "AVAILABLE" if manual_real_order_available else "BLOCKED" }}
+            </p>
+            <p class="small text-secondary mb-0">status.py command only</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h2 class="card-title h6 text-secondary">Enabled Symbols</h2>
+            <p class="fs-5 mb-0">
+              {% if enabled_symbols %}
+                {{ enabled_symbols | join(", ") }}
+              {% else %}
+                none
+              {% endif %}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h2 class="card-title h6 text-secondary">Current Time</h2>
+            <p class="fs-6 mb-0">{{ current_time.strftime("%Y-%m-%d %H:%M:%S %Z") }}</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="col-md-6 col-xl-3">
-    <div class="card shadow-sm h-100">
+  <div class="col-12">
+    <div class="card shadow-sm">
       <div class="card-body">
-        <h2 class="card-title h6 text-secondary">Current Broker</h2>
-        <p class="fs-4 mb-0">{{ current_broker }}</p>
-        <p class="small text-secondary mb-0">paper / live_simulation / live_enabled</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-6 col-xl-3">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="card-title h6 text-secondary">Real Trading</h2>
-        <p class="fs-5 mb-0 {% if real_trading_enabled %}text-danger fw-semibold{% else %}text-secondary{% endif %}">
-          REAL TRADING {{ "ENABLED" if real_trading_enabled else "DISABLED" }}
-        </p>
-        <p class="small text-secondary mb-0">Real order API disabled</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-6 col-xl-3">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="card-title h6 text-secondary">TRADEBOT_EXECUTE_REAL</h2>
-        <p class="fs-5 mb-0">{{ "YES" if real_execute_env_is_yes else "not set" }}</p>
-        <p class="small text-secondary mb-0">LiveBroker remains simulation</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-6 col-xl-3">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="card-title h6 text-secondary">Auto Strategy Real Order</h2>
-        <p class="fs-5 mb-0 text-secondary">{{ "ENABLED" if auto_strategy_real_order_enabled else "DISABLED" }}</p>
-        <p class="small text-secondary mb-0">Strategy uses simulation broker only</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-6 col-xl-3">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="card-title h6 text-secondary">Manual Real Order Command</h2>
-        <p class="fs-5 mb-0 {% if manual_real_order_available %}text-warning fw-semibold{% else %}text-secondary{% endif %}">
-          {{ "AVAILABLE" if manual_real_order_available else "BLOCKED" }}
-        </p>
-        <p class="small text-secondary mb-0">status.py command only</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-6 col-xl-3">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="card-title h6 text-secondary">Bot Status</h2>
-        <p class="fs-4 mb-0 {% if is_error_status %}text-danger fw-semibold{% endif %}">{{ bot_status }}</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-6 col-xl-3">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="card-title h6 text-secondary">Account Risk Status</h2>
-        <p class="fs-5 mb-1 {% if account_risk.account_risk_blocked %}text-danger fw-semibold{% else %}text-success{% endif %}">
-          {{ "BLOCKED" if account_risk.account_risk_blocked else "OK" }}
-        </p>
-        <p class="small text-secondary mb-0">Consecutive losses: {{ account_risk.consecutive_losing_trades }}</p>
-        {% if not account_risk.account_risk_blocked %}
-        <form method="post" action="/api/account_risk/reset" class="mt-2">
-          <button type="submit" class="btn btn-sm btn-outline-secondary">Reset Account Risk</button>
-        </form>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-6 col-xl-3">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="card-title h6 text-secondary">Enabled Symbols</h2>
-        <p class="fs-5 mb-0">
-          {% if enabled_symbols %}
-            {{ enabled_symbols | join(", ") }}
-          {% else %}
-            none
-          {% endif %}
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-6 col-xl-3">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="card-title h6 text-secondary">Current Time</h2>
-        <p class="fs-6 mb-0">{{ current_time.strftime("%Y-%m-%d %H:%M:%S %Z") }}</p>
+        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+          <div>
+            <h2 class="h5 mb-1">Bot Controls</h2>
+            <p class="text-secondary mb-0">These controls only update local runtime state.</p>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <form method="post" action="/bot/start">
+              <button class="btn btn-success" type="submit">Start</button>
+            </form>
+            <form method="post" action="/bot/pause">
+              <button class="btn btn-warning" type="submit">Pause</button>
+            </form>
+            <form method="post" action="/bot/stop">
+              <button class="btn btn-outline-danger" type="submit">Stop</button>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -347,30 +367,6 @@
           <li class="list-group-item px-0 text-secondary">No enabled symbols</li>
           {% endfor %}
         </ul>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
-          <div>
-            <h2 class="h5 mb-1">Bot Controls</h2>
-            <p class="text-secondary mb-0">These controls only update local runtime state.</p>
-          </div>
-          <div class="d-flex flex-wrap gap-2">
-            <form method="post" action="/bot/start">
-              <button class="btn btn-success" type="submit">Start</button>
-            </form>
-            <form method="post" action="/bot/pause">
-              <button class="btn btn-warning" type="submit">Pause</button>
-            </form>
-            <form method="post" action="/bot/stop">
-              <button class="btn btn-outline-danger" type="submit">Stop</button>
-            </form>
-          </div>
-        </div>
       </div>
     </div>
   </div>
