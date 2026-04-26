@@ -141,7 +141,8 @@ def startup_sync(
         open_orders = []
         warnings.append(f"startup_sync_failed: {exc}")
 
-    if not execution_config.enabled_symbols:
+    idle_no_symbols = not execution_config.enabled_symbols
+    if idle_no_symbols:
         warnings.append("no_enabled_symbols")
 
     snapshot = SyncSnapshot(
@@ -156,12 +157,17 @@ def startup_sync(
     for position in positions:
         runtime_store.get_symbol_state(position["symbol"])
 
-    if warnings:
+    blocking_warnings = [warning for warning in warnings if warning != "no_enabled_symbols"]
+    if blocking_warnings:
         runtime_store.set_conservative_mode(True)
         if runtime_store.get_robot_status() == "running":
             runtime_store.set_robot_status(PAUSED)
-        for warning in warnings:
+        for warning in blocking_warnings:
             logger.log_system(symbol="-", action="startup_warning", reason=warning, snapshot=asdict(snapshot))
+    elif idle_no_symbols:
+        runtime_store.set_conservative_mode(False)
+        logger.log_system(symbol="-", action="bot_idle", reason="no_symbols_configured", snapshot=asdict(snapshot))
+        print("[bot_idle] no_symbols_configured")
     else:
         runtime_store.set_conservative_mode(False)
         logger.log_system(symbol="-", action="startup_sync", reason="startup_sync_ok", snapshot=asdict(snapshot))

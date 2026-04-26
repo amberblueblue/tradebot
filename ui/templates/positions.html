@@ -24,7 +24,9 @@
       <div class="card-body">
         <h2 class="h5 mb-3">Current Positions</h2>
         {% if not positions %}
-        <div class="alert alert-light border mb-0">暂无持仓</div>
+        <div class="alert alert-light border mb-0">
+          {{ "No symbols configured" if not has_configured_symbols else "No active symbols" }}
+        </div>
         {% else %}
         <div class="table-responsive">
           <table class="table align-middle">

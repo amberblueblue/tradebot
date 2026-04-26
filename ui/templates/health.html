@@ -29,10 +29,10 @@
     <div class="card shadow-sm h-100">
       <div class="card-body">
         <h2 class="h6 text-secondary">Bot Runtime</h2>
-        <p class="fs-5 mb-1 {% if bot_runtime.status == 'error' %}text-danger{% else %}text-body{% endif %}">
+        <p class="fs-5 mb-1 {% if bot_runtime.status == 'error' %}text-danger{% elif bot_runtime.idle %}text-warning{% else %}text-body{% endif %}">
           {{ bot_runtime.status }}
         </p>
-        <p class="small text-secondary mb-0">Last loop: {{ last_bot_loop_time or "unknown" }}</p>
+        <p class="small text-secondary mb-0">{{ bot_runtime.message or "Last loop: " ~ (last_bot_loop_time or "unknown") }}</p>
       </div>
     </div>
   </div>
@@ -64,7 +64,7 @@
       <div class="card-body">
         <div class="d-flex justify-content-between gap-3">
           <h2 class="h5 mb-3">Binance Public API</h2>
-          <span class="badge align-self-start {% if binance_public_api.ping_ok %}text-bg-success{% else %}text-bg-danger{% endif %}">
+          <span class="badge align-self-start {% if binance_public_api.status == 'idle' %}text-bg-warning{% elif binance_public_api.ping_ok %}text-bg-success{% else %}text-bg-danger{% endif %}">
             {{ binance_public_api.status }}
           </span>
         </div>
@@ -146,7 +146,7 @@
           {% if enabled_symbols %}
             {{ enabled_symbols | join(", ") }}
           {% else %}
-            none
+            {{ "No symbols configured" if no_symbols_configured else "No active symbols" }}
           {% endif %}
         </p>
       </div>

@@ -11,7 +11,11 @@ from config.loader import SymbolTradingConfig
 from config.loader import load_execution_runtime, load_project_config
 from exchange.binance_client import BinanceClient
 from exchange.rules import parse_symbol_rules
-from execution.account_risk import account_risk_status_payload, get_account_risk_status
+from execution.account_risk import (
+    account_risk_status_payload,
+    get_account_risk_status,
+    simulate_account_losses,
+)
 from execution.order_validator import validate_entry_order
 from observability.event_logger import LogRouter
 from runtime.state import RuntimeStore, build_runtime_state
@@ -569,6 +573,12 @@ def main() -> None:
         help="Show account-level consecutive loss risk status.",
     )
     parser.add_argument(
+        "--simulate-account-losses",
+        type=int,
+        metavar="COUNT",
+        help="Local acceptance helper: simulate consecutive account losses without broker or orders.",
+    )
+    parser.add_argument(
         "--side",
         choices=("buy", "sell"),
         help="Order side for --validate-order or --exchange-test-order.",
@@ -621,6 +631,17 @@ def main() -> None:
                 indent=2,
             )
         )
+        return
+    if args.simulate_account_losses is not None:
+        settings = load_project_config()
+        execution_config = load_execution_runtime(settings)
+        state = simulate_account_losses(
+            consecutive_losses=args.simulate_account_losses,
+            state_file=_account_risk_state_file(execution_config),
+            system_log_file=execution_config.system_log_file,
+            mode=execution_config.mode,
+        )
+        print(json.dumps(account_risk_status_payload(state), ensure_ascii=False, indent=2))
         return
 
     settings = load_project_config()

@@ -101,11 +101,23 @@ def main() -> int:
     )
 
     print(
-        f"Starting bot in {runtime_state.mode} mode for symbols: {', '.join(execution_config.enabled_symbols)}"
+        "Starting bot in "
+        f"{runtime_state.mode} mode for symbols: {', '.join(execution_config.enabled_symbols) or 'none'}"
     )
+    idle_logged = not execution_config.enabled_symbols
     try:
         while True:
             try:
+                latest_settings = load_project_config()
+                latest_execution_config = load_execution_runtime(latest_settings)
+                if not latest_execution_config.enabled_symbols:
+                    if not idle_logged:
+                        logger.log_system(symbol="-", action="bot_idle", reason="no_symbols_configured")
+                        print("[bot_idle] no_symbols_configured")
+                        idle_logged = True
+                    time.sleep(latest_execution_config.polling_interval_seconds)
+                    continue
+                idle_logged = False
                 trader.run_once()
             except Exception as exc:
                 trader._record_error("SYSTEM", exc)

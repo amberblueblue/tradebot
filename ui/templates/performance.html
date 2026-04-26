@@ -26,6 +26,9 @@
           <div class="col-sm-8 col-lg-4">
             <label class="form-label" for="symbol">Symbol</label>
             <select class="form-select" id="symbol" name="symbol">
+              {% if not available_symbols %}
+              <option value="">No symbols configured</option>
+              {% endif %}
               {% for item in available_symbols %}
               <option value="{{ item }}"{% if item == selected_symbol %} selected{% endif %}>{{ item }}</option>
               {% endfor %}
@@ -41,7 +44,9 @@
 
   {% if not has_data %}
   <div class="col-12">
-    <div class="alert alert-light border mb-0">暂无收益数据</div>
+    <div class="alert alert-light border mb-0">
+      {{ "No symbols configured" if not available_symbols else "暂无收益数据" }}
+    </div>
   </div>
   {% else %}
   <div class="col-md-6 col-xl-3">

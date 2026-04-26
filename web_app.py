@@ -116,13 +116,33 @@ def _account_risk_state_file(execution_config) -> str:
 
 
 def _public_market_data_status(settings: dict, execution_config) -> dict:
+    enabled_symbols = list(execution_config.enabled_symbols)
+    symbol = enabled_symbols[0] if enabled_symbols else "n/a"
     cached_status = _MARKET_DATA_CACHE.get("status")
-    if cached_status is not None and time.monotonic() < float(_MARKET_DATA_CACHE["expires_at"]):
+    if (
+        cached_status is not None
+        and time.monotonic() < float(_MARKET_DATA_CACHE["expires_at"])
+        and cached_status.get("symbol") == symbol
+    ):
         return dict(cached_status)
 
-    enabled_symbols = list(execution_config.enabled_symbols)
-    default_symbol = settings.get("market", {}).get("default_symbol")
-    symbol = enabled_symbols[0] if enabled_symbols else default_symbol
+    if not enabled_symbols:
+        status = {
+            "base_url": execution_config.exchange.base_url,
+            "timeout_seconds": execution_config.exchange.request_timeout_seconds,
+            "symbol": "n/a",
+            "ping_ok": False,
+            "server_time": "n/a",
+            "ticker_price": "n/a",
+            "exchange_info_ok": False,
+            "status": "idle",
+            "error": None,
+            "message": "No active symbols",
+        }
+        _MARKET_DATA_CACHE["status"] = dict(status)
+        _MARKET_DATA_CACHE["expires_at"] = time.monotonic() + DASHBOARD_MARKET_DATA_CACHE_SECONDS
+        return status
+
     client = BinanceClient(
         base_url=execution_config.exchange.base_url,
         timeout=min(
@@ -139,6 +159,7 @@ def _public_market_data_status(settings: dict, execution_config) -> dict:
         "server_time": "n/a",
         "ticker_price": "n/a",
         "exchange_info_ok": False,
+        "status": "checking",
         "error": None,
     }
     checks = {
@@ -178,6 +199,9 @@ def _public_market_data_status(settings: dict, execution_config) -> dict:
 
     if errors:
         status["error"] = " | ".join(errors)
+        status["status"] = "error"
+    elif status["ping_ok"]:
+        status["status"] = "ok"
     _MARKET_DATA_CACHE["status"] = dict(status)
     _MARKET_DATA_CACHE["expires_at"] = time.monotonic() + DASHBOARD_MARKET_DATA_CACHE_SECONDS
     return status
@@ -200,6 +224,9 @@ def _dashboard_context() -> dict:
         and os.environ.get(FINAL_REAL_ORDER_ENV_VAR) == "YES"
     )
     account_risk = get_account_risk_status(state_file=_account_risk_state_file(execution_config))
+    enabled_symbols = list(execution_config.enabled_symbols)
+    configured_symbols = list(_configured_symbol_names())
+    bot_idle = not enabled_symbols
     return {
         "project_name": "TraderBot Local Console",
         "mode": execution_config.mode,
@@ -217,9 +244,12 @@ def _dashboard_context() -> dict:
         "auto_strategy_real_order_enabled": False,
         "manual_real_order_available": manual_real_order_available,
         "is_live_mode": execution_config.mode == "live",
-        "bot_status": runtime_status.get("robot_status", "unknown"),
+        "bot_status": "Bot idle" if bot_idle else runtime_status.get("robot_status", "unknown"),
+        "bot_idle": bot_idle,
+        "no_symbols_configured": not configured_symbols,
         "is_error_status": runtime_status.get("robot_status") == ERROR,
-        "enabled_symbols": list(execution_config.enabled_symbols),
+        "enabled_symbols": enabled_symbols,
+        "configured_symbols": configured_symbols,
         "current_time": datetime.now(timezone.utc),
         "runtime_status": runtime_status,
         "account_reconciliation": runtime_status.get("account_reconciliation", {}),
@@ -330,6 +360,8 @@ def _health_context() -> dict:
     last_error_log = _latest_non_empty_line(LOG_FILE_MAP["error"])
     status_path = Path(execution_config.status_file)
     enabled_symbols = list(execution_config.enabled_symbols)
+    configured_symbols = list(_configured_symbol_names())
+    bot_idle = not enabled_symbols
 
     return {
         "checked_at": datetime.now(timezone.utc).isoformat(),
@@ -339,7 +371,9 @@ def _health_context() -> dict:
             "message": "web_app is serving this health response",
         },
         "bot_runtime": {
-            "status": runtime_status.get("robot_status", "unknown"),
+            "status": "idle" if bot_idle else runtime_status.get("robot_status", "unknown"),
+            "idle": bot_idle,
+            "message": "No active symbols" if bot_idle else None,
             "conservative_mode": bool(runtime_status.get("conservative_mode", False)),
             "consecutive_errors": int(runtime_status.get("consecutive_errors", 0) or 0),
             "last_error": runtime_status.get("last_error"),
@@ -353,7 +387,7 @@ def _health_context() -> dict:
             "status": "ENABLED" if live_gate.real_trading_enabled else "DISABLED",
         },
         "binance_public_api": {
-            "status": "ok" if public_market_data.get("ping_ok") else "error",
+            "status": public_market_data.get("status", "ok" if public_market_data.get("ping_ok") else "error"),
             "ping_ok": bool(public_market_data.get("ping_ok")),
             "base_url": public_market_data.get("base_url"),
             "symbol": public_market_data.get("symbol"),
@@ -371,6 +405,8 @@ def _health_context() -> dict:
             "message": "FastAPI web console is expected on http://127.0.0.1:8000",
         },
         "enabled_symbols": enabled_symbols,
+        "configured_symbols": configured_symbols,
+        "no_symbols_configured": not configured_symbols,
         "live_gate": asdict(live_gate),
         "api_key": {
             "configured": account_api["configured"],
@@ -642,6 +678,8 @@ def _load_positions_view() -> dict:
         return {
             "config_error": str(exc),
             "positions": [],
+            "has_configured_symbols": False,
+            "has_active_symbols": False,
         }
 
     symbols_config = settings.get("symbols_config", {}).get("symbols", {})
@@ -694,6 +732,8 @@ def _load_positions_view() -> dict:
     return {
         "config_error": None,
         "positions": rows,
+        "has_configured_symbols": bool(symbols_config),
+        "has_active_symbols": bool(execution_config.enabled_symbols),
     }
 
 
@@ -781,6 +821,16 @@ def _load_performance_view(symbol: str = "") -> dict:
     selected_symbol = symbol.strip().upper()
     if selected_symbol not in available_symbols:
         selected_symbol = available_symbols[0] if available_symbols else ""
+    if not available_symbols:
+        return {
+            "config_error": None,
+            "latest": None,
+            "cumulative_return": 0.0,
+            "has_data": False,
+            "available_symbols": available_symbols,
+            "selected_symbol": "",
+            "symbol_has_data": False,
+        }
     symbol_curve = (
         repository.get_symbol_pnl_curve(symbol=selected_symbol, mode=execution_config.mode, limit=500)
         if selected_symbol

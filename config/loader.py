@@ -113,6 +113,10 @@ def _normalize_lines(text: str) -> list[tuple[int, str]]:
 def _parse_scalar(value: str) -> Any:
     if value in {"null", "~"}:
         return None
+    if value == "[]":
+        return []
+    if value == "{}":
+        return {}
     if value == "true":
         return True
     if value == "false":
@@ -353,9 +357,6 @@ def load_symbols_config(symbols_path: Path | None = None) -> dict[str, Any]:
             "paused_by_loss": validated.paused_by_loss,
         }
 
-    if not validated_symbols:
-        raise ValueError("Invalid symbols.yaml: top-level 'symbols' must contain at least one symbol")
-
     normalized_config = dict(raw_config)
     normalized_config["symbols"] = validated_symbols
     return normalized_config
@@ -453,19 +454,18 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
     logging = settings.get("logging", {})
     risk = settings.get("risk", {})
     symbols_config = settings.get("symbols_config", {})
-    configured_symbol_names = get_symbol_names(symbols_config)
-    symbol_list = configured_symbol_names or tuple(market.get("default_symbols", []))
-    configured_enabled_symbols = tuple(execution.get("enabled_symbols", ()))
+    symbol_list = get_symbol_names(symbols_config)
+    configured_enabled_symbols = (
+        tuple(execution.get("enabled_symbols") or ())
+        if "enabled_symbols" in execution
+        else get_enabled_symbol_names(symbols_config)
+    )
     enabled_symbol_names = get_enabled_symbol_names(symbols_config)
-    enabled_symbols = configured_enabled_symbols or enabled_symbol_names or symbol_list
-    if configured_symbol_names:
-        enabled_symbols = tuple(
-            symbol
-            for symbol in enabled_symbols
-            if symbol in symbol_list and symbol in enabled_symbol_names
-        )
-    else:
-        enabled_symbols = tuple(symbol for symbol in enabled_symbols if symbol in symbol_list)
+    enabled_symbols = tuple(
+        symbol
+        for symbol in configured_enabled_symbols
+        if symbol in symbol_list and symbol in enabled_symbol_names
+    )
 
     return ExecutionRuntimeConfig(
         mode=str(settings.get("app", {}).get("mode", "backtest")),

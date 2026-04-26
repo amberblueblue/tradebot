@@ -132,6 +132,8 @@ def get_account_risk_status(
 ) -> AccountRiskState:
     store = AccountRiskStore(state_file)
     state = store.load()
+    if state.account_risk_blocked:
+        return state
     consecutive_losses, last_checked_trade_id = count_consecutive_losing_trades(
         db_path=db_path,
         after_trade_id=state.last_reset_trade_id,
@@ -139,6 +141,38 @@ def get_account_risk_status(
     state.consecutive_losing_trades = consecutive_losses
     state.last_checked_trade_id = last_checked_trade_id
     return store.save(state)
+
+
+def simulate_account_losses(
+    *,
+    consecutive_losses: int,
+    state_file: str | Path = DEFAULT_ACCOUNT_RISK_STATE_FILE,
+    db_path: str | Path = DEFAULT_DB_PATH,
+    system_log_file: str = "logs/system.log",
+    mode: str = "paper",
+) -> AccountRiskState:
+    if consecutive_losses <= 0:
+        raise ValueError("consecutive_losses must be greater than 0")
+
+    latest_trade_id = _latest_trade_id(db_path)
+    state = AccountRiskState(
+        account_risk_blocked=True,
+        blocked_reason=BLOCK_REASON_CONSECUTIVE_LOSSES,
+        blocked_at=_utc_now(),
+        consecutive_losing_trades=consecutive_losses,
+        last_checked_trade_id=latest_trade_id or None,
+        last_reset_trade_id=0,
+    )
+    StructuredLogger(system_log_file).log(
+        symbol="-",
+        action="account_risk_blocked",
+        reason=BLOCK_REASON_CONSECUTIVE_LOSSES,
+        mode=mode,
+        consecutive_losses=consecutive_losses,
+        simulated=True,
+    )
+    print(f"[account_risk_blocked] consecutive_losses={consecutive_losses}")
+    return AccountRiskStore(state_file).save(state)
 
 
 def reset_account_risk(

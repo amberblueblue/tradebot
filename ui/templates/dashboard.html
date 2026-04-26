@@ -50,7 +50,11 @@
 
   <div class="col-12">
     <div class="alert alert-info shadow-sm mb-0" role="alert">
+      {% if bot_idle %}
+      Bot idle. {{ "No symbols configured" if no_symbols_configured else "No active symbols" }}.
+      {% else %}
       Current execution is simulation-only. Real Binance order API: {{ "enabled" if uses_real_order_api else "disabled" }}.
+      {% endif %}
     </div>
   </div>
 
@@ -153,7 +157,7 @@
               {% if enabled_symbols %}
                 {{ enabled_symbols | join(", ") }}
               {% else %}
-                none
+                No active symbols
               {% endif %}
             </p>
           </div>
@@ -364,7 +368,9 @@
           {% for symbol in enabled_symbols %}
           <li class="list-group-item px-0">{{ symbol }}</li>
           {% else %}
-          <li class="list-group-item px-0 text-secondary">No enabled symbols</li>
+          <li class="list-group-item px-0 text-secondary">
+            {{ "No symbols configured" if no_symbols_configured else "No active symbols" }}
+          </li>
           {% endfor %}
         </ul>
       </div>
