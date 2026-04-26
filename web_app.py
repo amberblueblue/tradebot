@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import sqlite3
 import time
+from dataclasses import asdict
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,7 +31,7 @@ from exchange.binance_client import BinancePrivateReadOnlyAPIError
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
 from runtime.state import RuntimeStore, build_runtime_state, get_live_gate_status
-from storage.db import initialize_database
+from storage.db import DEFAULT_DB_PATH, get_connection, initialize_database
 from storage.repository import StorageRepository
 
 
@@ -222,6 +224,148 @@ def _read_last_lines(path: Path, line_count: int = 100) -> list[str]:
         return []
     with path.open("r", encoding="utf-8") as handle:
         return [line.rstrip("\n") for line in deque(handle, maxlen=line_count)]
+
+
+def _latest_non_empty_line(path: Path) -> str | None:
+    for line in reversed(_read_last_lines(path, line_count=200)):
+        cleaned = line.strip()
+        if cleaned:
+            return cleaned
+    return None
+
+
+def _path_updated_at(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+
+
+def _sqlite_health() -> dict:
+    try:
+        initialize_database(DEFAULT_DB_PATH)
+        with get_connection(DEFAULT_DB_PATH) as connection:
+            connection.execute("CREATE TEMP TABLE IF NOT EXISTS health_check (value TEXT)")
+            connection.execute("DELETE FROM health_check")
+            connection.execute("INSERT INTO health_check (value) VALUES (?)", ("ok",))
+            row = connection.execute("SELECT value FROM health_check LIMIT 1").fetchone()
+            connection.commit()
+        return {
+            "ok": bool(row and row["value"] == "ok"),
+            "status": "writable" if row and row["value"] == "ok" else "read_failed",
+            "path": str(DEFAULT_DB_PATH),
+            "error": None,
+        }
+    except sqlite3.Error as exc:
+        return {
+            "ok": False,
+            "status": "error",
+            "path": str(DEFAULT_DB_PATH),
+            "error": str(exc),
+        }
+
+
+def _account_api_health(settings: dict, execution_config) -> dict:
+    credentials = load_binance_readonly_credentials()
+    credential_status = credentials.public_status()
+    if not credentials.configured:
+        return {
+            "configured": False,
+            "status": "missing",
+            "ok": False,
+            "error": None,
+            "api_key_configured": credential_status["api_key_configured"],
+            "api_secret_configured": credential_status["api_secret_configured"],
+        }
+
+    try:
+        client = BinanceClient(
+            base_url=execution_config.exchange.base_url,
+            timeout=min(execution_config.exchange.request_timeout_seconds, 3),
+            error_log_file=execution_config.error_log_file,
+            recv_window=execution_config.exchange.recv_window,
+            credentials=credentials,
+        )
+        balances = client.get_account_balances()
+        return {
+            "configured": True,
+            "status": "ok",
+            "ok": True,
+            "error": None,
+            "balance_count": len(balances),
+            "api_key_configured": credential_status["api_key_configured"],
+            "api_secret_configured": credential_status["api_secret_configured"],
+        }
+    except Exception as exc:
+        return {
+            "configured": True,
+            "status": "error",
+            "ok": False,
+            "error": str(exc),
+            "api_key_configured": credential_status["api_key_configured"],
+            "api_secret_configured": credential_status["api_secret_configured"],
+        }
+
+
+def _health_context() -> dict:
+    settings = load_project_config()
+    execution_config = load_execution_runtime(settings)
+    runtime_status = _read_runtime_status(execution_config.status_file)
+    runtime_state = build_runtime_state(execution_config)
+    live_gate = get_live_gate_status(execution_config)
+    public_market_data = _public_market_data_status(settings, execution_config)
+    account_api = _account_api_health(settings, execution_config)
+    sqlite_status = _sqlite_health()
+    last_error_log = _latest_non_empty_line(LOG_FILE_MAP["error"])
+    status_path = Path(execution_config.status_file)
+    enabled_symbols = list(execution_config.enabled_symbols)
+
+    return {
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "web_app": {
+            "running": True,
+            "status": "ok",
+            "message": "web_app is serving this health response",
+        },
+        "bot_runtime": {
+            "status": runtime_status.get("robot_status", "unknown"),
+            "conservative_mode": bool(runtime_status.get("conservative_mode", False)),
+            "consecutive_errors": int(runtime_status.get("consecutive_errors", 0) or 0),
+            "last_error": runtime_status.get("last_error"),
+            "startup_synced": bool(runtime_status.get("startup_synced", False)),
+        },
+        "app_mode": execution_config.mode,
+        "broker": runtime_state.broker_name,
+        "real_trading": {
+            "enabled": live_gate.real_trading_enabled,
+            "uses_real_order_api": live_gate.uses_real_order_api,
+            "status": "ENABLED" if live_gate.real_trading_enabled else "DISABLED",
+        },
+        "binance_public_api": {
+            "status": "ok" if public_market_data.get("ping_ok") else "error",
+            "ping_ok": bool(public_market_data.get("ping_ok")),
+            "base_url": public_market_data.get("base_url"),
+            "symbol": public_market_data.get("symbol"),
+            "ticker_price": public_market_data.get("ticker_price"),
+            "exchange_info_ok": bool(public_market_data.get("exchange_info_ok")),
+            "error": public_market_data.get("error"),
+        },
+        "binance_account_api": account_api,
+        "sqlite": sqlite_status,
+        "last_bot_loop_time": _path_updated_at(status_path),
+        "last_error_log": last_error_log,
+        "port_8000": {
+            "status": "serving",
+            "message": "FastAPI web console is expected on http://127.0.0.1:8000",
+        },
+        "enabled_symbols": enabled_symbols,
+        "live_gate": asdict(live_gate),
+        "api_key": {
+            "configured": account_api["configured"],
+            "api_key_configured": account_api["api_key_configured"],
+            "api_secret_configured": account_api["api_secret_configured"],
+            "value": "[hidden]",
+        },
+    }
 
 
 def _read_recent_log_lines(path: Path, *, symbol: str | None = None, line_count: int = 100) -> list[str]:
@@ -680,6 +824,23 @@ def dashboard(request: Request):
     context = _dashboard_context()
     context["request"] = request
     return templates.TemplateResponse(request, "dashboard.html", context)
+
+
+@app.get("/health", response_class=HTMLResponse)
+def health_page(request: Request):
+    context = _health_context()
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+        }
+    )
+    return templates.TemplateResponse(request, "health.html", context)
+
+
+@app.get("/api/health")
+def health_api():
+    return JSONResponse(_health_context())
 
 
 @app.get("/logs", response_class=HTMLResponse)

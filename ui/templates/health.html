@@ -1,0 +1,176 @@
+{% extends "layout.html" %}
+
+{% block title %}Health | TraderBot Console{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-12">
+    <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 align-items-lg-end">
+      <div>
+        <p class="text-uppercase small mb-2 text-secondary">Health Check</p>
+        <h1 class="h3 mb-1">{{ project_name }}</h1>
+        <p class="text-secondary mb-0">Checked at {{ checked_at }}</p>
+      </div>
+      <a class="btn btn-outline-secondary" href="/api/health">JSON API</a>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h6 text-secondary">Web App</h2>
+        <p class="fs-5 mb-1 text-success">{{ "running" if web_app.running else "not running" }}</p>
+        <p class="small text-secondary mb-0">{{ web_app.message }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h6 text-secondary">Bot Runtime</h2>
+        <p class="fs-5 mb-1 {% if bot_runtime.status == 'error' %}text-danger{% else %}text-body{% endif %}">
+          {{ bot_runtime.status }}
+        </p>
+        <p class="small text-secondary mb-0">Last loop: {{ last_bot_loop_time or "unknown" }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h6 text-secondary">Mode / Broker</h2>
+        <p class="fs-5 mb-1">{{ app_mode }} / {{ broker }}</p>
+        <p class="small text-secondary mb-0">Live gate: {{ live_gate.message }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h6 text-secondary">Real Trading</h2>
+        <p class="fs-5 mb-1 {% if real_trading.enabled %}text-danger fw-semibold{% else %}text-secondary{% endif %}">
+          {{ real_trading.status }}
+        </p>
+        <p class="small text-secondary mb-0">Real order API: {{ "enabled" if real_trading.uses_real_order_api else "disabled" }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between gap-3">
+          <h2 class="h5 mb-3">Binance Public API</h2>
+          <span class="badge align-self-start {% if binance_public_api.ping_ok %}text-bg-success{% else %}text-bg-danger{% endif %}">
+            {{ binance_public_api.status }}
+          </span>
+        </div>
+        <dl class="row mb-0">
+          <dt class="col-sm-4">Ping</dt>
+          <dd class="col-sm-8">{{ "ok" if binance_public_api.ping_ok else "failed" }}</dd>
+          <dt class="col-sm-4">Base URL</dt>
+          <dd class="col-sm-8">{{ binance_public_api.base_url }}</dd>
+          <dt class="col-sm-4">Symbol</dt>
+          <dd class="col-sm-8">{{ binance_public_api.symbol }}</dd>
+          <dt class="col-sm-4">Ticker</dt>
+          <dd class="col-sm-8">{{ binance_public_api.ticker_price }}</dd>
+          <dt class="col-sm-4">Exchange Info</dt>
+          <dd class="col-sm-8">{{ "ok" if binance_public_api.exchange_info_ok else "failed" }}</dd>
+          {% if binance_public_api.error %}
+          <dt class="col-sm-4">Error</dt>
+          <dd class="col-sm-8 text-danger">{{ binance_public_api.error }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between gap-3">
+          <h2 class="h5 mb-3">Binance Account API</h2>
+          <span class="badge align-self-start {% if binance_account_api.status == 'ok' %}text-bg-success{% elif binance_account_api.status == 'missing' %}text-bg-secondary{% else %}text-bg-danger{% endif %}">
+            {{ binance_account_api.status }}
+          </span>
+        </div>
+        <dl class="row mb-0">
+          <dt class="col-sm-4">API Key</dt>
+          <dd class="col-sm-8">{{ "configured" if api_key.api_key_configured else "missing" }}</dd>
+          <dt class="col-sm-4">API Secret</dt>
+          <dd class="col-sm-8">{{ "configured" if api_key.api_secret_configured else "missing" }}</dd>
+          <dt class="col-sm-4">Mode</dt>
+          <dd class="col-sm-8">read-only</dd>
+          {% if binance_account_api.error %}
+          <dt class="col-sm-4">Error</dt>
+          <dd class="col-sm-8 text-danger">{{ binance_account_api.error }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h5 mb-3">SQLite</h2>
+        <p class="mb-1 {% if sqlite.ok %}text-success{% else %}text-danger{% endif %}">
+          {{ sqlite.status }}
+        </p>
+        <p class="small text-secondary mb-0">{{ sqlite.path }}</p>
+        {% if sqlite.error %}
+        <p class="small text-danger mt-2 mb-0">{{ sqlite.error }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Port 8000</h2>
+        <p class="mb-1">{{ port_8000.status }}</p>
+        <p class="small text-secondary mb-0">{{ port_8000.message }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Enabled Symbols</h2>
+        <p class="mb-0">
+          {% if enabled_symbols %}
+            {{ enabled_symbols | join(", ") }}
+          {% else %}
+            none
+          {% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Runtime Details</h2>
+        <dl class="row mb-0">
+          <dt class="col-sm-3">Conservative Mode</dt>
+          <dd class="col-sm-9">{{ "true" if bot_runtime.conservative_mode else "false" }}</dd>
+          <dt class="col-sm-3">Consecutive Errors</dt>
+          <dd class="col-sm-9">{{ bot_runtime.consecutive_errors }}</dd>
+          <dt class="col-sm-3">Startup Synced</dt>
+          <dd class="col-sm-9">{{ "true" if bot_runtime.startup_synced else "false" }}</dd>
+          <dt class="col-sm-3">Last Runtime Error</dt>
+          <dd class="col-sm-9">{{ bot_runtime.last_error or "none" }}</dd>
+          <dt class="col-sm-3">Last Error Log</dt>
+          <dd class="col-sm-9"><code>{{ last_error_log or "none" }}</code></dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

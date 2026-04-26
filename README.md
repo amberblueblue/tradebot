@@ -233,3 +233,16 @@ bash scripts/deploy_to_prod.sh
 - `checking status`：调用 `/Users/eason/traderbot_prod/scripts/status_prod.sh`
 
 同步时会排除 `.env`、`logs/`、`data/tradebot.sqlite3`、`.venv/`、`__pycache__/`、`.git/`、`.DS_Store`、生产 launchd plist、生产启动脚本、pid 文件和 `runtime/*.json`，不会覆盖生产 API key、生产日志、生产数据库、生产虚拟环境、生产运行态或生产自启动管理文件。
+
+## Health Check
+
+控制台提供统一健康检查页面和 JSON API：
+
+```text
+http://127.0.0.1:8000/health
+http://127.0.0.1:8000/api/health
+```
+
+健康检查会显示 web app、bot runtime、`app.mode`、broker、real trading 状态、Binance public API ping、Binance read-only account API、SQLite 写入能力、最近 bot loop 时间、最近 error log、8000 端口说明、启用币种、live gate 状态和 API key 是否已配置。
+
+页面和 API 不会显示真实 API key 或 secret。Account API 未配置时显示 `missing`，不会当作程序错误。健康检查不会调用真实 Binance 下单接口。
