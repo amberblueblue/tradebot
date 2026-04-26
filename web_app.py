@@ -28,6 +28,11 @@ from config.loader import (
 from config.secrets import load_binance_readonly_credentials
 from exchange.binance_client import BinanceClient
 from exchange.binance_client import BinancePrivateReadOnlyAPIError
+from execution.account_risk import (
+    account_risk_status_payload,
+    get_account_risk_status,
+    reset_account_risk,
+)
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
 from runtime.state import RuntimeStore, build_runtime_state, get_live_gate_status
@@ -104,6 +109,10 @@ def _read_paper_state(state_file: str) -> dict:
     if not path.exists():
         return {"cash_balance": 0.0, "positions": {}}
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _account_risk_state_file(execution_config) -> str:
+    return str(Path(execution_config.runtime_state_file).with_name("account_risk.json"))
 
 
 def _public_market_data_status(settings: dict, execution_config) -> dict:
@@ -190,6 +199,7 @@ def _dashboard_context() -> dict:
         and live_gate.real_execute_env_ok
         and os.environ.get(FINAL_REAL_ORDER_ENV_VAR) == "YES"
     )
+    account_risk = get_account_risk_status(state_file=_account_risk_state_file(execution_config))
     return {
         "project_name": "TraderBot Local Console",
         "mode": execution_config.mode,
@@ -213,6 +223,7 @@ def _dashboard_context() -> dict:
         "current_time": datetime.now(timezone.utc),
         "runtime_status": runtime_status,
         "account_reconciliation": runtime_status.get("account_reconciliation", {}),
+        "account_risk": account_risk_status_payload(account_risk),
         "public_market_data": _public_market_data_status(settings, execution_config),
         "binance_credentials": load_binance_readonly_credentials().public_status(),
         "settings": settings,
@@ -314,6 +325,7 @@ def _health_context() -> dict:
     live_gate = get_live_gate_status(execution_config)
     public_market_data = _public_market_data_status(settings, execution_config)
     account_api = _account_api_health(settings, execution_config)
+    account_risk = get_account_risk_status(state_file=_account_risk_state_file(execution_config))
     sqlite_status = _sqlite_health()
     last_error_log = _latest_non_empty_line(LOG_FILE_MAP["error"])
     status_path = Path(execution_config.status_file)
@@ -350,6 +362,7 @@ def _health_context() -> dict:
             "error": public_market_data.get("error"),
         },
         "binance_account_api": account_api,
+        "account_risk": account_risk_status_payload(account_risk),
         "sqlite": sqlite_status,
         "last_bot_loop_time": _path_updated_at(status_path),
         "last_error_log": last_error_log,
@@ -841,6 +854,21 @@ def health_page(request: Request):
 @app.get("/api/health")
 def health_api():
     return JSONResponse(_health_context())
+
+
+@app.post("/api/account_risk/reset")
+def account_risk_reset_api(request: Request):
+    settings = load_project_config()
+    execution_config = load_execution_runtime(settings)
+    state = reset_account_risk(
+        state_file=_account_risk_state_file(execution_config),
+        system_log_file=execution_config.system_log_file,
+        mode=execution_config.mode,
+    )
+    accept_header = request.headers.get("accept", "")
+    if "text/html" in accept_header:
+        return RedirectResponse(url="/", status_code=303)
+    return JSONResponse(account_risk_status_payload(state))
 
 
 @app.get("/logs", response_class=HTMLResponse)

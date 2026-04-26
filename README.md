@@ -246,3 +246,27 @@ http://127.0.0.1:8000/api/health
 健康检查会显示 web app、bot runtime、`app.mode`、broker、real trading 状态、Binance public API ping、Binance read-only account API、SQLite 写入能力、最近 bot loop 时间、最近 error log、8000 端口说明、启用币种、live gate 状态和 API key 是否已配置。
 
 页面和 API 不会显示真实 API key 或 secret。Account API 未配置时显示 `missing`，不会当作程序错误。健康检查不会调用真实 Binance 下单接口。
+
+## Account-Level Consecutive Loss Risk Control
+
+账户级连续亏损风控会从 SQLite `trades` 表读取最近已平仓成交，按时间倒序统计连续亏损次数。默认阈值：
+
+```yaml
+risk:
+  max_consecutive_losing_trades: 4
+```
+
+当连续亏损次数达到阈值时，系统会设置 `account_risk_blocked=true`，原因记录为 `consecutive_losses`，并写入 `logs/system.log`。封控后自动策略禁止新开仓，但仍允许已有持仓按策略平仓；单币 `paused_by_loss`、live gate 和 broker 逻辑不受影响。
+
+账户级封控不会自动恢复，必须手动解除：
+
+- Dashboard 点击 `Reset Account Risk`
+- 或调用 `POST /api/account_risk/reset`
+
+命令行查看状态：
+
+```bash
+python3 status.py --account-risk-status
+```
+
+输出包括 `consecutive_losing_trades`、`account_risk_blocked` 和 `blocked_reason`。

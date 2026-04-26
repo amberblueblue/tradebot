@@ -64,6 +64,7 @@ strategy:
   min_expected_return: 5.0
 risk:
   max_single_order_usdt: 20
+  max_consecutive_losing_trades: 4
   stop_loss_pct: 20.0
   partial1_sell_pct: 30.0
   partial2_sell_pct: 50.0

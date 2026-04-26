@@ -153,6 +153,21 @@
     </div>
   </div>
 
+  <div class="col-md-6 col-xl-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Account Risk</h2>
+        <p class="mb-1 {% if account_risk.account_risk_blocked %}text-danger fw-semibold{% else %}text-success{% endif %}">
+          {{ "BLOCKED" if account_risk.account_risk_blocked else "OK" }}
+        </p>
+        <p class="small text-secondary mb-0">Consecutive losses: {{ account_risk.consecutive_losing_trades }}</p>
+        {% if account_risk.blocked_reason %}
+        <p class="small text-danger mt-2 mb-0">{{ account_risk.blocked_reason }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
   <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-body">

@@ -72,6 +72,7 @@ class ExecutionRuntimeConfig:
     stop_loss_pct: float
     take_profit_pct: float
     max_single_order_usdt: float
+    max_consecutive_losing_trades: int
     max_consecutive_errors: int
     runtime_state_file: str
     robot_initial_status: str
@@ -271,6 +272,18 @@ def _coerce_positive_float(value: Any, field_name: str, symbol: str) -> float:
     return number
 
 
+def _coerce_positive_int(value: Any, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid settings.yaml: {field_name} must be an integer greater than 0")
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid settings.yaml: {field_name} must be an integer greater than 0") from exc
+    if number <= 0:
+        raise ValueError(f"Invalid settings.yaml: {field_name} must be greater than 0")
+    return number
+
+
 def _coerce_timeframe(value: Any, field_name: str, symbol: str) -> str:
     timeframe = str(value)
     if timeframe not in VALID_SYMBOL_TIMEFRAME_SET:
@@ -438,6 +451,7 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
     live = settings.get("live", {})
     binance = settings.get("binance", {})
     logging = settings.get("logging", {})
+    risk = settings.get("risk", {})
     symbols_config = settings.get("symbols_config", {})
     configured_symbol_names = get_symbol_names(symbols_config)
     symbol_list = configured_symbol_names or tuple(market.get("default_symbols", []))
@@ -479,7 +493,11 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
         max_positions=int(execution.get("max_positions", 3)),
         stop_loss_pct=float(execution.get("stop_loss_pct", 3.0)),
         take_profit_pct=float(execution.get("take_profit_pct", 6.0)),
-        max_single_order_usdt=float(settings.get("risk", {}).get("max_single_order_usdt", 20.0)),
+        max_single_order_usdt=float(risk.get("max_single_order_usdt", 20.0)),
+        max_consecutive_losing_trades=_coerce_positive_int(
+            risk.get("max_consecutive_losing_trades", 4),
+            "risk.max_consecutive_losing_trades",
+        ),
         max_consecutive_errors=int(
             safety.get("max_consecutive_errors", execution.get("max_consecutive_errors", 3))
         ),

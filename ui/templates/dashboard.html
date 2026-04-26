@@ -27,6 +27,26 @@
   </div>
   {% endif %}
 
+  {% if account_risk.account_risk_blocked %}
+  <div class="col-12">
+    <div class="alert alert-danger shadow-sm mb-0" role="alert">
+      <div class="d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-center">
+        <div>
+          <h2 class="h5 mb-2">Trading blocked due to consecutive losses</h2>
+          <p class="mb-0">
+            Consecutive losing trades: {{ account_risk.consecutive_losing_trades }}
+            | Reason: {{ account_risk.blocked_reason }}
+            | Blocked at: {{ account_risk.blocked_at or "unknown" }}
+          </p>
+        </div>
+        <form method="post" action="/api/account_risk/reset">
+          <button type="submit" class="btn btn-outline-danger">Reset Account Risk</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {% if is_live_mode %}
   <div class="col-12">
     <div class="alert alert-warning shadow-sm mb-0" role="alert">
@@ -110,6 +130,23 @@
       <div class="card-body">
         <h2 class="card-title h6 text-secondary">Bot Status</h2>
         <p class="fs-4 mb-0 {% if is_error_status %}text-danger fw-semibold{% endif %}">{{ bot_status }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Account Risk Status</h2>
+        <p class="fs-5 mb-1 {% if account_risk.account_risk_blocked %}text-danger fw-semibold{% else %}text-success{% endif %}">
+          {{ "BLOCKED" if account_risk.account_risk_blocked else "OK" }}
+        </p>
+        <p class="small text-secondary mb-0">Consecutive losses: {{ account_risk.consecutive_losing_trades }}</p>
+        {% if not account_risk.account_risk_blocked %}
+        <form method="post" action="/api/account_risk/reset" class="mt-2">
+          <button type="submit" class="btn btn-sm btn-outline-secondary">Reset Account Risk</button>
+        </form>
+        {% endif %}
       </div>
     </div>
   </div>

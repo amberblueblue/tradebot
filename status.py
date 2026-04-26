@@ -11,6 +11,7 @@ from config.loader import SymbolTradingConfig
 from config.loader import load_execution_runtime, load_project_config
 from exchange.binance_client import BinanceClient
 from exchange.rules import parse_symbol_rules
+from execution.account_risk import account_risk_status_payload, get_account_risk_status
 from execution.order_validator import validate_entry_order
 from observability.event_logger import LogRouter
 from runtime.state import RuntimeStore, build_runtime_state
@@ -91,6 +92,10 @@ def reset_signal_guard() -> None:
         symbol_state["last_signal"] = None
     store.save()
     print("signal guard reset: robot_status=running conservative_mode=false duplicate guards cleared")
+
+
+def _account_risk_state_file(execution_config) -> str:
+    return str(Path(execution_config.runtime_state_file).with_name("account_risk.json"))
 
 
 def _round_down_to_step(value: float, step: float) -> float:
@@ -559,6 +564,11 @@ def main() -> None:
         help="Manually submit a real MARKET BUY after all safety gates, validation, and exchange test order pass.",
     )
     parser.add_argument(
+        "--account-risk-status",
+        action="store_true",
+        help="Show account-level consecutive loss risk status.",
+    )
+    parser.add_argument(
         "--side",
         choices=("buy", "sell"),
         help="Order side for --validate-order or --exchange-test-order.",
@@ -594,6 +604,23 @@ def main() -> None:
             parser.error("--real-market-buy only supports --side buy")
         payload = _real_market_buy(args.real_market_buy, args.amount)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    if args.account_risk_status:
+        settings = load_project_config()
+        execution_config = load_execution_runtime(settings)
+        state = get_account_risk_status(state_file=_account_risk_state_file(execution_config))
+        payload = account_risk_status_payload(state)
+        print(
+            json.dumps(
+                {
+                    "consecutive_losing_trades": payload["consecutive_losing_trades"],
+                    "account_risk_blocked": payload["account_risk_blocked"],
+                    "blocked_reason": payload["blocked_reason"],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     settings = load_project_config()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -16,6 +17,7 @@ from config.loader import (
     load_symbols_config,
     save_symbols_config,
 )
+from execution.account_risk import evaluate_account_risk
 from execution.broker import Broker, Position
 from execution.live_broker import LiveBroker
 from execution.order_validator import validate_entry_order
@@ -69,6 +71,9 @@ class TraderEngine:
             mode=execution_config.mode,
         )
         self.storage: StorageRepository | None = self._build_storage()
+
+    def _account_risk_state_file(self) -> str:
+        return str(Path(self.execution_config.runtime_state_file).with_name("account_risk.json"))
 
     def run_once(self) -> None:
         if not self._reload_runtime_config():
@@ -344,6 +349,21 @@ class TraderEngine:
             return
         if self.runtime_store.is_error_limit_reached():
             self._log_event("order_blocked", symbol=symbol, reason="error_limit_reached")
+            return
+        account_risk_state = evaluate_account_risk(
+            max_consecutive_losing_trades=self.execution_config.max_consecutive_losing_trades,
+            state_file=self._account_risk_state_file(),
+            system_log_file=self.execution_config.system_log_file,
+            mode=self.execution_config.mode,
+        )
+        if account_risk_state.account_risk_blocked:
+            self._log_event(
+                "order_blocked",
+                symbol=symbol,
+                reason="account_risk_blocked",
+                consecutive_losses=account_risk_state.consecutive_losing_trades,
+                blocked_reason=account_risk_state.blocked_reason,
+            )
             return
         if symbol in positions_by_symbol:
             self._log_event("order_blocked", symbol=symbol, reason="position_already_exists")
@@ -936,6 +956,7 @@ class TraderEngine:
                     "order_amount",
                     "max_single_order_usdt",
                     "usdt_available_balance",
+                    "consecutive_losses",
                     "min_notional",
                     "notional",
                 )
