@@ -212,3 +212,24 @@ BINANCE_API_SECRET=your_read_only_api_secret_here
 - `status.py --real-market-buy SYMBOL --amount AMOUNT` 默认 blocked；只有所有 live 和 final-real-order 开关都打开才会继续
 - 手动真实 MARKET BUY 必须满足 `app.mode=live`、`safety.allow_live_trading=true`、`safety.live_execute_enabled=true`、`safety.real_order_method_enabled=true`、`TRADEBOT_CONFIRM_LIVE=YES`、`TRADEBOT_EXECUTE_REAL=YES`、`TRADEBOT_FINAL_REAL_ORDER=YES`
 - 强烈建议首次真实手动买入 `amount <= 6 USDT`
+
+## 从 dev 发布到 prod
+
+开发环境目录为 `/Users/eason/traderbot_dev`，生产环境目录为 `/Users/eason/traderbot_prod`。生产环境由 launchd 管理，并保留自己的 `.env`、`logs/` 和 `data/tradebot.sqlite3`。
+
+从开发环境发布到生产环境：
+
+```bash
+cd /Users/eason/traderbot_dev
+bash scripts/deploy_to_prod.sh
+```
+
+发布脚本会按顺序执行：
+
+- `checking syntax`：先对核心 Python 文件运行 `py_compile`，失败会立刻停止发布
+- `stopping prod`：调用 `/Users/eason/traderbot_prod/scripts/stop_prod.sh`
+- `syncing files`：使用 `rsync` 从 dev 同步代码到 prod
+- `starting prod`：调用 `/Users/eason/traderbot_prod/scripts/install_launchd.sh`
+- `checking status`：调用 `/Users/eason/traderbot_prod/scripts/status_prod.sh`
+
+同步时会排除 `.env`、`logs/`、`data/tradebot.sqlite3`、`.venv/`、`__pycache__/`、`.git/`、`.DS_Store`、生产 launchd plist、生产启动脚本和 pid 文件，不会覆盖生产 API key、生产日志、生产数据库、生产虚拟环境或生产自启动管理文件。
