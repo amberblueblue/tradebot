@@ -22,7 +22,6 @@ EXECUTE_REAL_ENV_VAR = "TRADEBOT_EXECUTE_REAL"
 FINAL_REAL_ORDER_ENV_VAR = "TRADEBOT_FINAL_REAL_ORDER"
 REQUIRED_ENV_VALUE = "YES"
 DEFAULT_MIN_NOTIONAL_USDT = 5.0
-VIRTUAL_TEST_ORDER_SYMBOL = "BTCUSDT"
 
 
 def _default_symbol_state() -> dict:
@@ -211,12 +210,6 @@ def _usdt_free_balance(client: BinanceClient) -> tuple[float, str | None]:
     return 0.0, None
 
 
-def _exchange_test_symbol(symbol: str) -> str:
-    if symbol.upper() == "VIRTUALUSDT":
-        return VIRTUAL_TEST_ORDER_SYMBOL
-    return symbol.upper()
-
-
 def _local_min_notional_reject_payload(symbol: str, side: str, amount: float) -> dict:
     return {
         "validator_ok": False,
@@ -247,7 +240,7 @@ def _exchange_test_order(symbol: str, side: str, amount: float) -> dict:
 
     settings = load_project_config()
     execution_config = load_execution_runtime(settings)
-    exchange_symbol = _exchange_test_symbol(symbol)
+    exchange_symbol = symbol
     client = BinanceClient(
         base_url=execution_config.exchange.base_url,
         timeout=execution_config.exchange.request_timeout_seconds,

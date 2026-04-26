@@ -54,9 +54,10 @@ class BinanceClient:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self.recv_window = recv_window
+        self.recv_window = max(int(recv_window), 10000)
         self.credentials = credentials
         self.error_logger = StructuredLogger(error_log_file)
+        self._server_time_offset_ms: int | None = None
 
     def _safe_params(self, params: dict[str, Any] | None) -> dict[str, Any]:
         if not params:
@@ -107,6 +108,25 @@ class BinanceClient:
     def _load_credentials(self) -> BinanceReadOnlyCredentials:
         return self.credentials or load_binance_readonly_credentials()
 
+    def _current_timestamp_ms(self) -> int:
+        local_time_ms = int(time.time() * 1000)
+        if self._server_time_offset_ms is not None:
+            return local_time_ms + self._server_time_offset_ms
+
+        try:
+            payload = self.get_server_time()
+            server_time_ms = int(payload.get("serverTime"))
+            self._server_time_offset_ms = server_time_ms - local_time_ms
+            return server_time_ms
+        except Exception as exc:
+            self._log_error(
+                path="/api/v3/time",
+                reason=f"Binance server time offset unavailable; using local timestamp: {exc}",
+                action="binance_time_sync_warning",
+            )
+            self._server_time_offset_ms = 0
+            return local_time_ms
+
     def _require_readonly_credentials(self) -> BinanceReadOnlyCredentials:
         credentials = self._load_credentials()
         missing = []
@@ -140,7 +160,7 @@ class BinanceClient:
 
         signed_params = dict(params or {})
         signed_params.setdefault("recvWindow", self.recv_window)
-        signed_params["timestamp"] = int(time.time() * 1000)
+        signed_params["timestamp"] = self._current_timestamp_ms()
         try:
             query = urlencode(signed_params, doseq=True)
             signed_params["signature"] = hmac.new(
