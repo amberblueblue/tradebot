@@ -202,6 +202,28 @@ Futures key 与现货 key 分离，不使用 `BINANCE_API_KEY` / `BINANCE_API_SE
 
 如果未配置 `FUTURES_BINANCE_API_KEY` 或 `FUTURES_BINANCE_API_SECRET`，`futures_bot` 仍可正常使用公共行情、mark price、funding rate 和规则查询；Web 控制台 `/futures` 会显示 `Futures API key missing`。
 
+### Futures Phase 3 Read-only Account
+
+Futures 阶段 3 已完成只读账户和持仓展示，仍然不允许任何交易动作：
+
+- 使用独立的 Futures 只读 API key
+- API key 只能放在本地 `.env` 或环境变量中，不要提交到 GitHub
+- 不下单
+- 不撤单
+- 不修改杠杆
+- 不修改保证金模式
+- 不显示 API key 或 secret 原文
+
+只读命令：
+
+```bash
+python3 futures_bot/status_futures.py --account-status
+python3 futures_bot/status_futures.py --balance
+python3 futures_bot/status_futures.py --positions
+```
+
+`/futures` 页面会显示 Futures balance、available balance、margin balance、positions、liquidation price 和 unrealized PnL。`futures_bot/run_futures_bot.py` 启动时会做一次只读对账：读取 balance、positions 和 open orders，只输出提示和日志；如果发现非零持仓或挂单，不平仓、不加仓、不撤单、不修改交易所状态。
+
 ## Phase 5 Read-only Binance Account Integration
 
 第五阶段接入 Binance 私有 signed endpoint 的只读账户查询能力，只用于本地安全对账和余额查看。
