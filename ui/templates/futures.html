@@ -276,5 +276,55 @@
       </div>
     </div>
   </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Futures Paper Positions</h2>
+        {% if futures_paper_positions %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th class="text-end">Entry Price</th>
+                <th class="text-end">Mark Price</th>
+                <th class="text-end">Unrealized PnL</th>
+                <th class="text-end">Leverage</th>
+                <th class="text-end">Margin</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for position in futures_paper_positions %}
+              <tr>
+                <td class="fw-semibold">{{ position.symbol }}</td>
+                <td>{{ position.side or "n/a" }}</td>
+                <td class="text-end">
+                  {% if position.entry_price is not none %}{{ position.entry_price }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if position.mark_price is not none %}{{ position.mark_price }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if position.unrealized_pnl is not none %}{{ position.unrealized_pnl }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if position.leverage is not none %}{{ position.leverage }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if position.margin is not none %}{{ position.margin }}{% else %}n/a{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-secondary mb-0">No paper positions</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}

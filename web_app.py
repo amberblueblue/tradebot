@@ -51,6 +51,7 @@ LOG_FILE_MAP = {
     "trade": BASE_DIR / "logs" / "trade.log",
     "error": BASE_DIR / "logs" / "error.log",
 }
+FUTURES_PAPER_STATE_PATH = BASE_DIR / "runtime" / "futures_paper_positions.json"
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
 LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
@@ -698,6 +699,37 @@ def _futures_position_row(position: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _futures_paper_position_row(position: dict[str, object]) -> dict[str, object]:
+    return {
+        "symbol": position.get("symbol"),
+        "side": position.get("side"),
+        "entry_price": _to_optional_float(position.get("entry_price")),
+        "mark_price": _to_optional_float(position.get("mark_price")),
+        "unrealized_pnl": _to_optional_float(position.get("unrealized_pnl")),
+        "leverage": _to_optional_float(position.get("leverage")),
+        "margin": _to_optional_float(position.get("margin")),
+    }
+
+
+def _load_futures_paper_positions() -> list[dict[str, object]]:
+    if not FUTURES_PAPER_STATE_PATH.exists():
+        return []
+    try:
+        payload = json.loads(FUTURES_PAPER_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+    positions = payload.get("positions", [])
+    if not isinstance(positions, list):
+        return []
+    return [
+        _futures_paper_position_row(position)
+        for position in positions
+        if isinstance(position, dict)
+    ]
+
+
 def _load_futures_view() -> dict:
     futures_credentials = load_futures_binance_readonly_credentials().public_status()
     futures_account = {
@@ -710,6 +742,7 @@ def _load_futures_view() -> dict:
         "error": None,
     }
     futures_positions: list[dict[str, object]] = []
+    futures_paper_positions = _load_futures_paper_positions()
     futures_risk_controls = {
         "max_leverage": None,
         "max_margin_per_trade_usdt": None,
@@ -728,6 +761,7 @@ def _load_futures_view() -> dict:
             "futures_credentials": futures_credentials,
             "futures_account": futures_account,
             "futures_positions": futures_positions,
+            "futures_paper_positions": futures_paper_positions,
             "futures_risk_controls": futures_risk_controls,
             "rows": [],
             "warnings": [f"Futures config error: {exc}"],
@@ -755,6 +789,7 @@ def _load_futures_view() -> dict:
         "futures_credentials": futures_credentials,
         "futures_account": futures_account,
         "futures_positions": futures_positions,
+        "futures_paper_positions": futures_paper_positions,
         "futures_risk_controls": futures_risk_controls,
         "rows": [],
         "warnings": warnings,
