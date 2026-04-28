@@ -1,0 +1,8 @@
+symbols:
+  BTCUSDT:
+    enabled: false
+    strategy: trend_long
+    leverage: 1
+    margin_amount: 10
+    trend_timeframe: "4h"
+    signal_timeframe: "15m"

@@ -1,0 +1,18 @@
+app:
+  mode: paper
+  polling_interval_seconds: 30
+
+futures:
+  base_url: "https://fapi.binance.com"
+  request_timeout_seconds: 10
+  rules_cache_ttl_seconds: 3600
+
+risk:
+  max_leverage: 2
+  max_margin_per_trade_usdt: 20
+  min_liquidation_distance_pct: 10
+  max_funding_rate_abs: 0.001
+
+safety:
+  allow_live_trading: false
+  live_execute_enabled: false
