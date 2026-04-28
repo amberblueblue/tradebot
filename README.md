@@ -224,6 +224,33 @@ python3 futures_bot/status_futures.py --positions
 
 `/futures` 页面会显示 Futures balance、available balance、margin balance、positions、liquidation price 和 unrealized PnL。`futures_bot/run_futures_bot.py` 启动时会做一次只读对账：读取 balance、positions 和 open orders，只输出提示和日志；如果发现非零持仓或挂单，不平仓、不加仓、不撤单、不修改交易所状态。
 
+### Futures Risk Skeleton
+
+Futures 风控骨架已接入配置、CLI dry-run 和 `/futures` 只读展示。所有风控阈值集中放在：
+
+```text
+config/futures_settings.yaml
+```
+
+当前支持的参数包括 `max_leverage`、`max_margin_per_trade_usdt`、`max_position_ratio`、`min_liquidation_distance_pct`、`max_funding_rate_abs` 和 `max_consecutive_losing_trades`。
+
+当前阶段只是开仓前 dry-run 风控检查：
+
+- 不下单
+- 不撤单
+- 不修改杠杆
+- 不修改保证金模式
+- 不修改任何交易所状态
+
+可用命令：
+
+```bash
+python3 futures_bot/status_futures.py --risk-config
+python3 futures_bot/status_futures.py --risk-check BTCUSDT --side long --margin 10 --leverage 1
+```
+
+`--risk-check` 会读取 Futures risk 配置，获取 Binance USD-M Futures 公共 mark price 和 funding rate，并尽量使用只读 Futures API 获取账户权益；如果没有 Futures API key，则使用 fallback equity 做 dry-run 并在输出中标注。后续 Futures paper trading 会接入这些风控规则，在模拟开仓前先做同一套检查。
+
 ## Phase 5 Read-only Binance Account Integration
 
 第五阶段接入 Binance 私有 signed endpoint 的只读账户查询能力，只用于本地安全对账和余额查看。
