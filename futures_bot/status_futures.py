@@ -99,7 +99,7 @@ def build_account_status_payload() -> dict[str, object]:
         }
 
     try:
-        payload = BinanceFuturesClient(credentials=credentials).get_futures_account_info()
+        payload = BinanceFuturesClient(credentials=credentials).get_futures_balance()
     except Exception as exc:
         return {
             "api_key_configured": credentials.api_key_configured,
@@ -129,9 +129,8 @@ def _balance_row(balance: dict[str, Any]) -> dict[str, Any]:
         "asset": balance.get("asset"),
         "walletBalance": balance.get("walletBalance"),
         "availableBalance": balance.get("availableBalance"),
-        "crossWalletBalance": balance.get("crossWalletBalance"),
-        "unrealizedProfit": balance.get("unrealizedProfit"),
         "marginBalance": balance.get("marginBalance"),
+        "unrealizedProfit": balance.get("unrealizedProfit"),
     }
 
 
