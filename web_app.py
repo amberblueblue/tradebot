@@ -678,8 +678,38 @@ def _to_optional_float(value) -> float | None:
         return None
 
 
+def _futures_position_is_nonzero(position: dict[str, object]) -> bool:
+    return (_to_optional_float(position.get("positionAmt")) or 0.0) != 0.0
+
+
+def _futures_position_row(position: dict[str, object]) -> dict[str, object]:
+    return {
+        "symbol": position.get("symbol"),
+        "position_side": position.get("positionSide"),
+        "position_amount": _to_optional_float(position.get("positionAmt")),
+        "entry_price": _to_optional_float(position.get("entryPrice")),
+        "mark_price": _to_optional_float(position.get("markPrice")),
+        "unrealized_pnl": _to_optional_float(
+            position.get("unRealizedProfit", position.get("unrealizedProfit"))
+        ),
+        "liquidation_price": _to_optional_float(position.get("liquidationPrice")),
+        "leverage": position.get("leverage"),
+        "margin_type": position.get("marginType"),
+    }
+
+
 def _load_futures_view() -> dict:
     futures_credentials = load_futures_binance_readonly_credentials().public_status()
+    futures_account = {
+        "api_key_status": "configured" if futures_credentials["configured"] else "missing",
+        "query_status": "not_configured",
+        "wallet_balance": None,
+        "available_balance": None,
+        "margin_balance": None,
+        "unrealized_pnl": None,
+        "error": None,
+    }
+    futures_positions: list[dict[str, object]] = []
     try:
         futures_config = load_futures_config()
     except Exception as exc:
@@ -688,6 +718,8 @@ def _load_futures_view() -> dict:
             "base_url": "n/a",
             "enabled_symbols": [],
             "futures_credentials": futures_credentials,
+            "futures_account": futures_account,
+            "futures_positions": futures_positions,
             "rows": [],
             "warnings": [f"Futures config error: {exc}"],
             "config_error": str(exc),
@@ -702,12 +734,12 @@ def _load_futures_view() -> dict:
         "base_url": futures_config.futures.base_url,
         "enabled_symbols": enabled_symbols,
         "futures_credentials": futures_credentials,
+        "futures_account": futures_account,
+        "futures_positions": futures_positions,
         "rows": [],
         "warnings": warnings,
         "config_error": None,
     }
-    if not enabled_symbols:
-        return context
 
     client = BinanceFuturesClient(
         base_url=futures_config.futures.base_url,
@@ -716,6 +748,60 @@ def _load_futures_view() -> dict:
             FUTURES_MARKET_DATA_TIMEOUT_SECONDS,
         ),
     )
+
+    if futures_credentials["configured"]:
+        try:
+            balance_payload = client.get_futures_balance()
+            if isinstance(balance_payload, list):
+                usdt_balance = next(
+                    (
+                        balance
+                        for balance in balance_payload
+                        if isinstance(balance, dict) and balance.get("asset") == "USDT"
+                    ),
+                    {},
+                )
+                futures_account.update(
+                    {
+                        "query_status": "ok",
+                        "wallet_balance": _to_optional_float(usdt_balance.get("walletBalance")),
+                        "available_balance": _to_optional_float(usdt_balance.get("availableBalance")),
+                        "margin_balance": _to_optional_float(usdt_balance.get("marginBalance")),
+                        "unrealized_pnl": _to_optional_float(usdt_balance.get("unrealizedProfit")),
+                        "error": None,
+                    }
+                )
+            elif isinstance(balance_payload, dict) and balance_payload.get("error"):
+                message = str(balance_payload.get("message") or balance_payload.get("error"))
+                futures_account.update({"query_status": "error", "error": message})
+                context["warnings"].append(message)
+            else:
+                message = "Futures balance response was not recognized"
+                futures_account.update({"query_status": "error", "error": message})
+                context["warnings"].append(message)
+        except Exception as exc:
+            message = f"Futures account query failed: {exc}"
+            futures_account.update({"query_status": "error", "error": message})
+            context["warnings"].append(message)
+
+        try:
+            positions_payload = client.get_futures_positions()
+            if isinstance(positions_payload, list):
+                futures_positions.extend(
+                    _futures_position_row(position)
+                    for position in positions_payload
+                    if isinstance(position, dict) and _futures_position_is_nonzero(position)
+                )
+            elif isinstance(positions_payload, dict) and positions_payload.get("error"):
+                message = str(positions_payload.get("message") or positions_payload.get("error"))
+                context["warnings"].append(message)
+            else:
+                context["warnings"].append("Futures positions response was not recognized")
+        except Exception as exc:
+            context["warnings"].append(f"Futures positions query failed: {exc}")
+
+    if not enabled_symbols:
+        return context
 
     for symbol in enabled_symbols:
         row = {

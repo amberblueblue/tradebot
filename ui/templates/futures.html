@@ -119,5 +119,106 @@
       </div>
     </div>
   </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Futures Account</h2>
+        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-6 g-3">
+          <div class="col">
+            <h3 class="h6 text-secondary">API Key</h3>
+            <p class="mb-0">{{ futures_account.api_key_status }}</p>
+          </div>
+          <div class="col">
+            <h3 class="h6 text-secondary">Account Query</h3>
+            <p class="mb-0 {% if futures_account.query_status == 'ok' %}text-success{% elif futures_account.query_status == 'error' %}text-danger{% endif %}">
+              {{ futures_account.query_status }}
+            </p>
+          </div>
+          <div class="col">
+            <h3 class="h6 text-secondary">USDT Wallet</h3>
+            <p class="mb-0">
+              {% if futures_account.wallet_balance is not none %}{{ futures_account.wallet_balance }}{% else %}n/a{% endif %}
+            </p>
+          </div>
+          <div class="col">
+            <h3 class="h6 text-secondary">Available</h3>
+            <p class="mb-0">
+              {% if futures_account.available_balance is not none %}{{ futures_account.available_balance }}{% else %}n/a{% endif %}
+            </p>
+          </div>
+          <div class="col">
+            <h3 class="h6 text-secondary">Margin Balance</h3>
+            <p class="mb-0">
+              {% if futures_account.margin_balance is not none %}{{ futures_account.margin_balance }}{% else %}n/a{% endif %}
+            </p>
+          </div>
+          <div class="col">
+            <h3 class="h6 text-secondary">Unrealized PnL</h3>
+            <p class="mb-0">
+              {% if futures_account.unrealized_pnl is not none %}{{ futures_account.unrealized_pnl }}{% else %}n/a{% endif %}
+            </p>
+          </div>
+        </div>
+        {% if futures_account.error %}
+        <p class="text-warning small mb-0 mt-3">{{ futures_account.error }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Futures Positions</h2>
+        {% if futures_positions %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th class="text-end">Amount</th>
+                <th class="text-end">Entry Price</th>
+                <th class="text-end">Mark Price</th>
+                <th class="text-end">Unrealized PnL</th>
+                <th class="text-end">Liq. Price</th>
+                <th class="text-end">Leverage</th>
+                <th>Margin Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for position in futures_positions %}
+              <tr>
+                <td class="fw-semibold">{{ position.symbol }}</td>
+                <td>{{ position.position_side or "n/a" }}</td>
+                <td class="text-end">
+                  {% if position.position_amount is not none %}{{ position.position_amount }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if position.entry_price is not none %}{{ position.entry_price }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if position.mark_price is not none %}{{ position.mark_price }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if position.unrealized_pnl is not none %}{{ position.unrealized_pnl }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if position.liquidation_price is not none %}{{ position.liquidation_price }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">{{ position.leverage or "n/a" }}</td>
+                <td>{{ position.margin_type or "n/a" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-secondary mb-0">No futures positions</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
