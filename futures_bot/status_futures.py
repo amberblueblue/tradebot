@@ -447,6 +447,53 @@ def build_paper_tick_payload(symbol: str) -> dict[str, object]:
     }
 
 
+def build_paper_close_payload(symbol: str) -> dict[str, object]:
+    symbol = symbol.upper()
+    client = BinanceFuturesClient()
+    try:
+        mark_payload = client.get_mark_price(symbol)
+        mark_price = _float_or_none(mark_payload.get("markPrice"))
+    except Exception as exc:
+        return {
+            "closed": False,
+            "realized_pnl": None,
+            "symbol": symbol,
+            "mark_price": None,
+            "reason": "futures_public_mark_price_error",
+            "error": str(exc),
+        }
+
+    if mark_price is None:
+        return {
+            "closed": False,
+            "realized_pnl": None,
+            "symbol": symbol,
+            "mark_price": None,
+            "reason": "missing_mark_price",
+        }
+
+    broker = _load_futures_paper_broker()
+    try:
+        closed_position = broker.close_position(symbol, mark_price)
+    except ValueError as exc:
+        return {
+            "closed": False,
+            "realized_pnl": None,
+            "symbol": symbol,
+            "mark_price": mark_price,
+            "reason": str(exc),
+        }
+
+    _save_futures_paper_state(broker)
+    return {
+        "closed": True,
+        "realized_pnl": closed_position["realized_pnl"],
+        "symbol": symbol,
+        "mark_price": mark_price,
+        "position": closed_position,
+    }
+
+
 def _position_is_nonzero(position: dict[str, Any]) -> bool:
     return (_float_or_none(position.get("positionAmt")) or 0.0) != 0.0
 
@@ -540,6 +587,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Fetch mark price and update Futures paper position PnL.",
     )
     mode_group.add_argument(
+        "--paper-close",
+        metavar="SYMBOL",
+        help="Fetch mark price and close a Futures paper position.",
+    )
+    mode_group.add_argument(
         "--market-data",
         metavar="SYMBOL",
         help="Fetch public Binance USD-M Futures market data for a symbol.",
@@ -594,6 +646,8 @@ def main() -> int:
             )
         elif args.paper_tick:
             payload = build_paper_tick_payload(args.paper_tick)
+        elif args.paper_close:
+            payload = build_paper_close_payload(args.paper_close)
         elif args.market_data:
             payload = build_market_data_payload(args.market_data)
         else:
