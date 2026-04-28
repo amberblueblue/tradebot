@@ -135,7 +135,16 @@ def _balance_row(balance: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_balance_payload() -> dict[str, object]:
-    payload = BinanceFuturesClient().get_futures_balance()
+    credentials = load_futures_binance_readonly_credentials()
+    if not credentials.configured:
+        return {
+            "balance": [],
+            "query_ok": False,
+            "error": "futures_api_key_missing",
+            "message": "Futures API key missing",
+        }
+
+    payload = BinanceFuturesClient(credentials=credentials).get_futures_balance()
     if _is_missing_key_payload(payload):
         return {
             "balance": [],
@@ -176,7 +185,16 @@ def _position_row(position: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_positions_payload() -> dict[str, object]:
-    payload = BinanceFuturesClient().get_futures_positions()
+    credentials = load_futures_binance_readonly_credentials()
+    if not credentials.configured:
+        return {
+            "positions": [],
+            "query_ok": False,
+            "error": "futures_api_key_missing",
+            "message": "Futures API key missing",
+        }
+
+    payload = BinanceFuturesClient(credentials=credentials).get_futures_positions()
     if _is_missing_key_payload(payload):
         return {
             "positions": [],
