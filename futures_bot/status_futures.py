@@ -13,6 +13,7 @@ from config.secrets import load_futures_binance_readonly_credentials  # noqa: E4
 from futures_bot.config_loader import load_futures_config  # noqa: E402
 from futures_bot.exchange.binance_futures_client import BinanceFuturesClient  # noqa: E402
 from futures_bot.exchange.futures_rules import parse_futures_symbol_rules  # noqa: E402
+from futures_bot.execution.futures_paper_broker import FuturesPaperBroker  # noqa: E402
 from futures_bot.risk.futures_risk import check_futures_pre_open_risk  # noqa: E402
 
 
@@ -299,6 +300,51 @@ def build_risk_check_payload(
     return payload
 
 
+def build_paper_open_payload(
+    symbol: str,
+    side: str,
+    margin_amount: float,
+    leverage: float,
+) -> dict[str, object]:
+    risk_payload = build_risk_check_payload(
+        symbol=symbol,
+        side=side,
+        margin_amount=margin_amount,
+        leverage=leverage,
+    )
+    if not risk_payload.get("ok"):
+        return {
+            "ok": False,
+            "reason": risk_payload.get("reason", "futures_risk_rejected"),
+            "position": None,
+            "risk": risk_payload,
+        }
+
+    mark_price = _float_or_none(risk_payload.get("mark_price"))
+    if mark_price is None:
+        return {
+            "ok": False,
+            "reason": "missing_mark_price",
+            "position": None,
+            "risk": risk_payload,
+        }
+
+    broker = FuturesPaperBroker()
+    position = broker.open_position(
+        symbol=symbol,
+        side=side,
+        margin=margin_amount,
+        leverage=leverage,
+        price=mark_price,
+    )
+    return {
+        "ok": True,
+        "reason": "paper_position_opened",
+        "position": position.to_dict(),
+        "risk": risk_payload,
+    }
+
+
 def _position_is_nonzero(position: dict[str, Any]) -> bool:
     return (_float_or_none(position.get("positionAmt")) or 0.0) != 0.0
 
@@ -382,6 +428,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Dry-run Futures pre-open risk checks for a symbol.",
     )
     mode_group.add_argument(
+        "--paper-open",
+        metavar="SYMBOL",
+        help="Run risk checks, then simulate opening a Futures paper position.",
+    )
+    mode_group.add_argument(
         "--market-data",
         metavar="SYMBOL",
         help="Fetch public Binance USD-M Futures market data for a symbol.",
@@ -421,6 +472,15 @@ def main() -> int:
                 raise ValueError("--risk-check requires --margin and --leverage")
             payload = build_risk_check_payload(
                 args.risk_check,
+                side=args.side,
+                margin_amount=args.margin,
+                leverage=args.leverage,
+            )
+        elif args.paper_open:
+            if args.margin is None or args.leverage is None:
+                raise ValueError("--paper-open requires --margin and --leverage")
+            payload = build_paper_open_payload(
+                args.paper_open,
                 side=args.side,
                 margin_amount=args.margin,
                 leverage=args.leverage,
