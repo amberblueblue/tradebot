@@ -28,8 +28,10 @@ class FuturesEndpointConfig:
 class FuturesRiskConfig:
     max_leverage: float
     max_margin_per_trade_usdt: float
+    max_position_ratio: float
     min_liquidation_distance_pct: float
     max_funding_rate_abs: float
+    max_consecutive_losing_trades: int
 
 
 @dataclass(frozen=True)
@@ -228,6 +230,23 @@ def _load_risk_config(settings: dict[str, Any], settings_path: Path) -> FuturesR
     max_funding_rate_abs = risk_config.get("max_funding_rate_abs", 0)
     if not isinstance(max_funding_rate_abs, (int, float)) or isinstance(max_funding_rate_abs, bool):
         raise ValueError(f"risk.max_funding_rate_abs must be a number in {settings_path}")
+    if max_funding_rate_abs < 0:
+        raise ValueError(f"risk.max_funding_rate_abs must be greater than or equal to 0 in {settings_path}")
+
+    max_position_ratio = risk_config.get("max_position_ratio")
+    if not isinstance(max_position_ratio, (int, float)) or isinstance(max_position_ratio, bool):
+        raise ValueError(f"risk.max_position_ratio must be a number in {settings_path}")
+    if not 0 < max_position_ratio <= 1:
+        raise ValueError(f"risk.max_position_ratio must be greater than 0 and less than or equal to 1 in {settings_path}")
+
+    max_consecutive_losing_trades = risk_config.get("max_consecutive_losing_trades")
+    if (
+        not isinstance(max_consecutive_losing_trades, int)
+        or isinstance(max_consecutive_losing_trades, bool)
+    ):
+        raise ValueError(f"risk.max_consecutive_losing_trades must be an integer in {settings_path}")
+    if max_consecutive_losing_trades <= 0:
+        raise ValueError(f"risk.max_consecutive_losing_trades must be greater than 0 in {settings_path}")
 
     return FuturesRiskConfig(
         max_leverage=_require_positive_number(risk_config, "max_leverage", settings_path),
@@ -236,12 +255,14 @@ def _load_risk_config(settings: dict[str, Any], settings_path: Path) -> FuturesR
             "max_margin_per_trade_usdt",
             settings_path,
         ),
+        max_position_ratio=float(max_position_ratio),
         min_liquidation_distance_pct=_require_positive_number(
             risk_config,
             "min_liquidation_distance_pct",
             settings_path,
         ),
         max_funding_rate_abs=float(max_funding_rate_abs),
+        max_consecutive_losing_trades=max_consecutive_losing_trades,
     )
 
 

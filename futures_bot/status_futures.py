@@ -29,6 +29,18 @@ def build_status_payload() -> dict[str, object]:
     }
 
 
+def build_risk_config_payload() -> dict[str, object]:
+    risk = load_futures_config().risk
+    return {
+        "max_leverage": risk.max_leverage,
+        "max_margin_per_trade_usdt": risk.max_margin_per_trade_usdt,
+        "max_position_ratio": risk.max_position_ratio,
+        "min_liquidation_distance_pct": risk.min_liquidation_distance_pct,
+        "max_funding_rate_abs": risk.max_funding_rate_abs,
+        "max_consecutive_losing_trades": risk.max_consecutive_losing_trades,
+    }
+
+
 def _float_or_none(value: Any) -> float | None:
     if value in (None, ""):
         return None
@@ -239,6 +251,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Show non-zero Futures read-only positions.",
     )
     mode_group.add_argument(
+        "--risk-config",
+        action="store_true",
+        help="Show Futures risk configuration.",
+    )
+    mode_group.add_argument(
         "--market-data",
         metavar="SYMBOL",
         help="Fetch public Binance USD-M Futures market data for a symbol.",
@@ -255,6 +272,8 @@ def main() -> int:
             payload = build_balance_payload()
         elif args.positions:
             payload = build_positions_payload()
+        elif args.risk_config:
+            payload = build_risk_config_payload()
         elif args.market_data:
             payload = build_market_data_payload(args.market_data)
         else:

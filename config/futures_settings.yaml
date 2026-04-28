@@ -10,8 +10,10 @@ futures:
 risk:
   max_leverage: 2
   max_margin_per_trade_usdt: 20
-  min_liquidation_distance_pct: 10
+  max_position_ratio: 0.2
+  min_liquidation_distance_pct: 15
   max_funding_rate_abs: 0.001
+  max_consecutive_losing_trades: 4
 
 safety:
   allow_live_trading: false
