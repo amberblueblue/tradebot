@@ -17,6 +17,10 @@ from futures_bot.execution.futures_paper_broker import FuturesPaperBroker  # noq
 from futures_bot.risk.futures_risk import check_futures_pre_open_risk  # noqa: E402
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+FUTURES_PAPER_STATE_PATH = PROJECT_ROOT / "runtime" / "futures_paper_positions.json"
+
+
 def build_status_payload() -> dict[str, object]:
     config = load_futures_config()
     enabled_symbols = list(config.enabled_symbols)
@@ -223,6 +227,53 @@ def _load_account_equity_for_dry_run(client: BinanceFuturesClient) -> tuple[floa
     return account_equity, "futures_balance_margin_balance", None
 
 
+def _load_futures_paper_state() -> list[dict[str, Any]]:
+    if not FUTURES_PAPER_STATE_PATH.exists():
+        return []
+    payload = json.loads(FUTURES_PAPER_STATE_PATH.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return []
+    positions = payload.get("positions", [])
+    if not isinstance(positions, list):
+        return []
+    return [position for position in positions if isinstance(position, dict)]
+
+
+def _save_futures_paper_state(broker: FuturesPaperBroker) -> None:
+    FUTURES_PAPER_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "positions": [
+            position.to_dict()
+            for position in broker.get_positions()
+        ],
+    }
+    FUTURES_PAPER_STATE_PATH.write_text(
+        json.dumps(payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def _load_futures_paper_broker() -> FuturesPaperBroker:
+    broker = FuturesPaperBroker()
+    for position in _load_futures_paper_state():
+        entry_price = _float_or_none(position.get("entry_price"))
+        margin = _float_or_none(position.get("margin"))
+        leverage = _float_or_none(position.get("leverage"))
+        if entry_price is None or margin is None or leverage is None:
+            continue
+        broker.open_position(
+            symbol=str(position.get("symbol", "")),
+            side=str(position.get("side", "")),
+            margin=margin,
+            leverage=leverage,
+            price=entry_price,
+        )
+        mark_price = _float_or_none(position.get("mark_price"))
+        if mark_price is not None:
+            broker.update_mark_price(str(position.get("symbol", "")), mark_price)
+    return broker
+
+
 def build_risk_check_payload(
     symbol: str,
     side: str,
@@ -329,7 +380,7 @@ def build_paper_open_payload(
             "risk": risk_payload,
         }
 
-    broker = FuturesPaperBroker()
+    broker = _load_futures_paper_broker()
     position = broker.open_position(
         symbol=symbol,
         side=side,
@@ -337,11 +388,62 @@ def build_paper_open_payload(
         leverage=leverage,
         price=mark_price,
     )
+    _save_futures_paper_state(broker)
     return {
         "ok": True,
         "reason": "paper_position_opened",
         "position": position.to_dict(),
         "risk": risk_payload,
+    }
+
+
+def build_paper_tick_payload(symbol: str) -> dict[str, object]:
+    symbol = symbol.upper()
+    client = BinanceFuturesClient()
+    try:
+        mark_payload = client.get_mark_price(symbol)
+        mark_price = _float_or_none(mark_payload.get("markPrice"))
+    except Exception as exc:
+        return {
+            "symbol": symbol,
+            "mark_price": None,
+            "positions": [],
+            "ok": False,
+            "reason": "futures_public_mark_price_error",
+            "error": str(exc),
+        }
+
+    if mark_price is None:
+        return {
+            "symbol": symbol,
+            "mark_price": None,
+            "positions": [],
+            "ok": False,
+            "reason": "missing_mark_price",
+        }
+
+    broker = _load_futures_paper_broker()
+    try:
+        broker.update_mark_price(symbol, mark_price)
+    except ValueError as exc:
+        return {
+            "symbol": symbol,
+            "mark_price": mark_price,
+            "positions": [],
+            "ok": False,
+            "reason": str(exc),
+        }
+
+    _save_futures_paper_state(broker)
+    return {
+        "symbol": symbol,
+        "mark_price": mark_price,
+        "positions": [
+            position.to_dict()
+            for position in broker.get_positions()
+        ],
+        "ok": True,
+        "reason": "paper_mark_price_updated",
     }
 
 
@@ -433,6 +535,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Run risk checks, then simulate opening a Futures paper position.",
     )
     mode_group.add_argument(
+        "--paper-tick",
+        metavar="SYMBOL",
+        help="Fetch mark price and update Futures paper position PnL.",
+    )
+    mode_group.add_argument(
         "--market-data",
         metavar="SYMBOL",
         help="Fetch public Binance USD-M Futures market data for a symbol.",
@@ -485,6 +592,8 @@ def main() -> int:
                 margin_amount=args.margin,
                 leverage=args.leverage,
             )
+        elif args.paper_tick:
+            payload = build_paper_tick_payload(args.paper_tick)
         elif args.market_data:
             payload = build_market_data_payload(args.market_data)
         else:
