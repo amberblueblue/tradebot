@@ -182,6 +182,26 @@ http://127.0.0.1:8000/futures
 
 合约交易风险高于现货交易。后续阶段会单独实现 futures 风控，包括杠杆限制、保证金限制、强平距离、资金费率过滤和独立运行时安全控制；在这些风控完成前，futures bot 仍保持公共数据只读模式。
 
+### Futures Read-only API Key
+
+Futures 阶段 3 开始支持配置 Binance USD-M Futures 只读 API key，用于后续只读账户和持仓展示。API key 不写入 YAML，只允许通过本地 `.env` 或环境变量提供：
+
+```bash
+FUTURES_BINANCE_API_KEY=your_futures_read_only_api_key_here
+FUTURES_BINANCE_API_SECRET=your_futures_read_only_api_secret_here
+```
+
+Futures key 与现货 key 分离，不使用 `BINANCE_API_KEY` / `BINANCE_API_SECRET`。`.env` 已被 `.gitignore` 忽略，不能提交到 GitHub。
+
+创建 Futures API key 时必须只开启读取权限：
+
+- 允许：只读账户和持仓查询
+- 禁止：合约交易权限
+- 禁止：提现权限
+- 禁止：下单、撤单、修改杠杆、修改保证金模式或资金转出权限
+
+如果未配置 `FUTURES_BINANCE_API_KEY` 或 `FUTURES_BINANCE_API_SECRET`，`futures_bot` 仍可正常使用公共行情、mark price、funding rate 和规则查询；Web 控制台 `/futures` 会显示 `Futures API key missing`。
+
 ## Phase 5 Read-only Binance Account Integration
 
 第五阶段接入 Binance 私有 signed endpoint 的只读账户查询能力，只用于本地安全对账和余额查看。

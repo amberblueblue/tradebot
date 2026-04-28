@@ -9,6 +9,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_ENV_PATH = BASE_DIR / ".env"
 BINANCE_API_KEY_ENV = "BINANCE_API_KEY"
 BINANCE_API_SECRET_ENV = "BINANCE_API_SECRET"
+FUTURES_BINANCE_API_KEY_ENV = "FUTURES_BINANCE_API_KEY"
+FUTURES_BINANCE_API_SECRET_ENV = "FUTURES_BINANCE_API_SECRET"
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,33 @@ class BinanceReadOnlyCredentials:
             "configured": self.configured,
             "source": "environment_or_dotenv",
             "mode": "read_only",
+        }
+
+
+@dataclass(frozen=True)
+class FuturesBinanceReadOnlyCredentials:
+    api_key: str | None
+    api_secret: str | None
+
+    @property
+    def api_key_configured(self) -> bool:
+        return bool(self.api_key)
+
+    @property
+    def api_secret_configured(self) -> bool:
+        return bool(self.api_secret)
+
+    @property
+    def configured(self) -> bool:
+        return self.api_key_configured and self.api_secret_configured
+
+    def public_status(self) -> dict[str, bool | str]:
+        return {
+            "api_key_configured": self.api_key_configured,
+            "api_secret_configured": self.api_secret_configured,
+            "configured": self.configured,
+            "source": "environment_or_dotenv",
+            "mode": "futures_read_only",
         }
 
 
@@ -87,13 +116,26 @@ def load_binance_readonly_credentials(env_path: Path = DEFAULT_ENV_PATH) -> Bina
     )
 
 
+def load_futures_binance_readonly_credentials(
+    env_path: Path = DEFAULT_ENV_PATH,
+) -> FuturesBinanceReadOnlyCredentials:
+    dotenv_values = load_dotenv_values(env_path)
+    return FuturesBinanceReadOnlyCredentials(
+        api_key=_secret_from_environment_or_dotenv(FUTURES_BINANCE_API_KEY_ENV, dotenv_values),
+        api_secret=_secret_from_environment_or_dotenv(FUTURES_BINANCE_API_SECRET_ENV, dotenv_values),
+    )
+
+
 def main() -> None:
     env_path = DEFAULT_ENV_PATH
     credentials = load_binance_readonly_credentials(env_path)
+    futures_credentials = load_futures_binance_readonly_credentials(env_path)
     print(f".env path: {env_path}")
     print(f".env exists: {str(env_path.exists()).lower()}")
     print(f"api_key_configured: {str(credentials.api_key_configured).lower()}")
     print(f"api_secret_configured: {str(credentials.api_secret_configured).lower()}")
+    print(f"futures_api_key_configured: {str(futures_credentials.api_key_configured).lower()}")
+    print(f"futures_api_secret_configured: {str(futures_credentials.api_secret_configured).lower()}")
 
 
 if __name__ == "__main__":

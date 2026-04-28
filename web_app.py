@@ -25,7 +25,7 @@ from config.loader import (
     load_execution_runtime,
     load_project_config,
 )
-from config.secrets import load_binance_readonly_credentials
+from config.secrets import load_binance_readonly_credentials, load_futures_binance_readonly_credentials
 from exchange.binance_client import BinanceClient
 from exchange.binance_client import BinancePrivateReadOnlyAPIError
 from execution.account_risk import (
@@ -679,6 +679,7 @@ def _to_optional_float(value) -> float | None:
 
 
 def _load_futures_view() -> dict:
+    futures_credentials = load_futures_binance_readonly_credentials().public_status()
     try:
         futures_config = load_futures_config()
     except Exception as exc:
@@ -686,18 +687,23 @@ def _load_futures_view() -> dict:
             "status": "public-data-only",
             "base_url": "n/a",
             "enabled_symbols": [],
+            "futures_credentials": futures_credentials,
             "rows": [],
             "warnings": [f"Futures config error: {exc}"],
             "config_error": str(exc),
         }
 
     enabled_symbols = list(futures_config.enabled_symbols)
+    warnings = []
+    if not futures_credentials["configured"]:
+        warnings.append("Futures API key missing")
     context = {
         "status": "public-data-only",
         "base_url": futures_config.futures.base_url,
         "enabled_symbols": enabled_symbols,
+        "futures_credentials": futures_credentials,
         "rows": [],
-        "warnings": [],
+        "warnings": warnings,
         "config_error": None,
     }
     if not enabled_symbols:
