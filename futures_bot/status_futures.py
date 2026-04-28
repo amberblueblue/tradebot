@@ -13,6 +13,7 @@ from config.secrets import load_futures_binance_readonly_credentials  # noqa: E4
 from futures_bot.config_loader import load_futures_config  # noqa: E402
 from futures_bot.exchange.binance_futures_client import BinanceFuturesClient  # noqa: E402
 from futures_bot.exchange.futures_rules import parse_futures_symbol_rules  # noqa: E402
+from futures_bot.risk.futures_risk import check_futures_pre_open_risk  # noqa: E402
 
 
 def build_status_payload() -> dict[str, object]:
@@ -93,6 +94,17 @@ def build_market_data_payload(symbol: str) -> dict[str, object]:
     if funding_rate_error is not None:
         payload["funding_rate_error"] = funding_rate_error
     return payload
+
+
+def _risk_thresholds_payload() -> dict[str, object]:
+    risk = load_futures_config().risk
+    return {
+        "max_leverage": risk.max_leverage,
+        "max_margin_per_trade_usdt": risk.max_margin_per_trade_usdt,
+        "max_position_ratio": risk.max_position_ratio,
+        "min_liquidation_distance_pct": risk.min_liquidation_distance_pct,
+        "max_funding_rate_abs": risk.max_funding_rate_abs,
+    }
 
 
 def _is_missing_key_payload(payload: Any) -> bool:
@@ -178,6 +190,115 @@ def build_balance_payload() -> dict[str, object]:
     }
 
 
+def _extract_usdt_account_equity(balance_payload: list[Any]) -> float | None:
+    for item in balance_payload:
+        if not isinstance(item, dict) or item.get("asset") != "USDT":
+            continue
+        for field_name in ("marginBalance", "walletBalance", "crossWalletBalance"):
+            value = _float_or_none(item.get(field_name))
+            if value is not None:
+                return value
+    return None
+
+
+def _load_account_equity_for_dry_run(client: BinanceFuturesClient) -> tuple[float, str, str | None]:
+    credentials = load_futures_binance_readonly_credentials()
+    if not credentials.configured:
+        return 100.0, "fallback_no_futures_api_key", "Futures API key missing"
+
+    try:
+        payload = client.get_futures_balance()
+    except Exception as exc:
+        return 100.0, "fallback_account_query_error", str(exc)
+
+    if _is_missing_key_payload(payload):
+        return 100.0, "fallback_no_futures_api_key", payload.get("message", "Futures API key missing")
+    if not isinstance(payload, list):
+        return 100.0, "fallback_unexpected_balance_payload", "Futures balance response was not a list"
+
+    account_equity = _extract_usdt_account_equity(payload)
+    if account_equity is None:
+        return 100.0, "fallback_missing_usdt_equity", "USDT account equity not found"
+    return account_equity, "futures_balance_margin_balance", None
+
+
+def build_risk_check_payload(
+    symbol: str,
+    side: str,
+    margin_amount: float,
+    leverage: float,
+) -> dict[str, object]:
+    symbol = symbol.upper()
+    normalized_side = side.lower()
+    client = BinanceFuturesClient()
+
+    try:
+        mark_payload = client.get_mark_price(symbol)
+        mark_price = _float_or_none(mark_payload.get("markPrice"))
+        funding_rate = _float_or_none(mark_payload.get("lastFundingRate"))
+        if funding_rate is None:
+            funding_payload = client.get_funding_rate(symbol, limit=1)
+            if isinstance(funding_payload, list) and funding_payload:
+                funding_rate = _float_or_none(funding_payload[0].get("fundingRate"))
+    except Exception as exc:
+        return {
+            "ok": False,
+            "reason": "futures_public_market_data_error",
+            "symbol": symbol,
+            "side": normalized_side,
+            "error": str(exc),
+        }
+
+    if mark_price is None:
+        return {
+            "ok": False,
+            "reason": "missing_mark_price",
+            "symbol": symbol,
+            "side": normalized_side,
+            "mark_price": None,
+        }
+    if funding_rate is None:
+        return {
+            "ok": False,
+            "reason": "missing_funding_rate",
+            "symbol": symbol,
+            "side": normalized_side,
+            "mark_price": mark_price,
+            "funding_rate": None,
+        }
+
+    account_equity, account_equity_source, account_equity_warning = _load_account_equity_for_dry_run(client)
+    risk_result = check_futures_pre_open_risk(
+        symbol=symbol,
+        side=normalized_side,
+        margin_amount=margin_amount,
+        leverage=leverage,
+        mark_price=mark_price,
+        funding_rate=funding_rate,
+        account_equity=account_equity,
+    )
+
+    payload: dict[str, object] = {
+        "ok": risk_result.ok,
+        "reason": risk_result.reason,
+        "symbol": risk_result.symbol,
+        "side": normalized_side,
+        "margin_amount": risk_result.margin_amount,
+        "leverage": risk_result.leverage,
+        "mark_price": mark_price,
+        "funding_rate": risk_result.funding_rate,
+        "account_equity": account_equity,
+        "account_equity_source": account_equity_source,
+        "position_ratio": risk_result.position_ratio,
+        "liquidation_distance_pct": risk_result.liquidation_distance_pct,
+        "config_thresholds": _risk_thresholds_payload(),
+        "details": risk_result.details,
+    }
+    if account_equity_warning is not None:
+        payload["account_equity_warning"] = account_equity_warning
+    return payload
+
+
 def _position_is_nonzero(position: dict[str, Any]) -> bool:
     return (_float_or_none(position.get("positionAmt")) or 0.0) != 0.0
 
@@ -256,9 +377,30 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Show Futures risk configuration.",
     )
     mode_group.add_argument(
+        "--risk-check",
+        metavar="SYMBOL",
+        help="Dry-run Futures pre-open risk checks for a symbol.",
+    )
+    mode_group.add_argument(
         "--market-data",
         metavar="SYMBOL",
         help="Fetch public Binance USD-M Futures market data for a symbol.",
+    )
+    parser.add_argument(
+        "--side",
+        choices=("long", "short"),
+        default="long",
+        help="Risk-check side.",
+    )
+    parser.add_argument(
+        "--margin",
+        type=float,
+        help="Risk-check margin amount in USDT.",
+    )
+    parser.add_argument(
+        "--leverage",
+        type=float,
+        help="Risk-check leverage.",
     )
     return parser.parse_args(argv)
 
@@ -274,6 +416,15 @@ def main() -> int:
             payload = build_positions_payload()
         elif args.risk_config:
             payload = build_risk_config_payload()
+        elif args.risk_check:
+            if args.margin is None or args.leverage is None:
+                raise ValueError("--risk-check requires --margin and --leverage")
+            payload = build_risk_check_payload(
+                args.risk_check,
+                side=args.side,
+                margin_amount=args.margin,
+                leverage=args.leverage,
+            )
         elif args.market_data:
             payload = build_market_data_payload(args.market_data)
         else:
