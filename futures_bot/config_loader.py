@@ -33,6 +33,12 @@ class FuturesRiskConfig:
 
 
 @dataclass(frozen=True)
+class FuturesSafetyConfig:
+    allow_live_trading: bool
+    live_execute_enabled: bool
+
+
+@dataclass(frozen=True)
 class FuturesSymbolConfig:
     symbol: str
     enabled: bool
@@ -50,6 +56,7 @@ class FuturesRuntimeConfig:
     app: FuturesAppConfig
     futures: FuturesEndpointConfig
     risk: FuturesRiskConfig
+    safety: FuturesSafetyConfig
     symbols: dict[str, FuturesSymbolConfig]
 
     @property
@@ -238,6 +245,22 @@ def _load_risk_config(settings: dict[str, Any], settings_path: Path) -> FuturesR
     )
 
 
+def _load_safety_config(settings: dict[str, Any], settings_path: Path) -> FuturesSafetyConfig:
+    safety_config = _require_mapping(settings, "safety", settings_path)
+    allow_live_trading = safety_config.get("allow_live_trading", False)
+    live_execute_enabled = safety_config.get("live_execute_enabled", False)
+
+    if not isinstance(allow_live_trading, bool):
+        raise ValueError(f"safety.allow_live_trading must be a boolean in {settings_path}")
+    if not isinstance(live_execute_enabled, bool):
+        raise ValueError(f"safety.live_execute_enabled must be a boolean in {settings_path}")
+
+    return FuturesSafetyConfig(
+        allow_live_trading=allow_live_trading,
+        live_execute_enabled=live_execute_enabled,
+    )
+
+
 def _load_symbol_configs(
     symbols_config: dict[str, Any],
     symbols_path: Path,
@@ -285,5 +308,6 @@ def load_futures_config(
         app=_load_app_config(settings, settings_path),
         futures=_load_futures_endpoint_config(settings, settings_path),
         risk=_load_risk_config(settings, settings_path),
+        safety=_load_safety_config(settings, settings_path),
         symbols=_load_symbol_configs(symbols, symbols_path),
     )
