@@ -710,6 +710,14 @@ def _load_futures_view() -> dict:
         "error": None,
     }
     futures_positions: list[dict[str, object]] = []
+    futures_risk_controls = {
+        "max_leverage": None,
+        "max_margin_per_trade_usdt": None,
+        "max_position_ratio": None,
+        "min_liquidation_distance_pct": None,
+        "max_funding_rate_abs": None,
+        "max_consecutive_losing_trades": None,
+    }
     try:
         futures_config = load_futures_config()
     except Exception as exc:
@@ -720,12 +728,23 @@ def _load_futures_view() -> dict:
             "futures_credentials": futures_credentials,
             "futures_account": futures_account,
             "futures_positions": futures_positions,
+            "futures_risk_controls": futures_risk_controls,
             "rows": [],
             "warnings": [f"Futures config error: {exc}"],
             "config_error": str(exc),
         }
 
     enabled_symbols = list(futures_config.enabled_symbols)
+    futures_risk_controls.update(
+        {
+            "max_leverage": futures_config.risk.max_leverage,
+            "max_margin_per_trade_usdt": futures_config.risk.max_margin_per_trade_usdt,
+            "max_position_ratio": futures_config.risk.max_position_ratio,
+            "min_liquidation_distance_pct": futures_config.risk.min_liquidation_distance_pct,
+            "max_funding_rate_abs": futures_config.risk.max_funding_rate_abs,
+            "max_consecutive_losing_trades": futures_config.risk.max_consecutive_losing_trades,
+        }
+    )
     warnings = []
     if not futures_credentials["configured"]:
         warnings.append("Futures API key missing")
@@ -736,6 +755,7 @@ def _load_futures_view() -> dict:
         "futures_credentials": futures_credentials,
         "futures_account": futures_account,
         "futures_positions": futures_positions,
+        "futures_risk_controls": futures_risk_controls,
         "rows": [],
         "warnings": warnings,
         "config_error": None,
@@ -815,6 +835,7 @@ def _load_futures_view() -> dict:
             "step_size": None,
             "warning": None,
             "funding_warning": None,
+            "funding_rate_exceeds_max": None,
         }
         try:
             symbol_info = client.get_symbol_info(symbol)
@@ -843,6 +864,10 @@ def _load_futures_view() -> dict:
             funding_payload = client.get_funding_rate(symbol, limit=1)
             if isinstance(funding_payload, list) and funding_payload:
                 row["funding_rate"] = _to_optional_float(funding_payload[0].get("fundingRate"))
+                if row["funding_rate"] is not None:
+                    row["funding_rate_exceeds_max"] = (
+                        abs(row["funding_rate"]) > futures_config.risk.max_funding_rate_abs
+                    )
         except Exception as exc:
             message = f"{symbol} funding rate unavailable: {exc}"
             row["funding_warning"] = message

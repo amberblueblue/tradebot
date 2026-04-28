@@ -67,6 +67,52 @@
   <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-body">
+        <h2 class="h5 mb-3">Futures Risk Controls</h2>
+        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-6 g-3">
+          <div class="col">
+            <h3 class="h6 text-secondary">Max Leverage</h3>
+            <p class="mb-0">
+              {% if futures_risk_controls.max_leverage is not none %}{{ futures_risk_controls.max_leverage }}{% else %}n/a{% endif %}
+            </p>
+          </div>
+          <div class="col">
+            <h3 class="h6 text-secondary">Max Margin</h3>
+            <p class="mb-0">
+              {% if futures_risk_controls.max_margin_per_trade_usdt is not none %}{{ futures_risk_controls.max_margin_per_trade_usdt }} USDT{% else %}n/a{% endif %}
+            </p>
+          </div>
+          <div class="col">
+            <h3 class="h6 text-secondary">Max Position Ratio</h3>
+            <p class="mb-0">
+              {% if futures_risk_controls.max_position_ratio is not none %}{{ futures_risk_controls.max_position_ratio }}{% else %}n/a{% endif %}
+            </p>
+          </div>
+          <div class="col">
+            <h3 class="h6 text-secondary">Min Liq. Distance</h3>
+            <p class="mb-0">
+              {% if futures_risk_controls.min_liquidation_distance_pct is not none %}{{ futures_risk_controls.min_liquidation_distance_pct }}%{% else %}n/a{% endif %}
+            </p>
+          </div>
+          <div class="col">
+            <h3 class="h6 text-secondary">Max Funding Abs</h3>
+            <p class="mb-0">
+              {% if futures_risk_controls.max_funding_rate_abs is not none %}{{ futures_risk_controls.max_funding_rate_abs }}{% else %}n/a{% endif %}
+            </p>
+          </div>
+          <div class="col">
+            <h3 class="h6 text-secondary">Max Losing Trades</h3>
+            <p class="mb-0">
+              {% if futures_risk_controls.max_consecutive_losing_trades is not none %}{{ futures_risk_controls.max_consecutive_losing_trades }}{% else %}n/a{% endif %}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
         <h2 class="h5 mb-3">Public Market Data</h2>
         {% if rows %}
         <div class="table-responsive">
@@ -77,6 +123,7 @@
                 <th class="text-end">Ticker Price</th>
                 <th class="text-end">Mark Price</th>
                 <th class="text-end">Funding Rate</th>
+                <th class="text-end">Funding Risk</th>
                 <th class="text-end">Next Funding Time</th>
                 <th class="text-end">Min Notional</th>
                 <th class="text-end">Tick Size</th>
@@ -95,6 +142,15 @@
                 </td>
                 <td class="text-end">
                   {% if row.funding_rate is not none %}{{ row.funding_rate }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if row.funding_rate_exceeds_max is sameas true %}
+                    <span class="text-danger">exceeds max</span>
+                  {% elif row.funding_rate_exceeds_max is sameas false %}
+                    <span class="text-success">ok</span>
+                  {% else %}
+                    n/a
+                  {% endif %}
                 </td>
                 <td class="text-end">
                   {% if row.next_funding_time %}{{ row.next_funding_time }}{% else %}n/a{% endif %}
