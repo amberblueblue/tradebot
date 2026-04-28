@@ -291,7 +291,7 @@ def build_risk_check_payload(
         "account_equity_source": account_equity_source,
         "position_ratio": risk_result.position_ratio,
         "liquidation_distance_pct": risk_result.liquidation_distance_pct,
-        "config_thresholds": _risk_thresholds_payload(),
+        "config": _risk_thresholds_payload(),
         "details": risk_result.details,
     }
     if account_equity_warning is not None:
