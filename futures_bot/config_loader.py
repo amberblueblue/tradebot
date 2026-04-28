@@ -12,11 +12,53 @@ DEFAULT_FUTURES_SYMBOLS_PATH = CONFIG_DIR / "futures_symbols.yaml"
 
 
 @dataclass(frozen=True)
-class FuturesConfig:
-    settings: dict[str, Any]
-    symbols: dict[str, Any]
+class FuturesAppConfig:
+    mode: str
+    polling_interval_seconds: int
+
+
+@dataclass(frozen=True)
+class FuturesEndpointConfig:
+    base_url: str
+    request_timeout_seconds: int
+    rules_cache_ttl_seconds: int
+
+
+@dataclass(frozen=True)
+class FuturesRiskConfig:
+    max_leverage: float
+    max_margin_per_trade_usdt: float
+    min_liquidation_distance_pct: float
+    max_funding_rate_abs: float
+
+
+@dataclass(frozen=True)
+class FuturesSymbolConfig:
+    symbol: str
+    enabled: bool
+    strategy: str
+    leverage: float
+    margin_amount: float
+    trend_timeframe: str
+    signal_timeframe: str
+
+
+@dataclass(frozen=True)
+class FuturesRuntimeConfig:
     settings_path: Path
     symbols_path: Path
+    app: FuturesAppConfig
+    futures: FuturesEndpointConfig
+    risk: FuturesRiskConfig
+    symbols: dict[str, FuturesSymbolConfig]
+
+    @property
+    def enabled_symbols(self) -> tuple[str, ...]:
+        return tuple(
+            symbol
+            for symbol, symbol_config in self.symbols.items()
+            if symbol_config.enabled
+        )
 
 
 def _strip_comments(line: str) -> str:
@@ -109,13 +151,139 @@ def load_yaml_mapping(path: Path) -> dict[str, Any]:
     return parsed
 
 
+def _require_mapping(config: dict[str, Any], key: str, path: Path) -> dict[str, Any]:
+    value = config.get(key, {})
+    if not isinstance(value, dict):
+        raise ValueError(f"{key} must be a mapping in {path}")
+    return value
+
+
+def _require_positive_number(config: dict[str, Any], key: str, path: Path) -> float:
+    value = config.get(key)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f"{key} must be a number in {path}")
+    if value <= 0:
+        raise ValueError(f"{key} must be greater than 0 in {path}")
+    return float(value)
+
+
+def _require_string(config: dict[str, Any], key: str, path: Path) -> str:
+    value = config.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{key} must be a non-empty string in {path}")
+    return value
+
+
+def _load_app_config(settings: dict[str, Any], settings_path: Path) -> FuturesAppConfig:
+    app_config = _require_mapping(settings, "app", settings_path)
+    mode = app_config.get("mode")
+    if mode not in {"paper", "live"}:
+        raise ValueError("app.mode must be paper or live")
+
+    polling_interval = app_config.get("polling_interval_seconds", 30)
+    if not isinstance(polling_interval, int) or isinstance(polling_interval, bool):
+        raise ValueError(f"app.polling_interval_seconds must be an integer in {settings_path}")
+    if polling_interval <= 0:
+        raise ValueError(f"app.polling_interval_seconds must be greater than 0 in {settings_path}")
+
+    return FuturesAppConfig(
+        mode=mode,
+        polling_interval_seconds=polling_interval,
+    )
+
+
+def _load_futures_endpoint_config(
+    settings: dict[str, Any],
+    settings_path: Path,
+) -> FuturesEndpointConfig:
+    futures_config = _require_mapping(settings, "futures", settings_path)
+    request_timeout = futures_config.get("request_timeout_seconds", 10)
+    rules_cache_ttl = futures_config.get("rules_cache_ttl_seconds", 3600)
+
+    if not isinstance(request_timeout, int) or isinstance(request_timeout, bool):
+        raise ValueError(f"futures.request_timeout_seconds must be an integer in {settings_path}")
+    if request_timeout <= 0:
+        raise ValueError(f"futures.request_timeout_seconds must be greater than 0 in {settings_path}")
+    if not isinstance(rules_cache_ttl, int) or isinstance(rules_cache_ttl, bool):
+        raise ValueError(f"futures.rules_cache_ttl_seconds must be an integer in {settings_path}")
+    if rules_cache_ttl <= 0:
+        raise ValueError(f"futures.rules_cache_ttl_seconds must be greater than 0 in {settings_path}")
+
+    return FuturesEndpointConfig(
+        base_url=_require_string(futures_config, "base_url", settings_path),
+        request_timeout_seconds=request_timeout,
+        rules_cache_ttl_seconds=rules_cache_ttl,
+    )
+
+
+def _load_risk_config(settings: dict[str, Any], settings_path: Path) -> FuturesRiskConfig:
+    risk_config = _require_mapping(settings, "risk", settings_path)
+    max_funding_rate_abs = risk_config.get("max_funding_rate_abs", 0)
+    if not isinstance(max_funding_rate_abs, (int, float)) or isinstance(max_funding_rate_abs, bool):
+        raise ValueError(f"risk.max_funding_rate_abs must be a number in {settings_path}")
+
+    return FuturesRiskConfig(
+        max_leverage=_require_positive_number(risk_config, "max_leverage", settings_path),
+        max_margin_per_trade_usdt=_require_positive_number(
+            risk_config,
+            "max_margin_per_trade_usdt",
+            settings_path,
+        ),
+        min_liquidation_distance_pct=_require_positive_number(
+            risk_config,
+            "min_liquidation_distance_pct",
+            settings_path,
+        ),
+        max_funding_rate_abs=float(max_funding_rate_abs),
+    )
+
+
+def _load_symbol_configs(
+    symbols_config: dict[str, Any],
+    symbols_path: Path,
+) -> dict[str, FuturesSymbolConfig]:
+    raw_symbols = symbols_config.get("symbols", {})
+    if raw_symbols is None:
+        raw_symbols = {}
+    if not isinstance(raw_symbols, dict):
+        raise ValueError(f"symbols must be a mapping in {symbols_path}")
+
+    loaded_symbols: dict[str, FuturesSymbolConfig] = {}
+    for symbol, raw_symbol_config in raw_symbols.items():
+        if not isinstance(symbol, str) or not symbol.strip():
+            raise ValueError(f"symbol names must be non-empty strings in {symbols_path}")
+        if not isinstance(raw_symbol_config, dict):
+            raise ValueError(f"symbols.{symbol} must be a mapping in {symbols_path}")
+
+        enabled = raw_symbol_config.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ValueError(f"symbols.{symbol}.enabled must be a boolean in {symbols_path}")
+
+        loaded_symbols[symbol] = FuturesSymbolConfig(
+            symbol=symbol,
+            enabled=enabled,
+            strategy=str(raw_symbol_config.get("strategy", "")),
+            leverage=float(raw_symbol_config.get("leverage", 0)),
+            margin_amount=float(raw_symbol_config.get("margin_amount", 0)),
+            trend_timeframe=str(raw_symbol_config.get("trend_timeframe", "")),
+            signal_timeframe=str(raw_symbol_config.get("signal_timeframe", "")),
+        )
+
+    return loaded_symbols
+
+
 def load_futures_config(
     settings_path: Path = DEFAULT_FUTURES_SETTINGS_PATH,
     symbols_path: Path = DEFAULT_FUTURES_SYMBOLS_PATH,
-) -> FuturesConfig:
-    return FuturesConfig(
-        settings=load_yaml_mapping(settings_path),
-        symbols=load_yaml_mapping(symbols_path),
+) -> FuturesRuntimeConfig:
+    settings = load_yaml_mapping(settings_path)
+    symbols = load_yaml_mapping(symbols_path)
+
+    return FuturesRuntimeConfig(
         settings_path=settings_path,
         symbols_path=symbols_path,
+        app=_load_app_config(settings, settings_path),
+        futures=_load_futures_endpoint_config(settings, settings_path),
+        risk=_load_risk_config(settings, settings_path),
+        symbols=_load_symbol_configs(symbols, symbols_path),
     )
