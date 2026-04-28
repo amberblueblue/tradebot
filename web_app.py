@@ -33,6 +33,9 @@ from execution.account_risk import (
     get_account_risk_status,
     reset_account_risk,
 )
+from futures_bot.config_loader import load_futures_config
+from futures_bot.exchange.binance_futures_client import BinanceFuturesClient
+from futures_bot.exchange.futures_rules import parse_futures_symbol_rules
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
 from runtime.state import RuntimeStore, build_runtime_state, get_live_gate_status
@@ -55,6 +58,7 @@ REAL_EXECUTE_ENV_VAR = "TRADEBOT_EXECUTE_REAL"
 FINAL_REAL_ORDER_ENV_VAR = "TRADEBOT_FINAL_REAL_ORDER"
 DASHBOARD_MARKET_DATA_TIMEOUT_SECONDS = 1
 DASHBOARD_MARKET_DATA_CACHE_SECONDS = 60
+FUTURES_MARKET_DATA_TIMEOUT_SECONDS = 3
 _MARKET_DATA_CACHE: dict[str, object] = {
     "expires_at": 0.0,
     "status": None,
@@ -667,6 +671,96 @@ def _to_float(value, default: float = 0.0) -> float:
         return default
 
 
+def _to_optional_float(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_futures_view() -> dict:
+    try:
+        futures_config = load_futures_config()
+    except Exception as exc:
+        return {
+            "status": "public-data-only",
+            "base_url": "n/a",
+            "enabled_symbols": [],
+            "rows": [],
+            "warnings": [f"Futures config error: {exc}"],
+            "config_error": str(exc),
+        }
+
+    enabled_symbols = list(futures_config.enabled_symbols)
+    context = {
+        "status": "public-data-only",
+        "base_url": futures_config.futures.base_url,
+        "enabled_symbols": enabled_symbols,
+        "rows": [],
+        "warnings": [],
+        "config_error": None,
+    }
+    if not enabled_symbols:
+        return context
+
+    client = BinanceFuturesClient(
+        base_url=futures_config.futures.base_url,
+        timeout=min(
+            futures_config.futures.request_timeout_seconds,
+            FUTURES_MARKET_DATA_TIMEOUT_SECONDS,
+        ),
+    )
+
+    for symbol in enabled_symbols:
+        row = {
+            "symbol": symbol,
+            "ticker_price": None,
+            "mark_price": None,
+            "funding_rate": None,
+            "next_funding_time": None,
+            "min_notional": None,
+            "tick_size": None,
+            "step_size": None,
+            "warning": None,
+            "funding_warning": None,
+        }
+        try:
+            symbol_info = client.get_symbol_info(symbol)
+            rules = parse_futures_symbol_rules(symbol_info)
+            ticker_payload = client.get_ticker_price(symbol)
+            mark_payload = client.get_mark_price(symbol)
+
+            row.update(
+                {
+                    "ticker_price": _to_optional_float(ticker_payload.get("price")),
+                    "mark_price": _to_optional_float(mark_payload.get("markPrice")),
+                    "next_funding_time": mark_payload.get("nextFundingTime"),
+                    "min_notional": rules.min_notional,
+                    "tick_size": rules.tick_size,
+                    "step_size": rules.step_size,
+                }
+            )
+        except Exception as exc:
+            message = f"{symbol}: {exc}"
+            row["warning"] = message
+            context["warnings"].append(message)
+            context["rows"].append(row)
+            continue
+
+        try:
+            funding_payload = client.get_funding_rate(symbol, limit=1)
+            if isinstance(funding_payload, list) and funding_payload:
+                row["funding_rate"] = _to_optional_float(funding_payload[0].get("fundingRate"))
+        except Exception as exc:
+            message = f"{symbol} funding rate unavailable: {exc}"
+            row["funding_warning"] = message
+            context["warnings"].append(message)
+
+        context["rows"].append(row)
+
+    return context
+
+
 def _load_positions_view() -> dict:
     try:
         settings = load_project_config()
@@ -899,6 +993,18 @@ def health_page(request: Request):
         }
     )
     return templates.TemplateResponse(request, "health.html", context)
+
+
+@app.get("/futures", response_class=HTMLResponse)
+def futures_page(request: Request):
+    context = _load_futures_view()
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+        }
+    )
+    return templates.TemplateResponse(request, "futures.html", context)
 
 
 @app.get("/api/health")

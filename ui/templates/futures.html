@@ -1,0 +1,108 @@
+{% extends "layout.html" %}
+
+{% block title %}Futures | TraderBot Console{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-12">
+    <div class="hero-panel p-4 p-md-5 rounded-4">
+      <p class="text-uppercase small mb-2 text-secondary">Binance USD-M Futures</p>
+      <h1 class="display-6 mb-2">Futures Public Data</h1>
+      <p class="text-secondary mb-0">Futures Bot status: {{ status }}</p>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Base URL</h2>
+        <p class="fs-6 mb-0">{{ base_url }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Enabled Futures Symbols</h2>
+        <p class="fs-6 mb-0">
+          {% if enabled_symbols %}
+            {{ enabled_symbols | join(", ") }}
+          {% else %}
+            No futures symbols enabled
+          {% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {% if warnings %}
+  <div class="col-12">
+    <div class="alert alert-warning shadow-sm mb-0" role="alert">
+      <h2 class="h6 mb-2">Futures public API warning</h2>
+      <ul class="mb-0">
+        {% for warning in warnings %}
+        <li>{{ warning }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Public Market Data</h2>
+        {% if rows %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th class="text-end">Ticker Price</th>
+                <th class="text-end">Mark Price</th>
+                <th class="text-end">Funding Rate</th>
+                <th class="text-end">Next Funding Time</th>
+                <th class="text-end">Min Notional</th>
+                <th class="text-end">Tick Size</th>
+                <th class="text-end">Step Size</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+              <tr>
+                <td class="fw-semibold">{{ row.symbol }}</td>
+                <td class="text-end">
+                  {% if row.ticker_price is not none %}{{ row.ticker_price }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if row.mark_price is not none %}{{ row.mark_price }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if row.funding_rate is not none %}{{ row.funding_rate }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if row.next_funding_time %}{{ row.next_funding_time }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if row.min_notional is not none %}{{ row.min_notional }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if row.tick_size is not none %}{{ row.tick_size }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if row.step_size is not none %}{{ row.step_size }}{% else %}n/a{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-secondary mb-0">No futures symbols enabled</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
