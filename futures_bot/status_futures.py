@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -15,12 +14,8 @@ from futures_bot.config_loader import load_futures_config  # noqa: E402
 from futures_bot.exchange.binance_futures_client import BinanceFuturesClient  # noqa: E402
 from futures_bot.exchange.futures_rules import parse_futures_symbol_rules  # noqa: E402
 from futures_bot.execution.futures_paper_broker import FuturesPaperBroker  # noqa: E402
-from futures_bot.execution.futures_paper_broker import FuturesPosition  # noqa: E402
 from futures_bot.risk.futures_risk import check_futures_pre_open_risk  # noqa: E402
 
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-FUTURES_PAPER_STATE_PATH = Path("/private/tmp/traderbot_futures_paper_broker.json")
 
 paper_broker = FuturesPaperBroker()
 
@@ -231,59 +226,8 @@ def _load_account_equity_for_dry_run(client: BinanceFuturesClient) -> tuple[floa
     return account_equity, "futures_balance_margin_balance", None
 
 
-def _position_payload(position: FuturesPosition) -> dict[str, object]:
-    return asdict(position)
-
-
-def _load_futures_paper_state() -> list[dict[str, Any]]:
-    if not FUTURES_PAPER_STATE_PATH.exists():
-        return []
-    try:
-        payload = json.loads(FUTURES_PAPER_STATE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    if not isinstance(payload, dict):
-        return []
-    positions = payload.get("positions", [])
-    if not isinstance(positions, list):
-        return []
-    return [position for position in positions if isinstance(position, dict)]
-
-
-def _save_futures_paper_state() -> None:
-    payload = {
-        "positions": [
-            _position_payload(position)
-            for position in paper_broker.get_positions()
-        ],
-    }
-    FUTURES_PAPER_STATE_PATH.write_text(
-        json.dumps(payload, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-
-
-def _load_futures_paper_broker() -> None:
-    paper_broker._positions = {}
-    for position in _load_futures_paper_state():
-        entry_price = _float_or_none(position.get("entry_price"))
-        margin = _float_or_none(position.get("margin"))
-        leverage = _float_or_none(position.get("leverage"))
-        if entry_price is None or margin is None or leverage is None:
-            continue
-        symbol = str(position.get("symbol", "")).upper()
-        if not symbol:
-            continue
-        paper_broker.open_position(
-            symbol=symbol,
-            side=str(position.get("side", "")),
-            margin=margin,
-            leverage=leverage,
-            price=entry_price,
-        )
-        mark_price = _float_or_none(position.get("mark_price"))
-        if mark_price is not None:
-            paper_broker.update_mark_price(symbol, mark_price)
+def _position_payload(position: Any) -> dict[str, object]:
+    return position.to_dict()
 
 
 def build_risk_check_payload(
@@ -392,7 +336,6 @@ def build_paper_open_payload(
             "risk": risk_payload,
         }
 
-    _load_futures_paper_broker()
     position = paper_broker.open_position(
         symbol=symbol,
         side=side,
@@ -400,7 +343,6 @@ def build_paper_open_payload(
         leverage=leverage,
         price=mark_price,
     )
-    _save_futures_paper_state()
     return {
         "ok": True,
         "reason": "paper_position_opened",
@@ -434,7 +376,6 @@ def build_paper_tick_payload(symbol: str) -> dict[str, object]:
             "reason": "missing_mark_price",
         }
 
-    _load_futures_paper_broker()
     try:
         paper_broker.update_mark_price(symbol, mark_price)
     except (KeyError, ValueError) as exc:
@@ -446,7 +387,6 @@ def build_paper_tick_payload(symbol: str) -> dict[str, object]:
             "reason": str(exc),
         }
 
-    _save_futures_paper_state()
     return {
         "symbol": symbol,
         "mark_price": mark_price,
@@ -484,7 +424,6 @@ def build_paper_close_payload(symbol: str) -> dict[str, object]:
             "reason": "missing_mark_price",
         }
 
-    _load_futures_paper_broker()
     try:
         closed_position = paper_broker.close_position(symbol, mark_price)
     except (KeyError, ValueError) as exc:
@@ -496,7 +435,6 @@ def build_paper_close_payload(symbol: str) -> dict[str, object]:
             "reason": str(exc),
         }
 
-    _save_futures_paper_state()
     return {
         "ok": True,
         "reason": "paper_position_closed",
