@@ -36,6 +36,7 @@ from execution.account_risk import (
 from futures_bot.config_loader import load_futures_config
 from futures_bot.exchange.binance_futures_client import BinanceFuturesClient
 from futures_bot.exchange.futures_rules import parse_futures_symbol_rules
+from futures_bot.execution.futures_paper_broker import FuturesPaperBroker
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
 from runtime.state import RuntimeStore, build_runtime_state, get_live_gate_status
@@ -51,7 +52,6 @@ LOG_FILE_MAP = {
     "trade": BASE_DIR / "logs" / "trade.log",
     "error": BASE_DIR / "logs" / "error.log",
 }
-FUTURES_PAPER_STATE_PATH = BASE_DIR / "runtime" / "futures_paper_positions.json"
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
 LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
@@ -705,6 +705,7 @@ def _futures_paper_position_row(position: dict[str, object]) -> dict[str, object
         "side": position.get("side"),
         "entry_price": _to_optional_float(position.get("entry_price")),
         "mark_price": _to_optional_float(position.get("mark_price")),
+        "position_amt": _to_optional_float(position.get("position_amt")),
         "unrealized_pnl": _to_optional_float(position.get("unrealized_pnl")),
         "leverage": _to_optional_float(position.get("leverage")),
         "margin": _to_optional_float(position.get("margin")),
@@ -712,21 +713,13 @@ def _futures_paper_position_row(position: dict[str, object]) -> dict[str, object
 
 
 def _load_futures_paper_positions() -> list[dict[str, object]]:
-    if not FUTURES_PAPER_STATE_PATH.exists():
-        return []
     try:
-        payload = json.loads(FUTURES_PAPER_STATE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    if not isinstance(payload, dict):
-        return []
-    positions = payload.get("positions", [])
-    if not isinstance(positions, list):
+        positions = FuturesPaperBroker().get_positions()
+    except Exception:
         return []
     return [
-        _futures_paper_position_row(position)
+        _futures_paper_position_row(position.to_dict())
         for position in positions
-        if isinstance(position, dict)
     ]
 
 

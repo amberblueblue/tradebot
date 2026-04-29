@@ -290,9 +290,10 @@
                 <th>Side</th>
                 <th class="text-end">Entry Price</th>
                 <th class="text-end">Mark Price</th>
-                <th class="text-end">Unrealized PnL</th>
-                <th class="text-end">Leverage</th>
+                <th class="text-end">Position Amount</th>
                 <th class="text-end">Margin</th>
+                <th class="text-end">Leverage</th>
+                <th class="text-end">Unrealized PnL</th>
               </tr>
             </thead>
             <tbody>
@@ -307,13 +308,16 @@
                   {% if position.mark_price is not none %}{{ position.mark_price }}{% else %}n/a{% endif %}
                 </td>
                 <td class="text-end">
-                  {% if position.unrealized_pnl is not none %}{{ position.unrealized_pnl }}{% else %}n/a{% endif %}
+                  {% if position.position_amt is not none %}{{ position.position_amt }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if position.margin is not none %}{{ position.margin }}{% else %}n/a{% endif %}
                 </td>
                 <td class="text-end">
                   {% if position.leverage is not none %}{{ position.leverage }}{% else %}n/a{% endif %}
                 </td>
-                <td class="text-end">
-                  {% if position.margin is not none %}{{ position.margin }}{% else %}n/a{% endif %}
+                <td class="text-end {% if position.unrealized_pnl is not none and position.unrealized_pnl > 0 %}text-success{% elif position.unrealized_pnl is not none and position.unrealized_pnl < 0 %}text-danger{% endif %}">
+                  {% if position.unrealized_pnl is not none %}{{ position.unrealized_pnl }}{% else %}n/a{% endif %}
                 </td>
               </tr>
               {% endfor %}
@@ -321,7 +325,7 @@
           </table>
         </div>
         {% else %}
-        <p class="text-secondary mb-0">No paper positions</p>
+        <p class="text-secondary mb-0">No futures paper positions</p>
         {% endif %}
       </div>
     </div>
