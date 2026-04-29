@@ -115,15 +115,15 @@ class FuturesPaperBroker:
         position.unrealized_pnl = self._calculate_unrealized_pnl(position)
         self._closed_trades.append(
             {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "symbol": position.symbol,
                 "side": position.side,
-                "position_amt": position.position_amt,
                 "entry_price": position.entry_price,
-                "close_price": price,
-                "realized_pnl": position.unrealized_pnl,
-                "leverage": position.leverage,
+                "exit_price": price,
+                "position_amt": position.position_amt,
                 "margin": position.margin,
-                "closed_at": datetime.now(timezone.utc).isoformat(),
+                "leverage": position.leverage,
+                "realized_pnl": position.unrealized_pnl,
             }
         )
         self.save_state()

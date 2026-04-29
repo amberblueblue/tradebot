@@ -714,12 +714,38 @@ def _futures_paper_position_row(position: dict[str, object]) -> dict[str, object
 
 def _load_futures_paper_positions() -> list[dict[str, object]]:
     try:
-        positions = FuturesPaperBroker().get_positions()
+        broker = FuturesPaperBroker()
     except Exception:
         return []
     return [
         _futures_paper_position_row(position.to_dict())
-        for position in positions
+        for position in broker.get_positions()
+    ]
+
+
+def _futures_paper_trade_row(trade: dict[str, object]) -> dict[str, object]:
+    return {
+        "timestamp": trade.get("timestamp"),
+        "symbol": trade.get("symbol"),
+        "side": trade.get("side"),
+        "entry_price": _to_optional_float(trade.get("entry_price")),
+        "exit_price": _to_optional_float(trade.get("exit_price")),
+        "position_amt": _to_optional_float(trade.get("position_amt")),
+        "margin": _to_optional_float(trade.get("margin")),
+        "leverage": _to_optional_float(trade.get("leverage")),
+        "realized_pnl": _to_optional_float(trade.get("realized_pnl")),
+    }
+
+
+def _load_futures_paper_trade_history() -> list[dict[str, object]]:
+    try:
+        broker = FuturesPaperBroker()
+    except Exception:
+        return []
+    return [
+        _futures_paper_trade_row(trade)
+        for trade in reversed(broker.get_closed_trades()[-20:])
+        if isinstance(trade, dict)
     ]
 
 
@@ -736,6 +762,7 @@ def _load_futures_view() -> dict:
     }
     futures_positions: list[dict[str, object]] = []
     futures_paper_positions = _load_futures_paper_positions()
+    futures_paper_trade_history = _load_futures_paper_trade_history()
     futures_risk_controls = {
         "max_leverage": None,
         "max_margin_per_trade_usdt": None,
@@ -755,6 +782,7 @@ def _load_futures_view() -> dict:
             "futures_account": futures_account,
             "futures_positions": futures_positions,
             "futures_paper_positions": futures_paper_positions,
+            "futures_paper_trade_history": futures_paper_trade_history,
             "futures_risk_controls": futures_risk_controls,
             "rows": [],
             "warnings": [f"Futures config error: {exc}"],
@@ -783,6 +811,7 @@ def _load_futures_view() -> dict:
         "futures_account": futures_account,
         "futures_positions": futures_positions,
         "futures_paper_positions": futures_paper_positions,
+        "futures_paper_trade_history": futures_paper_trade_history,
         "futures_risk_controls": futures_risk_controls,
         "rows": [],
         "warnings": warnings,

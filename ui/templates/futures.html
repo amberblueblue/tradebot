@@ -330,5 +330,61 @@
       </div>
     </div>
   </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Futures Paper Trade History</h2>
+        {% if futures_paper_trade_history %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th class="text-end">Entry Price</th>
+                <th class="text-end">Exit Price</th>
+                <th class="text-end">Position Amount</th>
+                <th class="text-end">Margin</th>
+                <th class="text-end">Leverage</th>
+                <th class="text-end">Realized PnL</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for trade in futures_paper_trade_history %}
+              <tr>
+                <td>{{ trade.timestamp or "n/a" }}</td>
+                <td class="fw-semibold">{{ trade.symbol }}</td>
+                <td>{{ trade.side or "n/a" }}</td>
+                <td class="text-end">
+                  {% if trade.entry_price is not none %}{{ trade.entry_price }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if trade.exit_price is not none %}{{ trade.exit_price }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if trade.position_amt is not none %}{{ trade.position_amt }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if trade.margin is not none %}{{ trade.margin }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if trade.leverage is not none %}{{ trade.leverage }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end {% if trade.realized_pnl is not none and trade.realized_pnl > 0 %}text-success{% elif trade.realized_pnl is not none and trade.realized_pnl < 0 %}text-danger{% endif %}">
+                  {% if trade.realized_pnl is not none %}{{ trade.realized_pnl }}{% else %}n/a{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-secondary mb-0">No futures paper trade history</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
