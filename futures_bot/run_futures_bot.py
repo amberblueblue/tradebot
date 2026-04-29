@@ -289,14 +289,15 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
 
             processed_key = f"{symbol}:{symbol_config.signal_timeframe}"
             last_processed_bar = loop_state["last_processed_bars"].get(processed_key)
-            if signal_bar_time is not None and last_processed_bar == signal_bar_time:
-                record["paper_action"] = "duplicate_bar_skipped"
-                _log("futures_duplicate_bar_skipped", **record)
-                print(f"[futures_strategy] {symbol} {signal_action} skipped: duplicate signal bar")
-                results.append(record)
-                continue
 
             if signal_action == "LONG":
+                if signal_bar_time is not None and last_processed_bar == signal_bar_time:
+                    record["paper_action"] = "duplicate_bar_skipped"
+                    _log("futures_duplicate_bar_skipped", **record)
+                    print(f"[futures_strategy] {symbol} LONG skipped: duplicate signal bar")
+                    results.append(record)
+                    continue
+
                 if existing_position is not None:
                     record["paper_action"] = "skipped_existing_position"
                     _log("futures_duplicate_bar_skipped", **record)
@@ -343,8 +344,7 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
             elif signal_action == "CLOSE":
                 if existing_position is None:
                     record["paper_action"] = "close_skipped_no_position"
-                    loop_state["last_processed_bars"][processed_key] = signal_bar_time
-                    _log("futures_duplicate_bar_skipped", **record)
+                    _log("futures_signal_hold", **record)
                     print(f"[futures_strategy] {symbol} CLOSE skipped: no paper position")
                     results.append(record)
                     continue
@@ -355,7 +355,7 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                 record["realized_pnl"] = closed_position.unrealized_pnl
                 loop_state["last_processed_bars"][processed_key] = signal_bar_time
                 _log("futures_paper_close", **record)
-                print(f"[futures_strategy] {symbol} CLOSE closed in paper")
+                print(f"[futures_paper_close] {symbol} CLOSE closed in paper")
             else:
                 record["paper_action"] = "unknown_signal_hold"
                 _log("futures_signal_hold", **record)
