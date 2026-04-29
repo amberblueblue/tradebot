@@ -64,6 +64,84 @@
   </div>
   {% endif %}
 
+  {% if futures_symbol_message %}
+  <div class="col-12">
+    <div class="alert alert-success shadow-sm mb-0" role="alert">
+      {{ futures_symbol_message }}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if futures_symbol_error %}
+  <div class="col-12">
+    <div class="alert alert-danger shadow-sm mb-0" role="alert">
+      {{ futures_symbol_error }}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Futures Symbols</h2>
+        {% if futures_symbol_configs %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Enabled</th>
+                <th>Strategy</th>
+                <th class="text-end">Leverage</th>
+                <th class="text-end">Margin Amount</th>
+                <th>Trend Timeframe</th>
+                <th>Signal Timeframe</th>
+                <th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for symbol_config in futures_symbol_configs %}
+              <tr>
+                <td class="fw-semibold">{{ symbol_config.symbol }}</td>
+                <td>
+                  {% if symbol_config.enabled %}
+                    <span class="badge bg-success">enabled</span>
+                  {% else %}
+                    <span class="badge bg-secondary">disabled</span>
+                  {% endif %}
+                </td>
+                <td>{{ symbol_config.strategy }}</td>
+                <td class="text-end">{{ symbol_config.leverage }}</td>
+                <td class="text-end">{{ symbol_config.margin_amount }}</td>
+                <td>{{ symbol_config.trend_timeframe }}</td>
+                <td>{{ symbol_config.signal_timeframe }}</td>
+                <td>
+                  <div class="d-flex flex-wrap gap-2 justify-content-end">
+                    <form method="post" action="/futures/symbols/{{ symbol_config.symbol }}/edit">
+                      <button type="submit" class="btn btn-sm btn-outline-secondary">Edit</button>
+                    </form>
+                    <form method="post" action="/futures/symbols/{{ symbol_config.symbol }}/toggle">
+                      <button type="submit" class="btn btn-sm btn-outline-primary">
+                        {% if symbol_config.enabled %}Disable{% else %}Enable{% endif %}
+                      </button>
+                    </form>
+                    <form method="post" action="/futures/symbols/{{ symbol_config.symbol }}/delete">
+                      <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-secondary mb-0">No futures symbols configured</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
   <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-body">
