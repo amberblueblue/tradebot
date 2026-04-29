@@ -33,6 +33,7 @@ secret/
 
 # Local market data and generated reports
 data/*.csv
+data/*.json
 reports/
 logs/*.json
 logs/*.log
