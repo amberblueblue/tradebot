@@ -83,6 +83,96 @@
   <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-body">
+        <h2 class="h5 mb-3">Add Futures Symbol</h2>
+        <form method="post" action="/futures/symbols/add">
+          <div class="row g-3 align-items-end">
+            <div class="col-md-3 col-xl-2">
+              <label for="futures-symbol" class="form-label">Symbol</label>
+              <input
+                id="futures-symbol"
+                name="symbol"
+                type="text"
+                class="form-control"
+                placeholder="BTCUSDT"
+                autocomplete="off"
+                required
+              >
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label for="futures-strategy" class="form-label">Strategy</label>
+              <select id="futures-strategy" name="strategy" class="form-select">
+                {% for strategy in futures_allowed_strategies %}
+                <option value="{{ strategy }}" {% if strategy == futures_symbol_form_defaults.strategy %}selected{% endif %}>{{ strategy }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3 col-xl-1">
+              <label for="futures-leverage" class="form-label">Leverage</label>
+              <input
+                id="futures-leverage"
+                name="leverage"
+                type="number"
+                class="form-control"
+                min="0.0001"
+                step="0.0001"
+                value="{{ futures_symbol_form_defaults.leverage }}"
+                required
+              >
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label for="futures-margin" class="form-label">Margin Amount</label>
+              <input
+                id="futures-margin"
+                name="margin_amount"
+                type="number"
+                class="form-control"
+                min="0.0001"
+                step="0.0001"
+                value="{{ futures_symbol_form_defaults.margin_amount }}"
+                required
+              >
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label for="futures-trend-timeframe" class="form-label">Trend Timeframe</label>
+              <select id="futures-trend-timeframe" name="trend_timeframe" class="form-select">
+                {% for timeframe in futures_allowed_timeframes %}
+                <option value="{{ timeframe }}" {% if timeframe == futures_symbol_form_defaults.trend_timeframe %}selected{% endif %}>{{ timeframe }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label for="futures-signal-timeframe" class="form-label">Signal Timeframe</label>
+              <select id="futures-signal-timeframe" name="signal_timeframe" class="form-select">
+                {% for timeframe in futures_allowed_timeframes %}
+                <option value="{{ timeframe }}" {% if timeframe == futures_symbol_form_defaults.signal_timeframe %}selected{% endif %}>{{ timeframe }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3 col-xl-1">
+              <div class="form-check mb-2">
+                <input
+                  id="futures-enabled"
+                  name="enabled"
+                  type="checkbox"
+                  class="form-check-input"
+                  value="true"
+                  {% if futures_symbol_form_defaults.enabled %}checked{% endif %}
+                >
+                <label for="futures-enabled" class="form-check-label">Enabled</label>
+              </div>
+            </div>
+            <div class="col-md-3 col-xl-12">
+              <button type="submit" class="btn btn-primary">Add</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
         <h2 class="h5 mb-3">Futures Symbols</h2>
         {% if futures_symbol_configs %}
         <div class="table-responsive">

@@ -34,6 +34,8 @@ from execution.account_risk import (
     reset_account_risk,
 )
 from futures_bot.config_loader import (
+    ALLOWED_FUTURES_STRATEGIES,
+    ALLOWED_FUTURES_TIMEFRAMES,
     load_futures_config,
     load_futures_symbols_config,
     save_futures_symbols_config,
@@ -59,6 +61,7 @@ LOG_FILE_MAP = {
 FUTURES_STRATEGY_SIGNALS_PATH = BASE_DIR / "data" / "futures_strategy_signals.json"
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
+FUTURES_TIMEFRAME_OPTIONS = ("5m", "15m", "1h", "4h", "1d")
 LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
 REAL_EXECUTE_ENV_VAR = "TRADEBOT_EXECUTE_REAL"
 FINAL_REAL_ORDER_ENV_VAR = "TRADEBOT_FINAL_REAL_ORDER"
@@ -806,6 +809,22 @@ def _futures_symbol_config_mapping(symbol_config) -> dict[str, object]:
     }
 
 
+def _load_futures_symbol_mappings() -> dict[str, dict[str, object]]:
+    return {
+        symbol: _futures_symbol_config_mapping(symbol_config)
+        for symbol, symbol_config in load_futures_symbols_config().items()
+    }
+
+
+def _log_futures_symbol_action(action: str, symbol: str, **payload: object) -> None:
+    StructuredLogger(str(LOG_FILE_MAP["system"])).log(
+        action=action,
+        symbol=symbol,
+        mode="futures",
+        **payload,
+    )
+
+
 def _futures_symbols_redirect(
     *,
     message: str | None = None,
@@ -818,6 +837,27 @@ def _futures_symbols_redirect(
         params["futures_symbol_error"] = error
     query_string = f"?{urlencode(params)}" if params else ""
     return RedirectResponse(url=f"/futures{query_string}", status_code=303)
+
+
+def _futures_symbol_form_defaults() -> dict[str, object]:
+    return {
+        "strategy": "trend_long",
+        "leverage": 1,
+        "margin_amount": 10,
+        "trend_timeframe": "4h",
+        "signal_timeframe": "15m",
+        "enabled": True,
+    }
+
+
+def _parse_futures_symbol_number(value: str, field_name: str) -> tuple[float | None, str | None]:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None, f"{field_name}_must_be_number"
+    if parsed <= 0:
+        return None, f"{field_name}_must_be_greater_than_zero"
+    return parsed, None
 
 
 def _load_futures_view() -> dict:
@@ -862,6 +902,9 @@ def _load_futures_view() -> dict:
             "rows": [],
             "warnings": [f"Futures config error: {exc}"],
             "config_error": str(exc),
+            "futures_symbol_form_defaults": _futures_symbol_form_defaults(),
+            "futures_allowed_strategies": sorted(ALLOWED_FUTURES_STRATEGIES),
+            "futures_allowed_timeframes": FUTURES_TIMEFRAME_OPTIONS,
         }
 
     enabled_symbols = list(futures_config.enabled_symbols)
@@ -897,6 +940,9 @@ def _load_futures_view() -> dict:
         "rows": [],
         "warnings": warnings,
         "config_error": None,
+        "futures_symbol_form_defaults": _futures_symbol_form_defaults(),
+        "futures_allowed_strategies": sorted(ALLOWED_FUTURES_STRATEGIES),
+        "futures_allowed_timeframes": FUTURES_TIMEFRAME_OPTIONS,
     }
 
     client = BinanceFuturesClient(
@@ -1272,6 +1318,69 @@ def futures_symbol_edit(symbol: str):
     return _futures_symbols_redirect(message=f"{normalized_symbol} edit_not_available_yet")
 
 
+@app.post("/futures/symbols/add")
+async def futures_symbol_add(request: Request):
+    form_payload = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
+    form = {key: values[-1] if values else "" for key, values in form_payload.items()}
+    symbol = str(form.get("symbol", ""))
+    strategy = str(form.get("strategy", "trend_long"))
+    leverage = str(form.get("leverage", "1"))
+    margin_amount = str(form.get("margin_amount", "10"))
+    trend_timeframe = str(form.get("trend_timeframe", "4h"))
+    signal_timeframe = str(form.get("signal_timeframe", "15m"))
+    enabled = str(form.get("enabled", "")).lower() in {"1", "true", "yes", "on"}
+
+    normalized_symbol = symbol.strip().upper()
+    if not SYMBOL_PATTERN.fullmatch(normalized_symbol):
+        return _futures_symbols_redirect(error="symbol_must_be_uppercase_usdt")
+    if strategy not in ALLOWED_FUTURES_STRATEGIES:
+        return _futures_symbols_redirect(error="strategy_must_be_trend_long")
+    if trend_timeframe not in ALLOWED_FUTURES_TIMEFRAMES:
+        return _futures_symbols_redirect(error="invalid_trend_timeframe")
+    if signal_timeframe not in ALLOWED_FUTURES_TIMEFRAMES:
+        return _futures_symbols_redirect(error="invalid_signal_timeframe")
+
+    parsed_leverage, leverage_error = _parse_futures_symbol_number(leverage, "leverage")
+    if leverage_error:
+        return _futures_symbols_redirect(error=leverage_error)
+    parsed_margin, margin_error = _parse_futures_symbol_number(margin_amount, "margin_amount")
+    if margin_error:
+        return _futures_symbols_redirect(error=margin_error)
+
+    try:
+        updated_symbols = _load_futures_symbol_mappings()
+    except Exception as exc:
+        return _futures_symbols_redirect(error=f"load_failed: {exc}")
+
+    if normalized_symbol in updated_symbols:
+        return _futures_symbols_redirect(error="futures_symbol_already_exists")
+
+    updated_symbols[normalized_symbol] = {
+        "enabled": enabled,
+        "strategy": strategy,
+        "leverage": parsed_leverage,
+        "margin_amount": parsed_margin,
+        "trend_timeframe": trend_timeframe,
+        "signal_timeframe": signal_timeframe,
+    }
+    result = save_futures_symbols_config(updated_symbols)
+    if not result.get("ok"):
+        return _futures_symbols_redirect(error=f"save_failed: {result.get('error')}")
+
+    _log_futures_symbol_action(
+        "futures_symbol_add",
+        normalized_symbol,
+        reason="frontend_add",
+        enabled=enabled,
+        strategy=strategy,
+        leverage=parsed_leverage,
+        margin_amount=parsed_margin,
+        trend_timeframe=trend_timeframe,
+        signal_timeframe=signal_timeframe,
+    )
+    return _futures_symbols_redirect(message=f"{normalized_symbol} added")
+
+
 @app.post("/futures/symbols/{symbol}/toggle")
 def futures_symbol_toggle(symbol: str):
     normalized_symbol = symbol.upper()
@@ -1279,17 +1388,13 @@ def futures_symbol_toggle(symbol: str):
         return _futures_symbols_redirect(error="invalid_futures_symbol")
 
     try:
-        symbol_configs = load_futures_symbols_config()
+        updated_symbols = _load_futures_symbol_mappings()
     except Exception as exc:
         return _futures_symbols_redirect(error=f"load_failed: {exc}")
 
-    if normalized_symbol not in symbol_configs:
+    if normalized_symbol not in updated_symbols:
         return _futures_symbols_redirect(error="futures_symbol_not_found")
 
-    updated_symbols = {
-        config_symbol: _futures_symbol_config_mapping(symbol_config)
-        for config_symbol, symbol_config in symbol_configs.items()
-    }
     updated_symbols[normalized_symbol]["enabled"] = not bool(
         updated_symbols[normalized_symbol]["enabled"]
     )
@@ -1297,6 +1402,12 @@ def futures_symbol_toggle(symbol: str):
     if not result.get("ok"):
         return _futures_symbols_redirect(error=f"save_failed: {result.get('error')}")
     state = "enabled" if updated_symbols[normalized_symbol]["enabled"] else "disabled"
+    _log_futures_symbol_action(
+        "futures_symbol_toggle",
+        normalized_symbol,
+        reason=f"frontend_{state}",
+        enabled=updated_symbols[normalized_symbol]["enabled"],
+    )
     return _futures_symbols_redirect(message=f"{normalized_symbol} {state}")
 
 
@@ -1307,21 +1418,23 @@ def futures_symbol_delete(symbol: str):
         return _futures_symbols_redirect(error="invalid_futures_symbol")
 
     try:
-        symbol_configs = load_futures_symbols_config()
+        updated_symbols = _load_futures_symbol_mappings()
     except Exception as exc:
         return _futures_symbols_redirect(error=f"load_failed: {exc}")
 
-    if normalized_symbol not in symbol_configs:
+    if normalized_symbol not in updated_symbols:
         return _futures_symbols_redirect(error="futures_symbol_not_found")
 
-    updated_symbols = {
-        config_symbol: _futures_symbol_config_mapping(symbol_config)
-        for config_symbol, symbol_config in symbol_configs.items()
-        if config_symbol != normalized_symbol
-    }
+    removed_symbol = updated_symbols.pop(normalized_symbol)
     result = save_futures_symbols_config(updated_symbols)
     if not result.get("ok"):
         return _futures_symbols_redirect(error=f"save_failed: {result.get('error')}")
+    _log_futures_symbol_action(
+        "futures_symbol_delete",
+        normalized_symbol,
+        reason="frontend_delete",
+        removed_symbol=removed_symbol,
+    )
     return _futures_symbols_redirect(message=f"{normalized_symbol} deleted")
 
 
