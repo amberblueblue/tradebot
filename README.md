@@ -189,6 +189,26 @@ Futures symbols can be managed from the local `/futures` page. The page supports
 - Editing Futures margin amount only changes the local paper strategy configuration; it does not change margin mode or any exchange setting.
 - The current Futures flow remains paper-only and does not place real orders.
 
+### Futures Automatic Paper Loop
+
+Futures bot now supports an automatic paper trading loop. It reads enabled symbols from `config/futures_symbols.yaml`, generates `trend_long` signals from Futures K lines, updates paper mark prices every cycle, and routes any simulated open/close through Futures risk checks plus `FuturesPaperBroker`.
+
+当前仍然不真实下单，不调用 `create_order`，不修改交易所杠杆，也不修改保证金模式。
+
+持续运行：
+
+```bash
+python3 futures_bot/run_futures_bot.py
+```
+
+只跑一轮用于验收：
+
+```bash
+python3 futures_bot/run_futures_bot.py --once
+```
+
+循环间隔读取 `config/futures_settings.yaml` 中的 `app.polling_interval_seconds`。`/futures` 页面会显示最近一次 futures loop 时间、每个 symbol 最近一次 signal、reason 和更新时间，并继续显示 Futures Paper Positions 和 Trade History。
+
 合约交易风险高于现货交易。后续阶段会单独实现 futures 风控，包括杠杆限制、保证金限制、强平距离、资金费率过滤和独立运行时安全控制；在这些风控完成前，futures bot 仍保持公共数据只读模式。
 
 ### Futures Read-only API Key

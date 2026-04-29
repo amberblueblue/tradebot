@@ -18,7 +18,7 @@ from observability.event_logger import StructuredLogger
 
 DEFAULT_BASE_URL = "https://fapi.binance.com"
 DEFAULT_TIMEOUT_SECONDS = 10
-DEFAULT_RECV_WINDOW = 10000
+DEFAULT_RECV_WINDOW = 15000
 DEFAULT_FUTURES_LOG_FILE = "logs/futures.log"
 SENSITIVE_PARAM_KEYS = {"signature"}
 
@@ -175,15 +175,17 @@ class BinanceFuturesClient:
         return self._missing_credentials_error(credentials)
 
     def _current_timestamp_ms(self) -> int:
-        local_time_ms = int(time.time() * 1000)
         if self._server_time_offset_ms is not None:
-            return local_time_ms + self._server_time_offset_ms
+            return int(time.time() * 1000) + self._server_time_offset_ms
 
         try:
+            request_started_ms = int(time.time() * 1000)
             payload = self.get_server_time()
+            request_finished_ms = int(time.time() * 1000)
             server_time_ms = int(payload.get("serverTime"))
-            self._server_time_offset_ms = server_time_ms - local_time_ms
-            return server_time_ms
+            local_midpoint_ms = (request_started_ms + request_finished_ms) // 2
+            self._server_time_offset_ms = server_time_ms - local_midpoint_ms
+            return int(time.time() * 1000) + self._server_time_offset_ms
         except Exception as exc:
             self._server_time_offset_ms = 0
             self._log_warning(
@@ -191,7 +193,7 @@ class BinanceFuturesClient:
                 reason=f"Futures server time unavailable; using local timestamp: {exc}",
                 path="/fapi/v1/time",
             )
-            return local_time_ms
+            return int(time.time() * 1000)
 
     def _signed_params(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         credentials = self._load_credentials()

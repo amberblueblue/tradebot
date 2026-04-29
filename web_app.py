@@ -59,6 +59,7 @@ LOG_FILE_MAP = {
     "error": BASE_DIR / "logs" / "error.log",
 }
 FUTURES_STRATEGY_SIGNALS_PATH = BASE_DIR / "data" / "futures_strategy_signals.json"
+FUTURES_LOOP_STATE_PATH = BASE_DIR / "data" / "futures_loop_state.json"
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
 FUTURES_TIMEFRAME_OPTIONS = ("5m", "15m", "1h", "4h", "1d")
@@ -786,6 +787,53 @@ def _load_futures_strategy_signals() -> list[dict[str, object]]:
     ]
 
 
+def _futures_loop_signal_row(signal: dict[str, object]) -> dict[str, object]:
+    return {
+        "symbol": signal.get("symbol"),
+        "strategy": signal.get("strategy"),
+        "action": signal.get("action"),
+        "reason": signal.get("reason"),
+        "updated_at": signal.get("updated_at"),
+        "trend_timeframe": signal.get("trend_timeframe"),
+        "signal_timeframe": signal.get("signal_timeframe"),
+        "mark_price": _to_optional_float(signal.get("mark_price")),
+        "funding_rate": _to_optional_float(signal.get("funding_rate")),
+        "paper_action": signal.get("paper_action"),
+        "error": signal.get("error"),
+    }
+
+
+def _load_futures_loop_state() -> dict[str, object]:
+    if not FUTURES_LOOP_STATE_PATH.exists():
+        return {
+            "last_loop_at": None,
+            "signals": [],
+        }
+    try:
+        payload = json.loads(FUTURES_LOOP_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {
+            "last_loop_at": None,
+            "signals": [],
+        }
+    if not isinstance(payload, dict):
+        return {
+            "last_loop_at": None,
+            "signals": [],
+        }
+    signals = payload.get("signals", {})
+    if not isinstance(signals, dict):
+        signals = {}
+    return {
+        "last_loop_at": payload.get("last_loop_at"),
+        "signals": [
+            _futures_loop_signal_row(signal)
+            for signal in signals.values()
+            if isinstance(signal, dict)
+        ],
+    }
+
+
 def _futures_symbol_config_row(symbol_config) -> dict[str, object]:
     return {
         "symbol": symbol_config.symbol,
@@ -940,6 +988,7 @@ def _load_futures_view() -> dict:
     futures_paper_positions = _load_futures_paper_positions()
     futures_paper_trade_history = _load_futures_paper_trade_history()
     futures_strategy_signals = _load_futures_strategy_signals()
+    futures_loop_state = _load_futures_loop_state()
     futures_symbol_configs: list[dict[str, object]] = []
     futures_risk_controls = {
         "max_leverage": None,
@@ -962,6 +1011,7 @@ def _load_futures_view() -> dict:
             "futures_paper_positions": futures_paper_positions,
             "futures_paper_trade_history": futures_paper_trade_history,
             "futures_strategy_signals": futures_strategy_signals,
+            "futures_loop_state": futures_loop_state,
             "futures_symbol_configs": futures_symbol_configs,
             "futures_risk_controls": futures_risk_controls,
             "rows": [],
@@ -1002,6 +1052,7 @@ def _load_futures_view() -> dict:
         "futures_paper_positions": futures_paper_positions,
         "futures_paper_trade_history": futures_paper_trade_history,
         "futures_strategy_signals": futures_strategy_signals,
+        "futures_loop_state": futures_loop_state,
         "futures_symbol_configs": futures_symbol_configs,
         "futures_risk_controls": futures_risk_controls,
         "rows": [],

@@ -362,6 +362,64 @@
   <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-body">
+        <h2 class="h5 mb-3">Futures Automatic Paper Loop</h2>
+        <p class="text-secondary mb-3">
+          Last loop:
+          {% if futures_loop_state.last_loop_at %}
+            {{ futures_loop_state.last_loop_at }}
+          {% else %}
+            n/a
+          {% endif %}
+        </p>
+        {% if futures_loop_state.signals %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Strategy</th>
+                <th>Last Signal</th>
+                <th>Reason</th>
+                <th>Updated At</th>
+                <th>Trend Timeframe</th>
+                <th>Signal Timeframe</th>
+                <th class="text-end">Mark Price</th>
+                <th class="text-end">Funding Rate</th>
+                <th>Paper Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for signal in futures_loop_state.signals %}
+              <tr>
+                <td class="fw-semibold">{{ signal.symbol }}</td>
+                <td>{{ signal.strategy or "n/a" }}</td>
+                <td>{{ signal.action or "n/a" }}</td>
+                <td>{{ signal.reason or signal.error or "n/a" }}</td>
+                <td>{{ signal.updated_at or "n/a" }}</td>
+                <td>{{ signal.trend_timeframe or "n/a" }}</td>
+                <td>{{ signal.signal_timeframe or "n/a" }}</td>
+                <td class="text-end">
+                  {% if signal.mark_price is not none %}{{ signal.mark_price }}{% else %}n/a{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if signal.funding_rate is not none %}{{ signal.funding_rate }}{% else %}n/a{% endif %}
+                </td>
+                <td>{{ signal.paper_action or "n/a" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-secondary mb-0">No futures loop signals yet</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
         <h2 class="h5 mb-3">Public Market Data</h2>
         {% if rows %}
         <div class="table-responsive">

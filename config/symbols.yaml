@@ -1,9 +1,9 @@
 symbols:
-  VIRTUALUSDT:
-    enabled: true
-    trend_timeframe: 15m
-    signal_timeframe: 5m
-    order_amount: 0.1
+  BTCUSDT:
+    enabled: false
+    trend_timeframe: 4h
+    signal_timeframe: 15m
+    order_amount: 100.0
     max_loss_amount: 20.0
     paused_by_loss: false
 symbol_files:
