@@ -180,6 +180,15 @@ http://127.0.0.1:8000/futures
 
 该页面只展示 `public-data-only` 状态、enabled futures symbols、ticker price、mark price、funding rate 和交易规则摘要。没有启用 futures symbol 时会显示 `No futures symbols enabled`，不会报错。
 
+### Futures Frontend Symbol Configuration
+
+Futures symbols can be managed from the local `/futures` page. The page supports adding, editing, enabling, disabling, and deleting Futures symbols, and writes those settings to `config/futures_symbols.yaml`.
+
+- The Futures symbol table is separate from the Spot `/symbols` page and does not modify `config/symbols.yaml`.
+- Editing Futures leverage only changes the local strategy configuration; it does not call Binance to change exchange leverage.
+- Editing Futures margin amount only changes the local paper strategy configuration; it does not change margin mode or any exchange setting.
+- The current Futures flow remains paper-only and does not place real orders.
+
 合约交易风险高于现货交易。后续阶段会单独实现 futures 风控，包括杠杆限制、保证金限制、强平距离、资金费率过滤和独立运行时安全控制；在这些风控完成前，futures bot 仍保持公共数据只读模式。
 
 ### Futures Read-only API Key
