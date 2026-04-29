@@ -9,6 +9,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = PROJECT_ROOT / "config"
 DEFAULT_FUTURES_SETTINGS_PATH = CONFIG_DIR / "futures_settings.yaml"
 DEFAULT_FUTURES_SYMBOLS_PATH = CONFIG_DIR / "futures_symbols.yaml"
+ALLOWED_FUTURES_STRATEGIES = {"trend_long"}
+ALLOWED_FUTURES_TIMEFRAMES = {"5m", "15m", "1h", "4h", "1d"}
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,8 @@ def _normalize_lines(text: str) -> list[tuple[int, str]]:
 def _parse_scalar(value: str) -> Any:
     if value in {"null", "~"}:
         return None
+    if value == "{}":
+        return {}
     if value == "true":
         return True
     if value == "false":
@@ -181,6 +185,21 @@ def _require_string(config: dict[str, Any], key: str, path: Path) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{key} must be a non-empty string in {path}")
     return value
+
+
+def _require_boolean(config: dict[str, Any], key: str, path: Path) -> bool:
+    value = config.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be a boolean in {path}")
+    return value
+
+
+def _format_yaml_scalar(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    return f'"{value}"'
 
 
 def _load_app_config(settings: dict[str, Any], settings_path: Path) -> FuturesAppConfig:
@@ -285,6 +304,7 @@ def _load_safety_config(settings: dict[str, Any], settings_path: Path) -> Future
 def _load_symbol_configs(
     symbols_config: dict[str, Any],
     symbols_path: Path,
+    risk_config: FuturesRiskConfig,
 ) -> dict[str, FuturesSymbolConfig]:
     raw_symbols = symbols_config.get("symbols", {})
     if raw_symbols is None:
@@ -292,28 +312,147 @@ def _load_symbol_configs(
     if not isinstance(raw_symbols, dict):
         raise ValueError(f"symbols must be a mapping in {symbols_path}")
 
+    loaded_symbols = _validate_symbol_configs(raw_symbols, symbols_path, risk_config)
+
+    return loaded_symbols
+
+
+def _symbol_config_to_mapping(symbol_config: FuturesSymbolConfig | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(symbol_config, FuturesSymbolConfig):
+        return {
+            "enabled": symbol_config.enabled,
+            "strategy": symbol_config.strategy,
+            "leverage": symbol_config.leverage,
+            "margin_amount": symbol_config.margin_amount,
+            "trend_timeframe": symbol_config.trend_timeframe,
+            "signal_timeframe": symbol_config.signal_timeframe,
+        }
+    if isinstance(symbol_config, dict):
+        return dict(symbol_config)
+    raise ValueError("futures symbol config must be a mapping")
+
+
+def _validate_symbol_configs(
+    raw_symbols: dict[str, Any],
+    symbols_path: Path,
+    risk_config: FuturesRiskConfig,
+) -> dict[str, FuturesSymbolConfig]:
     loaded_symbols: dict[str, FuturesSymbolConfig] = {}
     for symbol, raw_symbol_config in raw_symbols.items():
         if not isinstance(symbol, str) or not symbol.strip():
             raise ValueError(f"symbol names must be non-empty strings in {symbols_path}")
-        if not isinstance(raw_symbol_config, dict):
-            raise ValueError(f"symbols.{symbol} must be a mapping in {symbols_path}")
+        if symbol != symbol.upper():
+            raise ValueError(f"symbols.{symbol} must be uppercase in {symbols_path}")
+        if not symbol.endswith("USDT"):
+            raise ValueError(f"symbols.{symbol} must end with USDT in {symbols_path}")
 
-        enabled = raw_symbol_config.get("enabled", False)
-        if not isinstance(enabled, bool):
-            raise ValueError(f"symbols.{symbol}.enabled must be a boolean in {symbols_path}")
+        raw_mapping = _symbol_config_to_mapping(raw_symbol_config)
+        field_prefix = f"symbols.{symbol}"
+        enabled = _require_boolean(raw_mapping, "enabled", symbols_path)
+        strategy = _require_string(raw_mapping, "strategy", symbols_path)
+        if strategy not in ALLOWED_FUTURES_STRATEGIES:
+            raise ValueError(
+                f"{field_prefix}.strategy must be one of {sorted(ALLOWED_FUTURES_STRATEGIES)} "
+                f"in {symbols_path}"
+            )
+
+        leverage = _require_positive_number(raw_mapping, "leverage", symbols_path)
+        if leverage > risk_config.max_leverage:
+            raise ValueError(
+                f"{field_prefix}.leverage must be less than or equal to "
+                f"risk.max_leverage ({risk_config.max_leverage}) in {symbols_path}"
+            )
+
+        margin_amount = _require_positive_number(raw_mapping, "margin_amount", symbols_path)
+        if margin_amount > risk_config.max_margin_per_trade_usdt:
+            raise ValueError(
+                f"{field_prefix}.margin_amount must be less than or equal to "
+                "risk.max_margin_per_trade_usdt "
+                f"({risk_config.max_margin_per_trade_usdt}) in {symbols_path}"
+            )
+
+        trend_timeframe = _require_string(raw_mapping, "trend_timeframe", symbols_path)
+        if trend_timeframe not in ALLOWED_FUTURES_TIMEFRAMES:
+            raise ValueError(
+                f"{field_prefix}.trend_timeframe must be one of "
+                f"{sorted(ALLOWED_FUTURES_TIMEFRAMES)} in {symbols_path}"
+            )
+
+        signal_timeframe = _require_string(raw_mapping, "signal_timeframe", symbols_path)
+        if signal_timeframe not in ALLOWED_FUTURES_TIMEFRAMES:
+            raise ValueError(
+                f"{field_prefix}.signal_timeframe must be one of "
+                f"{sorted(ALLOWED_FUTURES_TIMEFRAMES)} in {symbols_path}"
+            )
 
         loaded_symbols[symbol] = FuturesSymbolConfig(
             symbol=symbol,
             enabled=enabled,
-            strategy=str(raw_symbol_config.get("strategy", "")),
-            leverage=float(raw_symbol_config.get("leverage", 0)),
-            margin_amount=float(raw_symbol_config.get("margin_amount", 0)),
-            trend_timeframe=str(raw_symbol_config.get("trend_timeframe", "")),
-            signal_timeframe=str(raw_symbol_config.get("signal_timeframe", "")),
+            strategy=strategy,
+            leverage=leverage,
+            margin_amount=margin_amount,
+            trend_timeframe=trend_timeframe,
+            signal_timeframe=signal_timeframe,
         )
-
     return loaded_symbols
+
+
+def load_futures_symbols_config(
+    settings_path: Path = DEFAULT_FUTURES_SETTINGS_PATH,
+    symbols_path: Path = DEFAULT_FUTURES_SYMBOLS_PATH,
+) -> dict[str, FuturesSymbolConfig]:
+    settings = load_yaml_mapping(settings_path)
+    symbols = load_yaml_mapping(symbols_path)
+    risk_config = _load_risk_config(settings, settings_path)
+    return _load_symbol_configs(symbols, symbols_path, risk_config)
+
+
+def dump_futures_symbols_yaml(symbols: dict[str, FuturesSymbolConfig]) -> str:
+    if not symbols:
+        return "symbols: {}\n"
+
+    lines = ["symbols:"]
+    for symbol in sorted(symbols):
+        symbol_config = symbols[symbol]
+        lines.extend(
+            [
+                f"  {symbol}:",
+                f"    enabled: {_format_yaml_scalar(symbol_config.enabled)}",
+                f"    strategy: {_format_yaml_scalar(symbol_config.strategy)}",
+                f"    leverage: {_format_yaml_scalar(symbol_config.leverage)}",
+                f"    margin_amount: {_format_yaml_scalar(symbol_config.margin_amount)}",
+                f"    trend_timeframe: {_format_yaml_scalar(symbol_config.trend_timeframe)}",
+                f"    signal_timeframe: {_format_yaml_scalar(symbol_config.signal_timeframe)}",
+            ]
+        )
+    return "\n".join(lines) + "\n"
+
+
+def save_futures_symbols_config(
+    symbols: dict[str, FuturesSymbolConfig | dict[str, Any]],
+    settings_path: Path = DEFAULT_FUTURES_SETTINGS_PATH,
+    symbols_path: Path = DEFAULT_FUTURES_SYMBOLS_PATH,
+) -> dict[str, object]:
+    try:
+        settings = load_yaml_mapping(settings_path)
+        risk_config = _load_risk_config(settings, settings_path)
+        validated_symbols = _validate_symbol_configs(symbols, symbols_path, risk_config)
+        symbols_path.parent.mkdir(parents=True, exist_ok=True)
+        symbols_path.write_text(
+            dump_futures_symbols_yaml(validated_symbols),
+            encoding="utf-8",
+        )
+        return {
+            "ok": True,
+            "path": str(symbols_path),
+            "symbols_count": len(validated_symbols),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "path": str(symbols_path),
+            "error": str(exc),
+        }
 
 
 def load_futures_config(
@@ -322,13 +461,14 @@ def load_futures_config(
 ) -> FuturesRuntimeConfig:
     settings = load_yaml_mapping(settings_path)
     symbols = load_yaml_mapping(symbols_path)
+    risk_config = _load_risk_config(settings, settings_path)
 
     return FuturesRuntimeConfig(
         settings_path=settings_path,
         symbols_path=symbols_path,
         app=_load_app_config(settings, settings_path),
         futures=_load_futures_endpoint_config(settings, settings_path),
-        risk=_load_risk_config(settings, settings_path),
+        risk=risk_config,
         safety=_load_safety_config(settings, settings_path),
-        symbols=_load_symbol_configs(symbols, symbols_path),
+        symbols=_load_symbol_configs(symbols, symbols_path, risk_config),
     )
