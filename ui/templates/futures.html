@@ -80,6 +80,89 @@
   </div>
   {% endif %}
 
+  {% if futures_symbol_edit_config %}
+  <div class="col-12">
+    <div class="card shadow-sm border-primary">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Edit Futures Symbol</h2>
+        <p class="fw-semibold mb-3">{{ futures_symbol_edit_config.symbol }}</p>
+        {% if futures_symbol_edit_error %}
+        <div class="alert alert-danger" role="alert">
+          {{ futures_symbol_edit_error }}
+        </div>
+        {% endif %}
+        <form method="post" action="/futures/symbols/{{ futures_symbol_edit_config.symbol }}/edit">
+          <div class="row g-3 align-items-end">
+            <div class="col-md-3 col-xl-2">
+              <label for="edit-futures-enabled" class="form-label">Enabled</label>
+              <select id="edit-futures-enabled" name="enabled" class="form-select" required>
+                <option value="true" {% if futures_symbol_edit_config.enabled %}selected{% endif %}>true</option>
+                <option value="false" {% if not futures_symbol_edit_config.enabled %}selected{% endif %}>false</option>
+              </select>
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label for="edit-futures-strategy" class="form-label">Strategy</label>
+              <select id="edit-futures-strategy" name="strategy" class="form-select" required>
+                {% for strategy in futures_allowed_strategies %}
+                <option value="{{ strategy }}" {% if strategy == futures_symbol_edit_config.strategy %}selected{% endif %}>{{ strategy }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label for="edit-futures-leverage" class="form-label">Leverage</label>
+              <input
+                id="edit-futures-leverage"
+                name="leverage"
+                type="number"
+                class="form-control"
+                min="0.0001"
+                step="0.0001"
+                value="{{ futures_symbol_edit_config.leverage }}"
+                required
+              >
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label for="edit-futures-margin" class="form-label">Margin Amount</label>
+              <input
+                id="edit-futures-margin"
+                name="margin_amount"
+                type="number"
+                class="form-control"
+                min="0.0001"
+                step="0.0001"
+                value="{{ futures_symbol_edit_config.margin_amount }}"
+                required
+              >
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label for="edit-futures-trend-timeframe" class="form-label">Trend Timeframe</label>
+              <select id="edit-futures-trend-timeframe" name="trend_timeframe" class="form-select" required>
+                {% for timeframe in futures_allowed_timeframes %}
+                <option value="{{ timeframe }}" {% if timeframe == futures_symbol_edit_config.trend_timeframe %}selected{% endif %}>{{ timeframe }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label for="edit-futures-signal-timeframe" class="form-label">Signal Timeframe</label>
+              <select id="edit-futures-signal-timeframe" name="signal_timeframe" class="form-select" required>
+                {% for timeframe in futures_allowed_timeframes %}
+                <option value="{{ timeframe }}" {% if timeframe == futures_symbol_edit_config.signal_timeframe %}selected{% endif %}>{{ timeframe }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <div class="d-flex flex-wrap gap-2">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <a class="btn btn-outline-secondary" href="/futures">Cancel</a>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-body">
@@ -207,9 +290,7 @@
                 <td>{{ symbol_config.signal_timeframe }}</td>
                 <td>
                   <div class="d-flex flex-wrap gap-2 justify-content-end">
-                    <form method="post" action="/futures/symbols/{{ symbol_config.symbol }}/edit">
-                      <button type="submit" class="btn btn-sm btn-outline-secondary">Edit</button>
-                    </form>
+                    <a class="btn btn-sm btn-outline-secondary" href="/futures/symbols/{{ symbol_config.symbol }}/edit">Edit</a>
                     <form method="post" action="/futures/symbols/{{ symbol_config.symbol }}/toggle">
                       <button type="submit" class="btn btn-sm btn-outline-primary">
                         {% if symbol_config.enabled %}Disable{% else %}Enable{% endif %}

@@ -860,6 +860,71 @@ def _parse_futures_symbol_number(value: str, field_name: str) -> tuple[float | N
     return parsed, None
 
 
+def _parse_futures_symbol_config_from_form(form: dict[str, str], risk_config) -> dict[str, object]:
+    enabled = _parse_form_bool(form, "enabled")
+    strategy = form.get("strategy", "").strip()
+    if strategy not in ALLOWED_FUTURES_STRATEGIES:
+        raise ValueError("strategy must be trend_long")
+
+    trend_timeframe = form.get("trend_timeframe", "").strip()
+    if trend_timeframe not in ALLOWED_FUTURES_TIMEFRAMES:
+        raise ValueError("trend_timeframe must be one of: 5m, 15m, 1h, 4h, 1d")
+
+    signal_timeframe = form.get("signal_timeframe", "").strip()
+    if signal_timeframe not in ALLOWED_FUTURES_TIMEFRAMES:
+        raise ValueError("signal_timeframe must be one of: 5m, 15m, 1h, 4h, 1d")
+
+    leverage = _parse_positive_amount(form, "leverage")
+    if leverage > risk_config.max_leverage:
+        raise ValueError(f"leverage must be less than or equal to {risk_config.max_leverage}")
+
+    margin_amount = _parse_positive_amount(form, "margin_amount")
+    if margin_amount > risk_config.max_margin_per_trade_usdt:
+        raise ValueError(
+            "margin_amount must be less than or equal to "
+            f"{risk_config.max_margin_per_trade_usdt}"
+        )
+
+    return {
+        "enabled": enabled,
+        "strategy": strategy,
+        "leverage": leverage,
+        "margin_amount": margin_amount,
+        "trend_timeframe": trend_timeframe,
+        "signal_timeframe": signal_timeframe,
+    }
+
+
+def _render_futures_symbol_edit_page(
+    request: Request,
+    symbol: str,
+    symbol_config: dict[str, object],
+    *,
+    error: str | None = None,
+    status_code: int = 200,
+):
+    context = _load_futures_view()
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+            "futures_symbol_message": None,
+            "futures_symbol_error": None,
+            "futures_symbol_edit_config": {
+                "symbol": symbol,
+                **symbol_config,
+            },
+            "futures_symbol_edit_error": error,
+        }
+    )
+    return templates.TemplateResponse(
+        request,
+        "futures.html",
+        context,
+        status_code=status_code,
+    )
+
+
 def _load_futures_view() -> dict:
     futures_credentials = load_futures_binance_readonly_credentials().public_status()
     futures_account = {
@@ -905,6 +970,8 @@ def _load_futures_view() -> dict:
             "futures_symbol_form_defaults": _futures_symbol_form_defaults(),
             "futures_allowed_strategies": sorted(ALLOWED_FUTURES_STRATEGIES),
             "futures_allowed_timeframes": FUTURES_TIMEFRAME_OPTIONS,
+            "futures_symbol_edit_config": None,
+            "futures_symbol_edit_error": None,
         }
 
     enabled_symbols = list(futures_config.enabled_symbols)
@@ -943,6 +1010,8 @@ def _load_futures_view() -> dict:
         "futures_symbol_form_defaults": _futures_symbol_form_defaults(),
         "futures_allowed_strategies": sorted(ALLOWED_FUTURES_STRATEGIES),
         "futures_allowed_timeframes": FUTURES_TIMEFRAME_OPTIONS,
+        "futures_symbol_edit_config": None,
+        "futures_symbol_edit_error": None,
     }
 
     client = BinanceFuturesClient(
@@ -1310,12 +1379,79 @@ def futures_page(request: Request):
     return templates.TemplateResponse(request, "futures.html", context)
 
 
-@app.post("/futures/symbols/{symbol}/edit")
-def futures_symbol_edit(symbol: str):
-    normalized_symbol = symbol.upper()
+@app.get("/futures/symbols/{symbol}/edit", response_class=HTMLResponse)
+def futures_symbol_edit_page(request: Request, symbol: str):
+    normalized_symbol = symbol.strip().upper()
     if not SYMBOL_PATTERN.fullmatch(normalized_symbol):
         return _futures_symbols_redirect(error="invalid_futures_symbol")
-    return _futures_symbols_redirect(message=f"{normalized_symbol} edit_not_available_yet")
+
+    try:
+        symbol_configs = _load_futures_symbol_mappings()
+    except Exception as exc:
+        return _futures_symbols_redirect(error=f"load_failed: {exc}")
+
+    if normalized_symbol not in symbol_configs:
+        return _futures_symbols_redirect(error="futures_symbol_not_found")
+
+    return _render_futures_symbol_edit_page(
+        request,
+        normalized_symbol,
+        symbol_configs[normalized_symbol],
+    )
+
+
+@app.post("/futures/symbols/{symbol}/edit", response_class=HTMLResponse)
+async def futures_symbol_edit_save(request: Request, symbol: str):
+    normalized_symbol = symbol.strip().upper()
+    if not SYMBOL_PATTERN.fullmatch(normalized_symbol):
+        return _futures_symbols_redirect(error="invalid_futures_symbol")
+
+    form = await _read_form_data(request)
+    submitted_config = {
+        "enabled": form.get("enabled", "true").strip().lower() == "true",
+        "strategy": form.get("strategy", "trend_long"),
+        "leverage": form.get("leverage", ""),
+        "margin_amount": form.get("margin_amount", ""),
+        "trend_timeframe": form.get("trend_timeframe", "4h"),
+        "signal_timeframe": form.get("signal_timeframe", "15m"),
+    }
+
+    try:
+        futures_config = load_futures_config()
+        updated_symbols = {
+            config_symbol: _futures_symbol_config_mapping(symbol_config)
+            for config_symbol, symbol_config in futures_config.symbols.items()
+        }
+        if normalized_symbol not in updated_symbols:
+            raise ValueError("futures_symbol_not_found")
+
+        updated_config = _parse_futures_symbol_config_from_form(form, futures_config.risk)
+        updated_symbols[normalized_symbol] = updated_config
+        result = save_futures_symbols_config(updated_symbols)
+        if not result.get("ok"):
+            raise ValueError(str(result.get("error")))
+
+        _log_futures_symbol_action(
+            "futures_symbol_update",
+            normalized_symbol,
+            reason="frontend_edit",
+            enabled=updated_config["enabled"],
+            strategy=updated_config["strategy"],
+            leverage=updated_config["leverage"],
+            margin_amount=updated_config["margin_amount"],
+            trend_timeframe=updated_config["trend_timeframe"],
+            signal_timeframe=updated_config["signal_timeframe"],
+        )
+    except Exception as exc:
+        return _render_futures_symbol_edit_page(
+            request,
+            normalized_symbol,
+            submitted_config,
+            error=str(exc),
+            status_code=400,
+        )
+
+    return _futures_symbols_redirect(message=f"{normalized_symbol} saved")
 
 
 @app.post("/futures/symbols/add")
