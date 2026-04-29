@@ -1,6 +1,6 @@
 symbols:
   BTCUSDT:
-    enabled: false
+    enabled: true
     strategy: trend_long
     leverage: 1
     margin_amount: 10

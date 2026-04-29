@@ -52,6 +52,7 @@ LOG_FILE_MAP = {
     "trade": BASE_DIR / "logs" / "trade.log",
     "error": BASE_DIR / "logs" / "error.log",
 }
+FUTURES_STRATEGY_SIGNALS_PATH = BASE_DIR / "data" / "futures_strategy_signals.json"
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
 LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
@@ -749,6 +750,35 @@ def _load_futures_paper_trade_history() -> list[dict[str, object]]:
     ]
 
 
+def _futures_strategy_signal_row(signal: dict[str, object]) -> dict[str, object]:
+    return {
+        "symbol": signal.get("symbol"),
+        "strategy": signal.get("strategy"),
+        "action": signal.get("action"),
+        "reason": signal.get("reason"),
+        "trend_timeframe": signal.get("trend_timeframe"),
+        "signal_timeframe": signal.get("signal_timeframe"),
+        "mark_price": _to_optional_float(signal.get("mark_price")),
+        "funding_rate": _to_optional_float(signal.get("funding_rate")),
+    }
+
+
+def _load_futures_strategy_signals() -> list[dict[str, object]]:
+    if not FUTURES_STRATEGY_SIGNALS_PATH.exists():
+        return []
+    try:
+        payload = json.loads(FUTURES_STRATEGY_SIGNALS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+    return [
+        _futures_strategy_signal_row(signal)
+        for signal in payload.values()
+        if isinstance(signal, dict)
+    ]
+
+
 def _load_futures_view() -> dict:
     futures_credentials = load_futures_binance_readonly_credentials().public_status()
     futures_account = {
@@ -763,6 +793,7 @@ def _load_futures_view() -> dict:
     futures_positions: list[dict[str, object]] = []
     futures_paper_positions = _load_futures_paper_positions()
     futures_paper_trade_history = _load_futures_paper_trade_history()
+    futures_strategy_signals = _load_futures_strategy_signals()
     futures_risk_controls = {
         "max_leverage": None,
         "max_margin_per_trade_usdt": None,
@@ -783,6 +814,7 @@ def _load_futures_view() -> dict:
             "futures_positions": futures_positions,
             "futures_paper_positions": futures_paper_positions,
             "futures_paper_trade_history": futures_paper_trade_history,
+            "futures_strategy_signals": futures_strategy_signals,
             "futures_risk_controls": futures_risk_controls,
             "rows": [],
             "warnings": [f"Futures config error: {exc}"],
@@ -812,6 +844,7 @@ def _load_futures_view() -> dict:
         "futures_positions": futures_positions,
         "futures_paper_positions": futures_paper_positions,
         "futures_paper_trade_history": futures_paper_trade_history,
+        "futures_strategy_signals": futures_strategy_signals,
         "futures_risk_controls": futures_risk_controls,
         "rows": [],
         "warnings": warnings,

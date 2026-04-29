@@ -15,7 +15,11 @@ from futures_bot.exchange.binance_futures_client import BinanceFuturesClient  # 
 from futures_bot.exchange.futures_rules import parse_futures_symbol_rules  # noqa: E402
 from futures_bot.execution.futures_paper_broker import FuturesPaperBroker  # noqa: E402
 from futures_bot.risk.futures_risk import check_futures_pre_open_risk  # noqa: E402
+from futures_bot.strategy.registry import get_strategy  # noqa: E402
 
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+FUTURES_STRATEGY_SIGNALS_PATH = PROJECT_ROOT / "data" / "futures_strategy_signals.json"
 
 paper_broker = FuturesPaperBroker()
 
@@ -228,6 +232,108 @@ def _load_account_equity_for_dry_run(client: BinanceFuturesClient) -> tuple[floa
 
 def _position_payload(position: Any) -> dict[str, object]:
     return position.to_dict()
+
+
+def _latest_funding_rate(client: BinanceFuturesClient, symbol: str, mark_payload: Any) -> float | None:
+    funding_rate = None
+    if isinstance(mark_payload, dict):
+        funding_rate = _float_or_none(mark_payload.get("lastFundingRate"))
+    if funding_rate is not None:
+        return funding_rate
+    funding_payload = client.get_funding_rate(symbol, limit=1)
+    if isinstance(funding_payload, list) and funding_payload:
+        return _float_or_none(funding_payload[0].get("fundingRate"))
+    return None
+
+
+def _save_strategy_signal(payload: dict[str, object]) -> None:
+    FUTURES_STRATEGY_SIGNALS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict[str, object] = {}
+    if FUTURES_STRATEGY_SIGNALS_PATH.exists():
+        try:
+            loaded = json.loads(FUTURES_STRATEGY_SIGNALS_PATH.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing = loaded
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+    existing[str(payload["symbol"])] = payload
+    FUTURES_STRATEGY_SIGNALS_PATH.write_text(
+        json.dumps(existing, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def build_strategy_signal_payload(symbol: str) -> dict[str, object]:
+    symbol = symbol.upper()
+    config = load_futures_config()
+    symbol_config = config.symbols.get(symbol)
+    if symbol_config is None:
+        return {
+            "symbol": symbol,
+            "ok": False,
+            "reason": "futures_symbol_not_configured",
+        }
+
+    client = BinanceFuturesClient(
+        base_url=config.futures.base_url,
+        timeout=config.futures.request_timeout_seconds,
+    )
+    try:
+        trend_klines = client.get_klines(symbol, symbol_config.trend_timeframe, limit=300)
+        signal_klines = client.get_klines(symbol, symbol_config.signal_timeframe, limit=300)
+        mark_payload = client.get_mark_price(symbol)
+        mark_price = _float_or_none(mark_payload.get("markPrice"))
+        funding_rate = _latest_funding_rate(client, symbol, mark_payload)
+    except Exception as exc:
+        return {
+            "symbol": symbol,
+            "strategy": symbol_config.strategy,
+            "ok": False,
+            "reason": "futures_strategy_market_data_error",
+            "error": str(exc),
+        }
+
+    if mark_price is None:
+        return {
+            "symbol": symbol,
+            "strategy": symbol_config.strategy,
+            "ok": False,
+            "reason": "missing_mark_price",
+        }
+    if funding_rate is None:
+        return {
+            "symbol": symbol,
+            "strategy": symbol_config.strategy,
+            "ok": False,
+            "reason": "missing_funding_rate",
+            "mark_price": mark_price,
+        }
+
+    strategy = get_strategy(symbol_config.strategy)
+    signal = strategy.generate_signal(
+        symbol=symbol,
+        trend_klines=trend_klines,
+        signal_klines=signal_klines,
+        mark_price=mark_price,
+        funding_rate=funding_rate,
+        trend_timeframe=symbol_config.trend_timeframe,
+        signal_timeframe=symbol_config.signal_timeframe,
+        max_funding_rate_abs=config.risk.max_funding_rate_abs,
+    )
+    payload: dict[str, object] = {
+        "symbol": symbol,
+        "strategy": strategy.name,
+        "action": signal.action,
+        "reason": signal.reason,
+        "trend_timeframe": signal.trend_timeframe,
+        "signal_timeframe": signal.signal_timeframe,
+        "mark_price": mark_price,
+        "funding_rate": funding_rate,
+        "confidence": signal.confidence,
+        "metadata": signal.metadata,
+    }
+    _save_strategy_signal(payload)
+    return payload
 
 
 def build_risk_check_payload(
@@ -547,6 +653,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         metavar="SYMBOL",
         help="Fetch public Binance USD-M Futures market data for a symbol.",
     )
+    mode_group.add_argument(
+        "--strategy-signal",
+        metavar="SYMBOL",
+        help="Dry-run a Futures strategy signal for a symbol.",
+    )
     parser.add_argument(
         "--side",
         choices=("long", "short"),
@@ -601,6 +712,8 @@ def main() -> int:
             payload = build_paper_close_payload(args.paper_close)
         elif args.market_data:
             payload = build_market_data_payload(args.market_data)
+        elif args.strategy_signal:
+            payload = build_strategy_signal_payload(args.strategy_signal)
         else:
             payload = build_status_payload()
     except Exception as exc:

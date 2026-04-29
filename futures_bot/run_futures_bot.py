@@ -10,6 +10,9 @@ if __package__ in {None, ""}:
 from config.secrets import load_futures_binance_readonly_credentials  # noqa: E402
 from futures_bot.config_loader import load_futures_config  # noqa: E402
 from futures_bot.exchange.binance_futures_client import BinanceFuturesClient  # noqa: E402
+from futures_bot.execution.futures_paper_broker import FuturesPaperBroker  # noqa: E402
+from futures_bot.risk.futures_risk import check_futures_pre_open_risk  # noqa: E402
+from futures_bot.status_futures import build_strategy_signal_payload  # noqa: E402
 from observability.event_logger import StructuredLogger  # noqa: E402
 
 
@@ -42,6 +45,12 @@ def _log_startup_sync(**payload: Any) -> None:
     )
 
 
+def _log_strategy_event(**payload: Any) -> None:
+    payload.setdefault("event_type", "futures_strategy_signal")
+    payload.setdefault("symbol", "-")
+    StructuredLogger(FUTURES_LOG_FILE).log(**payload)
+
+
 def run_startup_readonly_sync(config) -> dict[str, Any]:
     credentials = load_futures_binance_readonly_credentials()
     if not credentials.configured:
@@ -56,6 +65,81 @@ def run_startup_readonly_sync(config) -> dict[str, Any]:
         print("[futures_startup_sync] skipped: futures_api_key_missing")
         _log_startup_sync(**summary)
         return summary
+
+
+def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
+    broker = FuturesPaperBroker()
+    results: list[dict[str, Any]] = []
+
+    for symbol in config.enabled_symbols:
+        symbol_config = config.symbols[symbol]
+        signal_payload = build_strategy_signal_payload(symbol)
+        action = str(signal_payload.get("action", "HOLD"))
+        result: dict[str, Any] = {
+            "symbol": symbol,
+            "strategy": symbol_config.strategy,
+            "action": action,
+            "reason": signal_payload.get("reason"),
+            "paper_action": "none",
+            "signal": signal_payload,
+        }
+
+        if signal_payload.get("ok") is False:
+            result["paper_action"] = "skipped_signal_error"
+            print(f"[futures_strategy] {symbol} skipped: {signal_payload.get('reason')}")
+            _log_strategy_event(**result)
+            results.append(result)
+            continue
+
+        mark_price = _to_float(signal_payload.get("mark_price"))
+        funding_rate = _to_float(signal_payload.get("funding_rate"))
+
+        if action == "LONG":
+            risk_result = check_futures_pre_open_risk(
+                symbol=symbol,
+                side="long",
+                margin_amount=symbol_config.margin_amount,
+                leverage=symbol_config.leverage,
+                mark_price=mark_price,
+                funding_rate=funding_rate,
+                account_equity=100.0,
+            )
+            result["risk"] = {
+                "ok": risk_result.ok,
+                "reason": risk_result.reason,
+                "position_ratio": risk_result.position_ratio,
+            }
+            if risk_result.ok:
+                position = broker.open_position(
+                    symbol=symbol,
+                    side="long",
+                    margin=symbol_config.margin_amount,
+                    leverage=symbol_config.leverage,
+                    price=mark_price,
+                )
+                result["paper_action"] = "opened"
+                result["position"] = position.to_dict()
+                print(f"[futures_strategy] {symbol} LONG opened in paper")
+            else:
+                result["paper_action"] = "risk_rejected"
+                print(f"[futures_strategy] {symbol} LONG rejected: {risk_result.reason}")
+        elif action == "CLOSE":
+            try:
+                position = broker.close_position(symbol, mark_price)
+            except (KeyError, ValueError):
+                result["paper_action"] = "close_skipped_no_position"
+                print(f"[futures_strategy] {symbol} CLOSE skipped: no paper position")
+            else:
+                result["paper_action"] = "closed"
+                result["position"] = position.to_dict()
+                print(f"[futures_strategy] {symbol} CLOSE closed in paper")
+        else:
+            print(f"[futures_strategy] {symbol} HOLD: {signal_payload.get('reason')}")
+
+        _log_strategy_event(**result)
+        results.append(result)
+
+    return results
 
     client = BinanceFuturesClient(
         base_url=config.futures.base_url,
@@ -123,14 +207,18 @@ def main() -> int:
     print(f"app.mode: {config.app.mode}")
     print(f"enabled futures symbols: {', '.join(enabled_symbols) or '-'}")
     print(f"base_url: {config.futures.base_url}")
-    print("stage: public-data-only / no trading")
+    print("stage: futures trend_long strategy / paper only")
     run_startup_readonly_sync(config)
 
     if not enabled_symbols:
         print("[futures_idle] no_enabled_symbols")
         return 0
 
-    print("[futures_idle] trading_disabled")
+    if config.app.mode != "paper":
+        print("[futures_strategy] skipped: futures strategy loop only runs in paper mode")
+        return 0
+
+    run_paper_strategy_cycle(config)
     return 0
 
 
