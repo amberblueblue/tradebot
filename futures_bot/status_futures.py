@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -14,11 +15,14 @@ from futures_bot.config_loader import load_futures_config  # noqa: E402
 from futures_bot.exchange.binance_futures_client import BinanceFuturesClient  # noqa: E402
 from futures_bot.exchange.futures_rules import parse_futures_symbol_rules  # noqa: E402
 from futures_bot.execution.futures_paper_broker import FuturesPaperBroker  # noqa: E402
+from futures_bot.execution.futures_paper_broker import FuturesPosition  # noqa: E402
 from futures_bot.risk.futures_risk import check_futures_pre_open_risk  # noqa: E402
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-FUTURES_PAPER_STATE_PATH = PROJECT_ROOT / "runtime" / "futures_paper_positions.json"
+FUTURES_PAPER_STATE_PATH = Path("/private/tmp/traderbot_futures_paper_broker.json")
+
+paper_broker = FuturesPaperBroker()
 
 
 def build_status_payload() -> dict[str, object]:
@@ -227,10 +231,17 @@ def _load_account_equity_for_dry_run(client: BinanceFuturesClient) -> tuple[floa
     return account_equity, "futures_balance_margin_balance", None
 
 
+def _position_payload(position: FuturesPosition) -> dict[str, object]:
+    return asdict(position)
+
+
 def _load_futures_paper_state() -> list[dict[str, Any]]:
     if not FUTURES_PAPER_STATE_PATH.exists():
         return []
-    payload = json.loads(FUTURES_PAPER_STATE_PATH.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(FUTURES_PAPER_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
     if not isinstance(payload, dict):
         return []
     positions = payload.get("positions", [])
@@ -239,12 +250,11 @@ def _load_futures_paper_state() -> list[dict[str, Any]]:
     return [position for position in positions if isinstance(position, dict)]
 
 
-def _save_futures_paper_state(broker: FuturesPaperBroker) -> None:
-    FUTURES_PAPER_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+def _save_futures_paper_state() -> None:
     payload = {
         "positions": [
-            position.to_dict()
-            for position in broker.get_positions()
+            _position_payload(position)
+            for position in paper_broker.get_positions()
         ],
     }
     FUTURES_PAPER_STATE_PATH.write_text(
@@ -253,16 +263,19 @@ def _save_futures_paper_state(broker: FuturesPaperBroker) -> None:
     )
 
 
-def _load_futures_paper_broker() -> FuturesPaperBroker:
-    broker = FuturesPaperBroker()
+def _load_futures_paper_broker() -> None:
+    paper_broker._positions = {}
     for position in _load_futures_paper_state():
         entry_price = _float_or_none(position.get("entry_price"))
         margin = _float_or_none(position.get("margin"))
         leverage = _float_or_none(position.get("leverage"))
         if entry_price is None or margin is None or leverage is None:
             continue
-        broker.open_position(
-            symbol=str(position.get("symbol", "")),
+        symbol = str(position.get("symbol", "")).upper()
+        if not symbol:
+            continue
+        paper_broker.open_position(
+            symbol=symbol,
             side=str(position.get("side", "")),
             margin=margin,
             leverage=leverage,
@@ -270,8 +283,7 @@ def _load_futures_paper_broker() -> FuturesPaperBroker:
         )
         mark_price = _float_or_none(position.get("mark_price"))
         if mark_price is not None:
-            broker.update_mark_price(str(position.get("symbol", "")), mark_price)
-    return broker
+            paper_broker.update_mark_price(symbol, mark_price)
 
 
 def build_risk_check_payload(
@@ -380,19 +392,19 @@ def build_paper_open_payload(
             "risk": risk_payload,
         }
 
-    broker = _load_futures_paper_broker()
-    position = broker.open_position(
+    _load_futures_paper_broker()
+    position = paper_broker.open_position(
         symbol=symbol,
         side=side,
         margin=margin_amount,
         leverage=leverage,
         price=mark_price,
     )
-    _save_futures_paper_state(broker)
+    _save_futures_paper_state()
     return {
         "ok": True,
         "reason": "paper_position_opened",
-        "position": position.to_dict(),
+        "position": _position_payload(position),
         "risk": risk_payload,
     }
 
@@ -422,10 +434,10 @@ def build_paper_tick_payload(symbol: str) -> dict[str, object]:
             "reason": "missing_mark_price",
         }
 
-    broker = _load_futures_paper_broker()
+    _load_futures_paper_broker()
     try:
-        broker.update_mark_price(symbol, mark_price)
-    except ValueError as exc:
+        paper_broker.update_mark_price(symbol, mark_price)
+    except (KeyError, ValueError) as exc:
         return {
             "symbol": symbol,
             "mark_price": mark_price,
@@ -434,13 +446,13 @@ def build_paper_tick_payload(symbol: str) -> dict[str, object]:
             "reason": str(exc),
         }
 
-    _save_futures_paper_state(broker)
+    _save_futures_paper_state()
     return {
         "symbol": symbol,
         "mark_price": mark_price,
         "positions": [
-            position.to_dict()
-            for position in broker.get_positions()
+            _position_payload(position)
+            for position in paper_broker.get_positions()
         ],
         "ok": True,
         "reason": "paper_mark_price_updated",
@@ -472,10 +484,10 @@ def build_paper_close_payload(symbol: str) -> dict[str, object]:
             "reason": "missing_mark_price",
         }
 
-    broker = _load_futures_paper_broker()
+    _load_futures_paper_broker()
     try:
-        closed_position = broker.close_position(symbol, mark_price)
-    except ValueError as exc:
+        closed_position = paper_broker.close_position(symbol, mark_price)
+    except (KeyError, ValueError) as exc:
         return {
             "closed": False,
             "realized_pnl": None,
@@ -484,13 +496,14 @@ def build_paper_close_payload(symbol: str) -> dict[str, object]:
             "reason": str(exc),
         }
 
-    _save_futures_paper_state(broker)
+    _save_futures_paper_state()
     return {
-        "closed": True,
-        "realized_pnl": closed_position["realized_pnl"],
+        "ok": True,
+        "reason": "paper_position_closed",
+        "realized_pnl": closed_position.unrealized_pnl,
         "symbol": symbol,
         "mark_price": mark_price,
-        "position": closed_position,
+        "position": _position_payload(closed_position),
     }
 
 
