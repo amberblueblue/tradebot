@@ -21,8 +21,29 @@
     >
   </noscript>
   <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+  <style>
+    .env-badge {
+      font-size: 0.72rem;
+      line-height: 1;
+      padding: 0.35rem 0.5rem;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 991.98px) {
+      .env-badge {
+        align-self: flex-end;
+        margin-top: 0.25rem;
+      }
+    }
+  </style>
 </head>
 <body>
+  {% set runtime_env = namespace(project_path='') %}
+  {% for route in request.app.routes %}
+    {% if route.name == 'static' and route.app.directory %}
+      {% set runtime_env.project_path = route.app.directory|string %}
+    {% endif %}
+  {% endfor %}
   <nav class="navbar navbar-expand-lg border-bottom bg-white">
     <div class="container">
       <span class="navbar-brand mb-0 h1">TraderBot Console</span>
@@ -33,6 +54,11 @@
         <a class="nav-link" href="/spot">Spot</a>
         <a class="nav-link" href="/logs">Logs</a>
         <a class="nav-link" href="/config">Config</a>
+        {% if 'traderbot_prod' in runtime_env.project_path %}
+          <span class="badge bg-danger text-white env-badge ms-lg-3 ms-2">[PROD]</span>
+        {% elif 'traderbot_dev' in runtime_env.project_path %}
+          <span class="badge bg-success text-white env-badge ms-lg-3 ms-2">[DEV]</span>
+        {% endif %}
       </div>
     </div>
   </nav>
