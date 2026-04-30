@@ -263,7 +263,9 @@ Futures 风控骨架已接入配置、CLI dry-run 和 `/futures` 只读展示。
 config/futures_settings.yaml
 ```
 
-当前支持的参数包括 `max_leverage`、`max_margin_per_trade_usdt`、`max_position_ratio`、`min_liquidation_distance_pct`、`max_funding_rate_abs`、`paper_test_max_funding_rate_abs` 和 `max_consecutive_losing_trades`。
+当前支持的参数包括 `max_leverage`、`max_margin_per_trade_usdt`、`max_single_order_usdt`、`max_position_ratio`、`min_liquidation_distance_pct`、`max_funding_rate_abs`、`paper_test_max_funding_rate_abs`、`max_consecutive_losing_trades`、`stop_loss_pct`、`partial1_sell_pct`、`partial2_sell_pct`、`big_candle_multiplier`、`big_candle_body_lookback`、`profit_giveback_ratio` 和 `profit_protection_trigger_pct`。
+
+这些 Futures risk 字段覆盖风控和仓位管理配置：单笔金额上限、止损、分批止盈、大 K 线过滤、利润回吐和利润保护触发阈值。当前阶段仍只作为配置和 paper/风控输入，不会启用真实下单。
 
 `paper_test_max_funding_rate_abs` 只用于 `app.mode=paper` 且 `strategy=trend_long_test` 同时满足的 paper 测试信号和 paper 风控检查，不参与真实风控，不用于实盘，也不影响正常 `trend_long`。`trend_long` 永远使用 `risk.max_funding_rate_abs`。
 

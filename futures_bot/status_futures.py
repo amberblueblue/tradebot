@@ -43,11 +43,19 @@ def build_risk_config_payload() -> dict[str, object]:
     return {
         "max_leverage": risk.max_leverage,
         "max_margin_per_trade_usdt": risk.max_margin_per_trade_usdt,
+        "max_single_order_usdt": risk.max_single_order_usdt,
         "max_position_ratio": risk.max_position_ratio,
         "min_liquidation_distance_pct": risk.min_liquidation_distance_pct,
         "max_funding_rate_abs": risk.max_funding_rate_abs,
         "paper_test_max_funding_rate_abs": risk.paper_test_max_funding_rate_abs,
         "max_consecutive_losing_trades": risk.max_consecutive_losing_trades,
+        "stop_loss_pct": risk.stop_loss_pct,
+        "partial1_sell_pct": risk.partial1_sell_pct,
+        "partial2_sell_pct": risk.partial2_sell_pct,
+        "big_candle_multiplier": risk.big_candle_multiplier,
+        "big_candle_body_lookback": risk.big_candle_body_lookback,
+        "profit_giveback_ratio": risk.profit_giveback_ratio,
+        "profit_protection_trigger_pct": risk.profit_protection_trigger_pct,
     }
 
 
@@ -110,10 +118,19 @@ def _risk_thresholds_payload() -> dict[str, object]:
     return {
         "max_leverage": risk.max_leverage,
         "max_margin_per_trade_usdt": risk.max_margin_per_trade_usdt,
+        "max_single_order_usdt": risk.max_single_order_usdt,
         "max_position_ratio": risk.max_position_ratio,
         "min_liquidation_distance_pct": risk.min_liquidation_distance_pct,
         "max_funding_rate_abs": risk.max_funding_rate_abs,
         "paper_test_max_funding_rate_abs": risk.paper_test_max_funding_rate_abs,
+        "max_consecutive_losing_trades": risk.max_consecutive_losing_trades,
+        "stop_loss_pct": risk.stop_loss_pct,
+        "partial1_sell_pct": risk.partial1_sell_pct,
+        "partial2_sell_pct": risk.partial2_sell_pct,
+        "big_candle_multiplier": risk.big_candle_multiplier,
+        "big_candle_body_lookback": risk.big_candle_body_lookback,
+        "profit_giveback_ratio": risk.profit_giveback_ratio,
+        "profit_protection_trigger_pct": risk.profit_protection_trigger_pct,
     }
 
 

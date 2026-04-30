@@ -70,11 +70,19 @@ FUTURES_TIMEFRAME_OPTIONS = ("5m", "15m", "1h", "4h", "1d")
 FUTURES_RISK_SETTING_FIELDS = (
     ("risk.max_leverage", "最大杠杆", "number", "0.0001", ""),
     ("risk.max_margin_per_trade_usdt", "单笔最大保证金 USDT", "number", "0.0001", ""),
+    ("risk.max_single_order_usdt", "单笔最大下单金额 USDT", "number", "0.0001", ""),
     ("risk.max_position_ratio", "最大仓位占比", "number", "0.0001", ""),
     ("risk.min_liquidation_distance_pct", "最小爆仓距离 %", "number", "0.0001", ""),
     ("risk.max_funding_rate_abs", "最大资金费率", "number", "0.000001", ""),
     ("risk.max_consecutive_losing_trades", "最大连续亏损次数", "number", "1", ""),
     ("risk.paper_test_max_funding_rate_abs", "测试资金费率", "number", "0.000001", "仅 Paper 测试"),
+    ("risk.stop_loss_pct", "止损百分比", "number", "0.0001", ""),
+    ("risk.partial1_sell_pct", "第一次分批止盈比例", "number", "0.0001", ""),
+    ("risk.partial2_sell_pct", "第二次分批止盈比例", "number", "0.0001", ""),
+    ("risk.big_candle_multiplier", "大K线倍数", "number", "0.0001", ""),
+    ("risk.big_candle_body_lookback", "大K线实体均值回看数量", "number", "1", ""),
+    ("risk.profit_giveback_ratio", "利润回吐比例", "number", "0.0001", ""),
+    ("risk.profit_protection_trigger_pct", "利润保护触发百分比", "number", "0.0001", ""),
 )
 FUTURES_STRATEGY_SETTING_FIELDS = (
     ("strategy.trend_long.ema_fast", "trend_long 快速 EMA", "number", "1", ""),
@@ -1403,11 +1411,20 @@ def _coerce_futures_setting_value(path: str, raw_value: str):
             if number <= 0:
                 raise ValueError(f"{path} must be greater than 0")
             return number
+        if path == "risk.big_candle_body_lookback":
+            number = int(value)
+            if number <= 0:
+                raise ValueError(f"{path} must be greater than 0")
+            return number
         number = float(value)
         if number <= 0:
             raise ValueError(f"{path} must be greater than 0")
         if path == "risk.max_position_ratio" and number > 1:
             raise ValueError("最大仓位占比必须小于或等于 1")
+        if path in {"risk.partial1_sell_pct", "risk.partial2_sell_pct"} and number > 100:
+            raise ValueError("分批止盈比例必须小于或等于 100")
+        if path == "risk.profit_giveback_ratio" and number > 1:
+            raise ValueError("利润回吐比例必须小于或等于 1")
         return number
     return value
 
@@ -1475,11 +1492,19 @@ def _load_futures_view() -> dict:
     futures_risk_controls = {
         "max_leverage": None,
         "max_margin_per_trade_usdt": None,
+        "max_single_order_usdt": None,
         "max_position_ratio": None,
         "min_liquidation_distance_pct": None,
         "max_funding_rate_abs": None,
         "paper_test_max_funding_rate_abs": None,
         "max_consecutive_losing_trades": None,
+        "stop_loss_pct": None,
+        "partial1_sell_pct": None,
+        "partial2_sell_pct": None,
+        "big_candle_multiplier": None,
+        "big_candle_body_lookback": None,
+        "profit_giveback_ratio": None,
+        "profit_protection_trigger_pct": None,
     }
     try:
         futures_config = load_futures_config()
@@ -1518,11 +1543,19 @@ def _load_futures_view() -> dict:
         {
             "max_leverage": futures_config.risk.max_leverage,
             "max_margin_per_trade_usdt": futures_config.risk.max_margin_per_trade_usdt,
+            "max_single_order_usdt": futures_config.risk.max_single_order_usdt,
             "max_position_ratio": futures_config.risk.max_position_ratio,
             "min_liquidation_distance_pct": futures_config.risk.min_liquidation_distance_pct,
             "max_funding_rate_abs": futures_config.risk.max_funding_rate_abs,
             "paper_test_max_funding_rate_abs": futures_config.risk.paper_test_max_funding_rate_abs,
             "max_consecutive_losing_trades": futures_config.risk.max_consecutive_losing_trades,
+            "stop_loss_pct": futures_config.risk.stop_loss_pct,
+            "partial1_sell_pct": futures_config.risk.partial1_sell_pct,
+            "partial2_sell_pct": futures_config.risk.partial2_sell_pct,
+            "big_candle_multiplier": futures_config.risk.big_candle_multiplier,
+            "big_candle_body_lookback": futures_config.risk.big_candle_body_lookback,
+            "profit_giveback_ratio": futures_config.risk.profit_giveback_ratio,
+            "profit_protection_trigger_pct": futures_config.risk.profit_protection_trigger_pct,
         }
     )
     warnings = []
@@ -2002,6 +2035,12 @@ async def futures_config_save(request: Request):
                 _coerce_futures_setting_value(path, form[path]),
             )
             updated_fields.append(path)
+        risk = settings.get("risk", {})
+        if isinstance(risk, dict):
+            partial1_sell_pct = float(risk.get("partial1_sell_pct", 0))
+            partial2_sell_pct = float(risk.get("partial2_sell_pct", 0))
+            if partial1_sell_pct + partial2_sell_pct > 100:
+                raise ValueError("第一次分批止盈比例 + 第二次分批止盈比例 必须小于或等于 100")
         DEFAULT_FUTURES_SETTINGS_PATH.write_text(_dump_yaml(settings), encoding="utf-8")
         _log_settings_action(
             "futures_settings_update",

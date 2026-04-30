@@ -11,6 +11,17 @@ DEFAULT_FUTURES_SETTINGS_PATH = CONFIG_DIR / "futures_settings.yaml"
 DEFAULT_FUTURES_SYMBOLS_PATH = CONFIG_DIR / "futures_symbols.yaml"
 ALLOWED_FUTURES_STRATEGIES = {"trend_long", "trend_long_test"}
 ALLOWED_FUTURES_TIMEFRAMES = {"5m", "15m", "1h", "4h", "1d"}
+DEFAULT_FUTURES_RISK_SETTINGS: dict[str, int | float] = {
+    "max_single_order_usdt": 20,
+    "max_consecutive_losing_trades": 4,
+    "stop_loss_pct": 20.0,
+    "partial1_sell_pct": 30.0,
+    "partial2_sell_pct": 50.0,
+    "big_candle_multiplier": 1.5,
+    "big_candle_body_lookback": 20,
+    "profit_giveback_ratio": 0.5,
+    "profit_protection_trigger_pct": 15.0,
+}
 DEFAULT_FUTURES_STRATEGY_SETTINGS: dict[str, dict[str, int | float]] = {
     "trend_long": {
         "ema_fast": 44,
@@ -49,11 +60,19 @@ class FuturesEndpointConfig:
 class FuturesRiskConfig:
     max_leverage: float
     max_margin_per_trade_usdt: float
+    max_single_order_usdt: float
     max_position_ratio: float
     min_liquidation_distance_pct: float
     max_funding_rate_abs: float
     paper_test_max_funding_rate_abs: float
     max_consecutive_losing_trades: int
+    stop_loss_pct: float
+    partial1_sell_pct: float
+    partial2_sell_pct: float
+    big_candle_multiplier: float
+    big_candle_body_lookback: int
+    profit_giveback_ratio: float
+    profit_protection_trigger_pct: float
 
 
 @dataclass(frozen=True)
@@ -228,6 +247,47 @@ def _require_positive_number(config: dict[str, Any], key: str, path: Path) -> fl
     return float(value)
 
 
+def _positive_number_with_default(
+    config: dict[str, Any],
+    key: str,
+    path: Path,
+    default: int | float,
+) -> float:
+    value = config.get(key, default)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f"risk.{key} must be a number in {path}")
+    if value <= 0:
+        raise ValueError(f"risk.{key} must be greater than 0 in {path}")
+    return float(value)
+
+
+def _positive_int_with_default(
+    config: dict[str, Any],
+    key: str,
+    path: Path,
+    default: int | float,
+) -> int:
+    value = config.get(key, default)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"risk.{key} must be an integer in {path}")
+    if value <= 0:
+        raise ValueError(f"risk.{key} must be greater than 0 in {path}")
+    return value
+
+
+def _bounded_positive_number_with_default(
+    config: dict[str, Any],
+    key: str,
+    path: Path,
+    default: int | float,
+    upper_bound: float,
+) -> float:
+    value = _positive_number_with_default(config, key, path, default)
+    if value > upper_bound:
+        raise ValueError(f"risk.{key} must be less than or equal to {upper_bound} in {path}")
+    return value
+
+
 def _require_string(config: dict[str, Any], key: str, path: Path) -> str:
     value = config.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -294,6 +354,12 @@ def _load_futures_endpoint_config(
 
 def _load_risk_config(settings: dict[str, Any], settings_path: Path) -> FuturesRiskConfig:
     risk_config = _require_mapping(settings, "risk", settings_path)
+    max_single_order_usdt = _positive_number_with_default(
+        risk_config,
+        "max_single_order_usdt",
+        settings_path,
+        DEFAULT_FUTURES_RISK_SETTINGS["max_single_order_usdt"],
+    )
     max_funding_rate_abs = risk_config.get("max_funding_rate_abs", 0)
     if not isinstance(max_funding_rate_abs, (int, float)) or isinstance(max_funding_rate_abs, bool):
         raise ValueError(f"risk.max_funding_rate_abs must be a number in {settings_path}")
@@ -329,6 +395,54 @@ def _load_risk_config(settings: dict[str, Any], settings_path: Path) -> FuturesR
     if max_consecutive_losing_trades <= 0:
         raise ValueError(f"risk.max_consecutive_losing_trades must be greater than 0 in {settings_path}")
 
+    stop_loss_pct = _positive_number_with_default(
+        risk_config,
+        "stop_loss_pct",
+        settings_path,
+        DEFAULT_FUTURES_RISK_SETTINGS["stop_loss_pct"],
+    )
+    partial1_sell_pct = _bounded_positive_number_with_default(
+        risk_config,
+        "partial1_sell_pct",
+        settings_path,
+        DEFAULT_FUTURES_RISK_SETTINGS["partial1_sell_pct"],
+        100,
+    )
+    partial2_sell_pct = _bounded_positive_number_with_default(
+        risk_config,
+        "partial2_sell_pct",
+        settings_path,
+        DEFAULT_FUTURES_RISK_SETTINGS["partial2_sell_pct"],
+        100,
+    )
+    if partial1_sell_pct + partial2_sell_pct > 100:
+        raise ValueError(f"risk.partial1_sell_pct + risk.partial2_sell_pct must be less than or equal to 100 in {settings_path}")
+    big_candle_multiplier = _positive_number_with_default(
+        risk_config,
+        "big_candle_multiplier",
+        settings_path,
+        DEFAULT_FUTURES_RISK_SETTINGS["big_candle_multiplier"],
+    )
+    big_candle_body_lookback = _positive_int_with_default(
+        risk_config,
+        "big_candle_body_lookback",
+        settings_path,
+        DEFAULT_FUTURES_RISK_SETTINGS["big_candle_body_lookback"],
+    )
+    profit_giveback_ratio = _bounded_positive_number_with_default(
+        risk_config,
+        "profit_giveback_ratio",
+        settings_path,
+        DEFAULT_FUTURES_RISK_SETTINGS["profit_giveback_ratio"],
+        1,
+    )
+    profit_protection_trigger_pct = _positive_number_with_default(
+        risk_config,
+        "profit_protection_trigger_pct",
+        settings_path,
+        DEFAULT_FUTURES_RISK_SETTINGS["profit_protection_trigger_pct"],
+    )
+
     return FuturesRiskConfig(
         max_leverage=_require_positive_number(risk_config, "max_leverage", settings_path),
         max_margin_per_trade_usdt=_require_positive_number(
@@ -336,6 +450,7 @@ def _load_risk_config(settings: dict[str, Any], settings_path: Path) -> FuturesR
             "max_margin_per_trade_usdt",
             settings_path,
         ),
+        max_single_order_usdt=max_single_order_usdt,
         max_position_ratio=float(max_position_ratio),
         min_liquidation_distance_pct=_require_positive_number(
             risk_config,
@@ -345,6 +460,13 @@ def _load_risk_config(settings: dict[str, Any], settings_path: Path) -> FuturesR
         max_funding_rate_abs=float(max_funding_rate_abs),
         paper_test_max_funding_rate_abs=float(paper_test_max_funding_rate_abs),
         max_consecutive_losing_trades=max_consecutive_losing_trades,
+        stop_loss_pct=stop_loss_pct,
+        partial1_sell_pct=partial1_sell_pct,
+        partial2_sell_pct=partial2_sell_pct,
+        big_candle_multiplier=big_candle_multiplier,
+        big_candle_body_lookback=big_candle_body_lookback,
+        profit_giveback_ratio=profit_giveback_ratio,
+        profit_protection_trigger_pct=profit_protection_trigger_pct,
     )
 
 

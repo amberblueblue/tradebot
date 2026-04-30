@@ -8,11 +8,19 @@ futures:
 risk:
   max_leverage: 2.0
   max_margin_per_trade_usdt: 20.0
+  max_single_order_usdt: 20
   max_position_ratio: 0.2
   min_liquidation_distance_pct: 15.0
   max_funding_rate_abs: 0.001
   paper_test_max_funding_rate_abs: 0.005
   max_consecutive_losing_trades: 4
+  stop_loss_pct: 20.0
+  partial1_sell_pct: 30.0
+  partial2_sell_pct: 50.0
+  big_candle_multiplier: 1.5
+  big_candle_body_lookback: 20
+  profit_giveback_ratio: 0.5
+  profit_protection_trigger_pct: 15.0
 strategy:
   trend_long:
     ema_fast: 44
