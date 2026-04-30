@@ -1,6 +1,6 @@
 symbols:
   BIOUSDT:
-    enabled: true
+    enabled: false
     strategy: "trend_long_test"
     leverage: 1.0
     margin_amount: 10.0
