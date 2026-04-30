@@ -379,9 +379,9 @@ bash scripts/deploy_test_to_prod.sh
 
 `deploy_test_to_prod.sh` 会先在 test 运行 `py_compile`，然后停止 prod，同步代码到 prod，再启动 prod 并运行 `status_prod.sh`。同步到 prod 时会排除 `.env`、`logs/`、`data/`、`config/settings.yaml`、`config/symbols.yaml`、`config/futures_settings.yaml` 和 `config/futures_symbols.yaml`，避免覆盖生产 API key、日志、状态数据和生产配置。
 
-### 旧 dev 到 prod 脚本
+### Dev 到 Prod 发布脚本
 
-保留 `scripts/deploy_to_prod.sh` 作为旧流程，但推荐优先使用 `dev -> test -> prod`。
+`scripts/deploy_to_prod.sh` 用于将 dev 代码发布到 prod。生产参数由生产前端维护，代码发布不会覆盖 prod 配置、日志或数据。
 
 ```bash
 cd /Users/eason/traderbot_dev
@@ -391,12 +391,22 @@ bash scripts/deploy_to_prod.sh
 发布脚本会按顺序执行：
 
 - `checking syntax`：先对核心 Python 文件运行 `py_compile`，失败会立刻停止发布
+- `rsync exclude list`：发布前打印 rsync 排除清单
+- `backing up prod config`：发布前备份 prod 配置到 `/Users/eason/traderbot_prod/backups/prod_config_backup_YYYYMMDD_HHMMSS/`
 - `stopping prod`：调用 `/Users/eason/traderbot_prod/scripts/stop_prod.sh`
 - `syncing files`：使用 `rsync` 从 dev 同步代码到 prod
+- `confirming prod config still exists`：发布后再次确认 prod 配置仍然存在
 - `starting prod`：调用 `/Users/eason/traderbot_prod/scripts/install_launchd.sh`
 - `checking status`：调用 `/Users/eason/traderbot_prod/scripts/status_prod.sh`
 
-同步时会排除 `.env`、`logs/`、`data/tradebot.sqlite3`、`.venv/`、`__pycache__/`、`.git/`、`.DS_Store`、生产 launchd plist、生产启动脚本、pid 文件和 `runtime/*.json`，不会覆盖生产 API key、生产日志、生产数据库、生产虚拟环境、生产运行态或生产自启动管理文件。
+同步时会排除 `.env`、`logs/`、`data/`、`__pycache__/`、`.git/`、`.DS_Store`、`config/settings.yaml`、`config/symbols.yaml`、`config/futures_settings.yaml`、`config/futures_symbols.yaml`、生产 launchd plist、生产启动脚本、虚拟环境、pid 文件和 `runtime/*.json`，不会覆盖生产 API key、生产日志、生产数据库、生产配置、生产虚拟环境、生产运行态或生产自启动管理文件。
+
+prod 参数应在生产前端修改，尤其是：
+
+- `config/settings.yaml`
+- `config/symbols.yaml`
+- `config/futures_settings.yaml`
+- `config/futures_symbols.yaml`
 
 ## Health Check
 

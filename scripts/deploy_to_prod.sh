@@ -3,6 +3,7 @@ set -euo pipefail
 
 DEV_DIR="/Users/eason/traderbot_dev"
 PROD_DIR="/Users/eason/traderbot_prod"
+BACKUP_ROOT="$PROD_DIR/backups"
 
 COMPILE_TARGETS=(
   "run_bot.py"
@@ -23,9 +24,70 @@ COMPILE_TARGETS=(
   "observability/event_logger.py"
 )
 
+PROD_CONFIG_FILES=(
+  "config/settings.yaml"
+  "config/symbols.yaml"
+  "config/futures_settings.yaml"
+  "config/futures_symbols.yaml"
+)
+
+RSYNC_EXCLUDES=(
+  ".env"
+  ".env.*"
+  "logs/"
+  "data/"
+  "__pycache__/"
+  ".git/"
+  ".DS_Store"
+  "config/settings.yaml"
+  "config/symbols.yaml"
+  "config/futures_settings.yaml"
+  "config/futures_symbols.yaml"
+  ".venv/"
+  "venv/"
+  "env/"
+  "launchd/com.eason.traderbot.prod.plist"
+  "scripts/start_prod.sh"
+  "scripts/stop_prod.sh"
+  "scripts/install_launchd.sh"
+  "scripts/uninstall_launchd.sh"
+  "scripts/status_prod.sh"
+  "runtime/*.pid"
+  "runtime/*.json"
+)
+
 log_step() {
   echo
   echo "==> $1"
+}
+
+require_prod_config_files() {
+  for config_file in "${PROD_CONFIG_FILES[@]}"; do
+    if [ ! -f "$PROD_DIR/$config_file" ]; then
+      echo "missing prod config file: $PROD_DIR/$config_file"
+      exit 1
+    fi
+  done
+}
+
+print_rsync_excludes() {
+  log_step "rsync exclude list"
+  for exclude in "${RSYNC_EXCLUDES[@]}"; do
+    echo "- $exclude"
+  done
+}
+
+backup_prod_config() {
+  local backup_dir
+  backup_dir="$BACKUP_ROOT/prod_config_backup_$(date +%Y%m%d_%H%M%S)"
+
+  log_step "backing up prod config"
+  mkdir -p "$backup_dir/config"
+  for config_file in "${PROD_CONFIG_FILES[@]}"; do
+    cp "$PROD_DIR/$config_file" "$backup_dir/$config_file"
+    echo "backed up $config_file"
+  done
+  echo "backup directory: $backup_dir"
 }
 
 if [ "$(pwd)" != "$DEV_DIR" ]; then
@@ -38,6 +100,10 @@ if [ ! -d "$PROD_DIR" ]; then
   exit 1
 fi
 
+print_rsync_excludes
+require_prod_config_files
+backup_prod_config
+
 log_step "checking syntax"
 python3 -m py_compile "${COMPILE_TARGETS[@]}"
 
@@ -45,26 +111,14 @@ log_step "stopping prod"
 "$PROD_DIR/scripts/stop_prod.sh"
 
 log_step "syncing files"
-rsync -av --delete \
-  --exclude ".env" \
-  --exclude ".env.*" \
-  --exclude "logs/" \
-  --exclude "data/tradebot.sqlite3" \
-  --exclude ".venv/" \
-  --exclude "venv/" \
-  --exclude "env/" \
-  --exclude "__pycache__/" \
-  --exclude ".git/" \
-  --exclude ".DS_Store" \
-  --exclude "launchd/com.eason.traderbot.prod.plist" \
-  --exclude "scripts/start_prod.sh" \
-  --exclude "scripts/stop_prod.sh" \
-  --exclude "scripts/install_launchd.sh" \
-  --exclude "scripts/uninstall_launchd.sh" \
-  --exclude "scripts/status_prod.sh" \
-  --exclude "runtime/*.pid" \
-  --exclude "runtime/*.json" \
-  "$DEV_DIR/" "$PROD_DIR/"
+RSYNC_ARGS=(-av --delete)
+for exclude in "${RSYNC_EXCLUDES[@]}"; do
+  RSYNC_ARGS+=(--exclude "$exclude")
+done
+rsync "${RSYNC_ARGS[@]}" "$DEV_DIR/" "$PROD_DIR/"
+
+log_step "confirming prod config still exists"
+require_prod_config_files
 
 log_step "starting prod"
 "$PROD_DIR/scripts/install_launchd.sh"
