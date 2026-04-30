@@ -1,3 +1,38 @@
+{% macro futures_fields(fields) -%}
+<div class="row g-3">
+  {% for field in fields %}
+  <div class="col-md-6 col-xl-4">
+    <label class="form-label" for="futures-setting-{{ field.path|replace('.', '-') }}">{{ field.label }}</label>
+    {% if field.value_type == "bool" %}
+    <select
+      class="form-select"
+      id="futures-setting-{{ field.path|replace('.', '-') }}"
+      name="{{ field.path }}"
+      required
+    >
+      <option value="true" {% if field.value %}selected{% endif %}>是</option>
+      <option value="false" {% if not field.value %}selected{% endif %}>否</option>
+    </select>
+    {% else %}
+    <input
+      class="form-control"
+      id="futures-setting-{{ field.path|replace('.', '-') }}"
+      name="{{ field.path }}"
+      type="{{ field.input_type }}"
+      step="{{ field.step }}"
+      {% if field.input_type == "number" %}min="0"{% endif %}
+      value="{{ field.value }}"
+      required
+    >
+    {% endif %}
+    <div class="form-text">
+      {{ field.path }}{% if field.help %} · {{ field.help }}{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
 {% if futures_config_view.config_error %}
 <div class="alert alert-danger mb-0">配置读取失败：{{ futures_config_view.config_error }}</div>
 {% else %}
@@ -7,32 +42,28 @@
 {% if futures_config_view.error %}
 <div class="alert alert-danger mb-3">{{ futures_config_view.error }}</div>
 {% endif %}
-<div class="card shadow-sm">
-  <div class="card-body">
-    <h2 class="h5 mb-3">Futures 风控参数</h2>
-    <form method="post" action="/futures/config">
-      <div class="row g-3">
-        {% for field in futures_config_view.fields %}
-        <div class="col-md-6 col-xl-4">
-          <label class="form-label" for="futures-setting-{{ loop.index }}">{{ field.label }}</label>
-          <input
-            class="form-control"
-            id="futures-setting-{{ loop.index }}"
-            name="{{ field.path }}"
-            type="{{ field.input_type }}"
-            step="{{ field.step }}"
-            min="0"
-            value="{{ field.value }}"
-            required
-          >
-          <div class="form-text">{{ field.path }}</div>
-        </div>
-        {% endfor %}
-        <div class="col-12">
-          <button class="btn btn-primary" type="submit">保存 Futures 风控参数</button>
-        </div>
-      </div>
-    </form>
+<form method="post" action="/futures/config">
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h2 class="h5 mb-3">Risk 风控参数</h2>
+      {{ futures_fields(futures_config_view.groups.risk) }}
+    </div>
   </div>
-</div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h2 class="h5 mb-3">Strategy 策略参数</h2>
+      {{ futures_fields(futures_config_view.groups.strategy) }}
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h2 class="h5 mb-3">Other 其他参数</h2>
+      {{ futures_fields(futures_config_view.groups.other) }}
+    </div>
+  </div>
+
+  <button class="btn btn-primary" type="submit">保存 Futures 配置</button>
+</form>
 {% endif %}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from futures_bot.config_loader import load_futures_strategy_settings
 from futures_bot.strategy.base import CLOSE, HOLD, LONG, StrategySignal
 from futures_bot.strategy.trend_long import _ema, _klines_to_candles, _macd
 
@@ -24,12 +25,14 @@ class TrendLongTestStrategy:
         signal_timeframe: str,
         max_funding_rate_abs: float,
     ) -> StrategySignal:
+        settings = load_futures_strategy_settings(self.name)
         signal_candles = _klines_to_candles(signal_klines)
         metadata: dict[str, Any] = {
             "trend_bars": len(_klines_to_candles(trend_klines)),
             "signal_bars": len(signal_candles),
             "max_funding_rate_abs": max_funding_rate_abs,
             "paper_test_only": True,
+            "strategy_settings": settings,
         }
 
         if len(signal_candles) < 50:
@@ -43,7 +46,7 @@ class TrendLongTestStrategy:
                 metadata=metadata,
             )
 
-        signal = _signal_snapshot(signal_candles)
+        signal = _signal_snapshot(signal_candles, settings)
         metadata["signal"] = signal
 
         if abs(funding_rate) > max_funding_rate_abs:
@@ -101,13 +104,19 @@ class TrendLongTestStrategy:
         )
 
 
-def _signal_snapshot(candles: list[dict[str, float]]) -> dict[str, Any]:
+def _signal_snapshot(candles: list[dict[str, float]], settings: dict[str, int | float]) -> dict[str, Any]:
     closes = [candle["close"] for candle in candles]
-    ema44 = _ema(closes, 44)
-    macd_line, macd_signal, macd_hist = _macd(closes)
+    ema_fast = _ema(closes, int(settings["ema_fast"]))
+    macd_line, macd_signal, macd_hist = _macd(
+        closes,
+        int(settings["macd_fast"]),
+        int(settings["macd_slow"]),
+        int(settings["macd_signal"]),
+    )
     return {
         "close": closes[-1],
-        "ema44": ema44[-1],
+        "ema44": ema_fast[-1],
+        "ema_fast": ema_fast[-1],
         "macd_line": macd_line[-1],
         "macd_signal": macd_signal[-1],
         "macd_hist": macd_hist[-1],

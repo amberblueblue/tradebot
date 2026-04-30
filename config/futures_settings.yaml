@@ -13,6 +13,22 @@ risk:
   max_funding_rate_abs: 0.001
   paper_test_max_funding_rate_abs: 0.005
   max_consecutive_losing_trades: 4
+strategy:
+  trend_long:
+    ema_fast: 44
+    ema_slow: 144
+    macd_fast: 12
+    macd_slow: 26
+    macd_signal: 9
+    rsi_period: 14
+    min_rsi: 45
+    max_rsi: 75
+  trend_long_test:
+    ema_fast: 44
+    macd_fast: 12
+    macd_slow: 26
+    macd_signal: 9
+    rsi_period: 14
 safety:
   allow_live_trading: false
   live_execute_enabled: false

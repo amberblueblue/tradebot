@@ -68,13 +68,37 @@ SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
 FUTURES_TIMEFRAME_OPTIONS = ("5m", "15m", "1h", "4h", "1d")
 FUTURES_RISK_SETTING_FIELDS = (
-    ("risk.max_leverage", "最大杠杆", "number", "0.0001"),
-    ("risk.max_margin_per_trade_usdt", "单笔最大保证金 USDT", "number", "0.0001"),
-    ("risk.max_position_ratio", "最大仓位占比", "number", "0.0001"),
-    ("risk.min_liquidation_distance_pct", "最小爆仓距离 %", "number", "0.0001"),
-    ("risk.max_funding_rate_abs", "最大资金费率", "number", "0.000001"),
-    ("risk.max_consecutive_losing_trades", "最大连续亏损次数", "number", "1"),
-    ("risk.paper_test_max_funding_rate_abs", "测试资金费率（仅 Paper）", "number", "0.000001"),
+    ("risk.max_leverage", "最大杠杆", "number", "0.0001", ""),
+    ("risk.max_margin_per_trade_usdt", "单笔最大保证金 USDT", "number", "0.0001", ""),
+    ("risk.max_position_ratio", "最大仓位占比", "number", "0.0001", ""),
+    ("risk.min_liquidation_distance_pct", "最小爆仓距离 %", "number", "0.0001", ""),
+    ("risk.max_funding_rate_abs", "最大资金费率", "number", "0.000001", ""),
+    ("risk.max_consecutive_losing_trades", "最大连续亏损次数", "number", "1", ""),
+    ("risk.paper_test_max_funding_rate_abs", "测试资金费率", "number", "0.000001", "仅 Paper 测试"),
+)
+FUTURES_STRATEGY_SETTING_FIELDS = (
+    ("strategy.trend_long.ema_fast", "trend_long 快速 EMA", "number", "1", ""),
+    ("strategy.trend_long.ema_slow", "trend_long 慢速 EMA", "number", "1", ""),
+    ("strategy.trend_long.macd_fast", "trend_long MACD 快线周期", "number", "1", ""),
+    ("strategy.trend_long.macd_slow", "trend_long MACD 慢线周期", "number", "1", ""),
+    ("strategy.trend_long.macd_signal", "trend_long MACD 信号线周期", "number", "1", ""),
+    ("strategy.trend_long.rsi_period", "trend_long RSI 周期", "number", "1", ""),
+    ("strategy.trend_long.min_rsi", "trend_long 最小 RSI", "number", "0.0001", ""),
+    ("strategy.trend_long.max_rsi", "trend_long 最大 RSI", "number", "0.0001", ""),
+    ("strategy.trend_long_test.ema_fast", "trend_long_test 快速 EMA", "number", "1", ""),
+    ("strategy.trend_long_test.macd_fast", "trend_long_test MACD 快线周期", "number", "1", ""),
+    ("strategy.trend_long_test.macd_slow", "trend_long_test MACD 慢线周期", "number", "1", ""),
+    ("strategy.trend_long_test.macd_signal", "trend_long_test MACD 信号线周期", "number", "1", ""),
+    ("strategy.trend_long_test.rsi_period", "trend_long_test RSI 周期", "number", "1", ""),
+)
+FUTURES_OTHER_SETTING_FIELDS = (
+    ("app.mode", "运行模式", "text", "1", ""),
+    ("app.polling_interval_seconds", "轮询间隔秒数", "number", "1", ""),
+    ("futures.base_url", "Futures API 地址", "text", "1", ""),
+    ("futures.request_timeout_seconds", "请求超时秒数", "number", "1", ""),
+    ("futures.rules_cache_ttl_seconds", "交易规则缓存秒数", "number", "1", ""),
+    ("safety.allow_live_trading", "允许实盘交易", "bool", "1", ""),
+    ("safety.live_execute_enabled", "启用实盘执行", "bool", "1", ""),
 )
 SPOT_SETTING_LABELS = {
     "app.mode": "运行模式",
@@ -747,6 +771,35 @@ def _flatten_editable_settings(payload: dict[str, object], prefix: str = "") -> 
     return fields
 
 
+def _spot_config_group_for_path(path: str) -> str:
+    parts = path.split(".")
+    lower_path = path.lower()
+    if (
+        parts[0] in {"risk", "safety"}
+        or "loss" in lower_path
+        or "max_loss" in lower_path
+        or "consecutive_loss" in lower_path
+    ):
+        return "risk"
+    if (
+        parts[0] in {"strategy", "feature_engine"}
+        or "indicator" in lower_path
+        or "ema" in lower_path
+        or "macd" in lower_path
+        or "rsi" in lower_path
+        or "timeframe" in lower_path
+    ):
+        return "strategy"
+    return "other"
+
+
+def _group_spot_config_fields(fields: list[dict[str, object]]) -> dict[str, list[dict[str, object]]]:
+    groups = {"risk": [], "strategy": [], "other": []}
+    for field in fields:
+        groups[_spot_config_group_for_path(str(field["path"]))].append(field)
+    return groups
+
+
 def _coerce_spot_setting_value(raw_value: str, current_value):
     value = raw_value.strip()
     if isinstance(current_value, bool):
@@ -777,27 +830,62 @@ def _spot_config_view(message: str | None = None, error: str | None = None) -> d
         settings_to_edit = {key: value for key, value in settings.items() if key != "symbols_config"}
         fields = _flatten_editable_settings(settings_to_edit)
     except Exception as exc:
-        return {"config_error": str(exc), "fields": [], "message": message, "error": error}
-    return {"config_error": None, "fields": fields, "message": message, "error": error}
+        return {
+            "config_error": str(exc),
+            "groups": {"risk": [], "strategy": [], "other": []},
+            "message": message,
+            "error": error,
+        }
+    return {
+        "config_error": None,
+        "groups": _group_spot_config_fields(fields),
+        "message": message,
+        "error": error,
+    }
+
+
+def _futures_config_fields(
+    raw_settings: dict[str, object],
+    field_specs: tuple[tuple[str, str, str, str, str], ...],
+) -> list[dict[str, object]]:
+    fields = []
+    for path, label, input_type, step, help_text in field_specs:
+        value = _get_path_value(raw_settings, path)
+        value_type = "bool" if isinstance(value, bool) else "number" if input_type == "number" else "text"
+        fields.append(
+            {
+                "path": path,
+                "label": label,
+                "value": value,
+                "input_type": input_type,
+                "value_type": value_type,
+                "step": step,
+                "help": help_text,
+            }
+        )
+    return fields
 
 
 def _futures_config_view(message: str | None = None, error: str | None = None) -> dict[str, object]:
     try:
         raw_settings = load_yaml_mapping(DEFAULT_FUTURES_SETTINGS_PATH)
     except Exception as exc:
-        return {"config_error": str(exc), "fields": [], "message": message, "error": error}
-    fields = []
-    for path, label, input_type, step in FUTURES_RISK_SETTING_FIELDS:
-        fields.append(
-            {
-                "path": path,
-                "label": label,
-                "value": _get_path_value(raw_settings, path),
-                "input_type": input_type,
-                "step": step,
-            }
-        )
-    return {"config_error": None, "fields": fields, "message": message, "error": error}
+        return {
+            "config_error": str(exc),
+            "groups": {"risk": [], "strategy": [], "other": []},
+            "message": message,
+            "error": error,
+        }
+    return {
+        "config_error": None,
+        "groups": {
+            "risk": _futures_config_fields(raw_settings, FUTURES_RISK_SETTING_FIELDS),
+            "strategy": _futures_config_fields(raw_settings, FUTURES_STRATEGY_SETTING_FIELDS),
+            "other": _futures_config_fields(raw_settings, FUTURES_OTHER_SETTING_FIELDS),
+        },
+        "message": message,
+        "error": error,
+    }
 
 
 def _parse_timeframe(form: dict[str, str], field_name: str) -> str:
@@ -1261,6 +1349,78 @@ def _parse_futures_risk_settings_from_form(form: dict[str, str]) -> dict[str, ob
         "max_consecutive_losing_trades": max_losing_trades,
         "paper_test_max_funding_rate_abs": paper_test_max_funding,
     }
+
+
+def _coerce_futures_setting_value(path: str, raw_value: str):
+    value = raw_value.strip()
+    if path == "app.mode":
+        if value not in {"paper", "live"}:
+            raise ValueError("运行模式必须是 paper 或 live")
+        return value
+    if path in {"safety.allow_live_trading", "safety.live_execute_enabled"}:
+        normalized = value.lower()
+        if normalized not in BOOLEAN_FORM_VALUES:
+            raise ValueError(f"{path} must be true or false")
+        return BOOLEAN_FORM_VALUES[normalized]
+    if value == "":
+        raise ValueError(f"{path} 不能为空")
+    if path in {
+        "app.polling_interval_seconds",
+        "futures.request_timeout_seconds",
+        "futures.rules_cache_ttl_seconds",
+        "strategy.trend_long.ema_fast",
+        "strategy.trend_long.ema_slow",
+        "strategy.trend_long.macd_fast",
+        "strategy.trend_long.macd_slow",
+        "strategy.trend_long.macd_signal",
+        "strategy.trend_long.rsi_period",
+        "strategy.trend_long_test.ema_fast",
+        "strategy.trend_long_test.macd_fast",
+        "strategy.trend_long_test.macd_slow",
+        "strategy.trend_long_test.macd_signal",
+        "strategy.trend_long_test.rsi_period",
+    }:
+        number = int(value)
+        if number <= 0:
+            raise ValueError(f"{path} must be greater than 0")
+        return number
+    if path.startswith("strategy."):
+        number = float(value)
+        if number <= 0:
+            raise ValueError(f"{path} must be greater than 0")
+        return number
+    if path.startswith("risk."):
+        if path in {
+            "risk.max_funding_rate_abs",
+            "risk.paper_test_max_funding_rate_abs",
+        }:
+            number = float(value)
+            if number < 0:
+                raise ValueError(f"{path} must be greater than or equal to 0")
+            return number
+        if path == "risk.max_consecutive_losing_trades":
+            number = int(value)
+            if number <= 0:
+                raise ValueError(f"{path} must be greater than 0")
+            return number
+        number = float(value)
+        if number <= 0:
+            raise ValueError(f"{path} must be greater than 0")
+        if path == "risk.max_position_ratio" and number > 1:
+            raise ValueError("最大仓位占比必须小于或等于 1")
+        return number
+    return value
+
+
+def _all_futures_setting_paths() -> tuple[str, ...]:
+    return tuple(
+        field[0]
+        for field in (
+            FUTURES_RISK_SETTING_FIELDS
+            + FUTURES_STRATEGY_SETTING_FIELDS
+            + FUTURES_OTHER_SETTING_FIELDS
+        )
+    )
 
 
 def _render_futures_symbol_edit_page(
@@ -1831,17 +1991,22 @@ async def spot_config_save(request: Request):
 async def futures_config_save(request: Request):
     form = await _read_form_data(request)
     try:
-        risk_updates = _parse_futures_risk_settings_from_form(form)
         settings = load_yaml_mapping(DEFAULT_FUTURES_SETTINGS_PATH)
-        risk = settings.setdefault("risk", {})
-        if not isinstance(risk, dict):
-            raise ValueError("risk must be a mapping")
-        risk.update(risk_updates)
+        updated_fields: list[str] = []
+        for path in _all_futures_setting_paths():
+            if path not in form:
+                continue
+            _set_path_value(
+                settings,
+                path,
+                _coerce_futures_setting_value(path, form[path]),
+            )
+            updated_fields.append(path)
         DEFAULT_FUTURES_SETTINGS_PATH.write_text(_dump_yaml(settings), encoding="utf-8")
         _log_settings_action(
-            "futures_risk_settings_update",
+            "futures_settings_update",
             mode="futures",
-            updated_fields=tuple(risk_updates.keys()),
+            updated_fields=tuple(updated_fields),
         )
     except Exception as exc:
         return RedirectResponse(
@@ -1849,7 +2014,7 @@ async def futures_config_save(request: Request):
             status_code=303,
         )
     return RedirectResponse(
-        url="/futures?futures_config_message=Futures%20%E9%A3%8E%E6%8E%A7%E5%8F%82%E6%95%B0%E5%B7%B2%E6%9B%B4%E6%96%B0",
+        url="/futures?futures_config_message=Futures%20%E9%85%8D%E7%BD%AE%E5%B7%B2%E6%9B%B4%E6%96%B0",
         status_code=303,
     )
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from futures_bot.config_loader import load_futures_strategy_settings
 from futures_bot.strategy.base import CLOSE, HOLD, LONG, StrategySignal
 
 
@@ -21,12 +22,14 @@ class TrendLongStrategy:
         signal_timeframe: str,
         max_funding_rate_abs: float,
     ) -> StrategySignal:
+        settings = load_futures_strategy_settings(self.name)
         trend_candles = _klines_to_candles(trend_klines)
         signal_candles = _klines_to_candles(signal_klines)
         metadata: dict[str, Any] = {
             "trend_bars": len(trend_candles),
             "signal_bars": len(signal_candles),
             "max_funding_rate_abs": max_funding_rate_abs,
+            "strategy_settings": settings,
         }
 
         if len(trend_candles) < 150 or len(signal_candles) < 60:
@@ -40,8 +43,8 @@ class TrendLongStrategy:
                 metadata=metadata,
             )
 
-        trend = _trend_snapshot(trend_candles)
-        signal = _signal_snapshot(signal_candles)
+        trend = _trend_snapshot(trend_candles, settings)
+        signal = _signal_snapshot(signal_candles, settings)
         metadata.update({"trend": trend, "signal": signal})
 
         if abs(funding_rate) > max_funding_rate_abs:
@@ -89,8 +92,9 @@ class TrendLongStrategy:
             and signal["ema44"] > signal["ema144"]
             and signal["macd_line"] > signal["macd_signal"]
             and signal["macd_hist"] >= signal["previous_macd_hist"]
-            and signal["rsi"] < 80.0
-            and mark_price >= signal["ema44"] * 0.995
+            and signal["rsi"] < float(settings["max_rsi"])
+            and signal["rsi"] >= float(settings["min_rsi"])
+            and mark_price >= signal["ema_fast"] * 0.995
         )
         if long_triggered:
             return StrategySignal(
@@ -172,50 +176,70 @@ def _rsi_value(avg_gain: float, avg_loss: float) -> float:
     return 100 - (100 / (1 + rs))
 
 
-def _macd(values: list[float]) -> tuple[list[float], list[float], list[float]]:
-    ema12 = _ema(values, 12)
-    ema26 = _ema(values, 26)
+def _macd(
+    values: list[float],
+    fast_period: int = 12,
+    slow_period: int = 26,
+    signal_period: int = 9,
+) -> tuple[list[float], list[float], list[float]]:
+    ema12 = _ema(values, fast_period)
+    ema26 = _ema(values, slow_period)
     macd_line = [fast - slow for fast, slow in zip(ema12, ema26)]
-    macd_signal = _ema(macd_line, 9)
+    macd_signal = _ema(macd_line, signal_period)
     macd_hist = [line - signal for line, signal in zip(macd_line, macd_signal)]
     return macd_line, macd_signal, macd_hist
 
 
-def _trend_snapshot(candles: list[dict[str, float]]) -> dict[str, Any]:
+def _trend_snapshot(candles: list[dict[str, float]], settings: dict[str, int | float]) -> dict[str, Any]:
     closes = [candle["close"] for candle in candles]
-    ema44 = _ema(closes, 44)
-    ema144 = _ema(closes, 144)
-    macd_line, macd_signal, macd_hist = _macd(closes)
+    ema_fast = _ema(closes, int(settings["ema_fast"]))
+    ema_slow = _ema(closes, int(settings["ema_slow"]))
+    macd_line, macd_signal, macd_hist = _macd(
+        closes,
+        int(settings["macd_fast"]),
+        int(settings["macd_slow"]),
+        int(settings["macd_signal"]),
+    )
     slope_lookback = 5
     latest = {
         "close": closes[-1],
-        "ema44": ema44[-1],
-        "ema144": ema144[-1],
-        "ema44_previous": ema44[-slope_lookback],
+        "ema44": ema_fast[-1],
+        "ema144": ema_slow[-1],
+        "ema_fast": ema_fast[-1],
+        "ema_slow": ema_slow[-1],
+        "ema44_previous": ema_fast[-slope_lookback],
+        "ema_fast_previous": ema_fast[-slope_lookback],
         "macd_line": macd_line[-1],
         "macd_signal": macd_signal[-1],
         "macd_hist": macd_hist[-1],
     }
     latest["bullish"] = bool(
-        latest["ema44"] > latest["ema144"]
-        and latest["ema44"] > latest["ema44_previous"]
-        and latest["close"] > latest["ema44"]
+        latest["ema_fast"] > latest["ema_slow"]
+        and latest["ema_fast"] > latest["ema_fast_previous"]
+        and latest["close"] > latest["ema_fast"]
         and latest["macd_line"] > latest["macd_signal"]
         and latest["macd_hist"] >= 0
     )
     return latest
 
 
-def _signal_snapshot(candles: list[dict[str, float]]) -> dict[str, Any]:
+def _signal_snapshot(candles: list[dict[str, float]], settings: dict[str, int | float]) -> dict[str, Any]:
     closes = [candle["close"] for candle in candles]
-    ema44 = _ema(closes, 44)
-    ema144 = _ema(closes, 144)
-    macd_line, macd_signal, macd_hist = _macd(closes)
-    rsi_values = _rsi(closes)
+    ema_fast = _ema(closes, int(settings["ema_fast"]))
+    ema_slow = _ema(closes, int(settings["ema_slow"]))
+    macd_line, macd_signal, macd_hist = _macd(
+        closes,
+        int(settings["macd_fast"]),
+        int(settings["macd_slow"]),
+        int(settings["macd_signal"]),
+    )
+    rsi_values = _rsi(closes, int(settings["rsi_period"]))
     return {
         "close": closes[-1],
-        "ema44": ema44[-1],
-        "ema144": ema144[-1],
+        "ema44": ema_fast[-1],
+        "ema144": ema_slow[-1],
+        "ema_fast": ema_fast[-1],
+        "ema_slow": ema_slow[-1],
         "macd_line": macd_line[-1],
         "macd_signal": macd_signal[-1],
         "macd_hist": macd_hist[-1],

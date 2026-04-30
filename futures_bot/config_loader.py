@@ -11,6 +11,25 @@ DEFAULT_FUTURES_SETTINGS_PATH = CONFIG_DIR / "futures_settings.yaml"
 DEFAULT_FUTURES_SYMBOLS_PATH = CONFIG_DIR / "futures_symbols.yaml"
 ALLOWED_FUTURES_STRATEGIES = {"trend_long", "trend_long_test"}
 ALLOWED_FUTURES_TIMEFRAMES = {"5m", "15m", "1h", "4h", "1d"}
+DEFAULT_FUTURES_STRATEGY_SETTINGS: dict[str, dict[str, int | float]] = {
+    "trend_long": {
+        "ema_fast": 44,
+        "ema_slow": 144,
+        "macd_fast": 12,
+        "macd_slow": 26,
+        "macd_signal": 9,
+        "rsi_period": 14,
+        "min_rsi": 45,
+        "max_rsi": 75,
+    },
+    "trend_long_test": {
+        "ema_fast": 44,
+        "macd_fast": 12,
+        "macd_slow": 26,
+        "macd_signal": 9,
+        "rsi_period": 14,
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -163,6 +182,34 @@ def load_yaml_mapping(path: Path) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError(f"Top-level YAML content must be a mapping: {path}")
     return parsed
+
+
+def load_futures_strategy_settings(
+    strategy_name: str,
+    settings_path: Path | None = None,
+) -> dict[str, int | float]:
+    defaults = DEFAULT_FUTURES_STRATEGY_SETTINGS.get(strategy_name, {})
+    result: dict[str, int | float] = dict(defaults)
+    path = settings_path or DEFAULT_FUTURES_SETTINGS_PATH
+    try:
+        settings = load_yaml_mapping(path)
+        strategy_config = settings.get("strategy", {})
+        if not isinstance(strategy_config, dict):
+            return result
+        configured = strategy_config.get(strategy_name, {})
+        if not isinstance(configured, dict):
+            return result
+    except Exception:
+        return result
+
+    for key, default_value in defaults.items():
+        value = configured.get(key, default_value)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if value <= 0:
+            continue
+        result[key] = int(value) if isinstance(default_value, int) else float(value)
+    return result
 
 
 def _require_mapping(config: dict[str, Any], key: str, path: Path) -> dict[str, Any]:
