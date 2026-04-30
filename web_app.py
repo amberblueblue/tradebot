@@ -57,9 +57,11 @@ LOG_FILE_MAP = {
     "system": BASE_DIR / "logs" / "system.log",
     "trade": BASE_DIR / "logs" / "trade.log",
     "error": BASE_DIR / "logs" / "error.log",
+    "futures": BASE_DIR / "logs" / "futures.log",
 }
 FUTURES_STRATEGY_SIGNALS_PATH = BASE_DIR / "data" / "futures_strategy_signals.json"
 FUTURES_LOOP_STATE_PATH = BASE_DIR / "data" / "futures_loop_state.json"
+FUTURES_PAPER_STATE_PATH = BASE_DIR / "data" / "futures_paper_state.json"
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
 FUTURES_TIMEFRAME_OPTIONS = ("5m", "15m", "1h", "4h", "1d")
@@ -447,6 +449,20 @@ def _read_recent_log_lines(path: Path, *, symbol: str | None = None, line_count:
     return filtered_lines[-line_count:]
 
 
+def _read_futures_log_lines(*, symbol: str | None = None, line_count: int = 100) -> tuple[list[str], bool]:
+    futures_log = LOG_FILE_MAP["futures"]
+    if futures_log.exists():
+        return _read_recent_log_lines(futures_log, symbol=symbol, line_count=line_count), True
+
+    system_lines = _read_recent_log_lines(
+        LOG_FILE_MAP["system"],
+        symbol=symbol,
+        line_count=max(line_count * 5, 500),
+    )
+    futures_lines = [line for line in system_lines if "futures" in line.lower()]
+    return futures_lines[-line_count:], LOG_FILE_MAP["system"].exists()
+
+
 def _configured_symbol_names() -> tuple[str, ...]:
     try:
         settings = load_project_config()
@@ -456,6 +472,13 @@ def _configured_symbol_names() -> tuple[str, ...]:
     if not isinstance(symbols, dict):
         return ()
     return tuple(symbols.keys())
+
+
+def _configured_futures_symbol_names() -> tuple[str, ...]:
+    try:
+        return tuple(load_futures_symbols_config().keys())
+    except Exception:
+        return ()
 
 
 def _format_yaml_scalar(value) -> str:
@@ -758,6 +781,67 @@ def _load_futures_paper_trade_history() -> list[dict[str, object]]:
     ]
 
 
+def _load_futures_paper_state() -> dict[str, object]:
+    if not FUTURES_PAPER_STATE_PATH.exists():
+        return {"positions": [], "closed_trades": [], "updated_at": None}
+    try:
+        payload = json.loads(FUTURES_PAPER_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"positions": [], "closed_trades": [], "updated_at": None}
+    if not isinstance(payload, dict):
+        return {"positions": [], "closed_trades": [], "updated_at": None}
+    positions = payload.get("positions", [])
+    closed_trades = payload.get("closed_trades", [])
+    return {
+        "positions": positions if isinstance(positions, list) else [],
+        "closed_trades": closed_trades if isinstance(closed_trades, list) else [],
+        "updated_at": payload.get("updated_at"),
+    }
+
+
+def _futures_paper_performance_rows() -> list[dict[str, object]]:
+    state = _load_futures_paper_state()
+    closed_trades = [
+        trade
+        for trade in state.get("closed_trades", [])
+        if isinstance(trade, dict)
+    ]
+    closed_trades.sort(key=lambda trade: str(trade.get("timestamp") or ""))
+
+    rows: list[dict[str, object]] = []
+    cumulative_realized_pnl = 0.0
+    for trade in closed_trades:
+        timestamp = trade.get("timestamp")
+        realized_pnl = _to_optional_float(trade.get("realized_pnl")) or 0.0
+        cumulative_realized_pnl += realized_pnl
+        rows.append(
+            {
+                "timestamp": timestamp,
+                "cumulative_realized_pnl": cumulative_realized_pnl,
+                "unrealized_pnl": 0.0,
+                "total_pnl": cumulative_realized_pnl,
+            }
+        )
+
+    unrealized_pnl = sum(
+        _to_optional_float(position.get("unrealized_pnl")) or 0.0
+        for position in state.get("positions", [])
+        if isinstance(position, dict)
+    )
+    if unrealized_pnl or state.get("positions"):
+        timestamp = state.get("updated_at") or datetime.now(timezone.utc).isoformat()
+        rows.append(
+            {
+                "timestamp": timestamp,
+                "cumulative_realized_pnl": cumulative_realized_pnl,
+                "unrealized_pnl": unrealized_pnl,
+                "total_pnl": cumulative_realized_pnl + unrealized_pnl,
+            }
+        )
+
+    return rows
+
+
 def _futures_strategy_signal_row(signal: dict[str, object]) -> dict[str, object]:
     return {
         "symbol": signal.get("symbol"),
@@ -987,6 +1071,7 @@ def _load_futures_view() -> dict:
     futures_positions: list[dict[str, object]] = []
     futures_paper_positions = _load_futures_paper_positions()
     futures_paper_trade_history = _load_futures_paper_trade_history()
+    futures_paper_performance = _futures_paper_performance_rows()
     futures_strategy_signals = _load_futures_strategy_signals()
     futures_loop_state = _load_futures_loop_state()
     futures_symbol_configs: list[dict[str, object]] = []
@@ -1011,6 +1096,7 @@ def _load_futures_view() -> dict:
             "futures_positions": futures_positions,
             "futures_paper_positions": futures_paper_positions,
             "futures_paper_trade_history": futures_paper_trade_history,
+            "futures_paper_performance": futures_paper_performance,
             "futures_strategy_signals": futures_strategy_signals,
             "futures_loop_state": futures_loop_state,
             "futures_symbol_configs": futures_symbol_configs,
@@ -1053,6 +1139,7 @@ def _load_futures_view() -> dict:
         "futures_positions": futures_positions,
         "futures_paper_positions": futures_paper_positions,
         "futures_paper_trade_history": futures_paper_trade_history,
+        "futures_paper_performance": futures_paper_performance,
         "futures_strategy_signals": futures_strategy_signals,
         "futures_loop_state": futures_loop_state,
         "futures_symbol_configs": futures_symbol_configs,
@@ -1666,12 +1753,22 @@ def account_risk_reset_api(request: Request):
 @app.get("/logs", response_class=HTMLResponse)
 def logs_page(request: Request, log_type: str = "system", symbol: str = "all"):
     selected_type = log_type if log_type in LOG_FILE_MAP else "system"
-    symbols = _configured_symbol_names()
+    symbols = (
+        _configured_futures_symbol_names()
+        if selected_type == "futures"
+        else _configured_symbol_names()
+    )
     selected_symbol = symbol.strip().upper()
     if selected_symbol not in symbols:
         selected_symbol = "all"
     symbol_filter = None if selected_symbol == "all" else selected_symbol
-    lines = _read_recent_log_lines(LOG_FILE_MAP[selected_type], symbol=symbol_filter, line_count=100)
+    if selected_type == "futures":
+        lines, log_exists = _read_futures_log_lines(symbol=symbol_filter, line_count=100)
+        empty_message = "No futures logs yet"
+    else:
+        lines = _read_recent_log_lines(LOG_FILE_MAP[selected_type], symbol=symbol_filter, line_count=100)
+        log_exists = LOG_FILE_MAP[selected_type].exists()
+        empty_message = "暂无日志" if symbol_filter is None else "该币种暂无日志"
     return templates.TemplateResponse(
         request,
         "logs.html",
@@ -1682,8 +1779,8 @@ def logs_page(request: Request, log_type: str = "system", symbol: str = "all"):
             "selected_symbol": selected_symbol,
             "available_symbols": symbols,
             "log_lines": lines,
-            "log_exists": LOG_FILE_MAP[selected_type].exists(),
-            "empty_message": "暂无日志" if symbol_filter is None else "该币种暂无日志",
+            "log_exists": log_exists,
+            "empty_message": empty_message,
         },
     )
 
@@ -1706,6 +1803,11 @@ def equity_curve_api():
             ]
         }
     )
+
+
+@app.get("/api/futures/paper_performance")
+def futures_paper_performance_api():
+    return JSONResponse({"data": _futures_paper_performance_rows()})
 
 
 @app.get("/api/symbol_pnl_curve")

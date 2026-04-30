@@ -124,7 +124,18 @@
       <div class="tab-pane fade" id="futures-performance-tab-pane" role="tabpanel" aria-labelledby="futures-performance-tab" tabindex="0">
         <div class="row g-4">
           <div class="col-12">
-            <div class="alert alert-light border mb-0">Performance chart not available yet</div>
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h2 class="h5 mb-3">Futures Paper Equity / PnL Curve</h2>
+                {% if futures_paper_performance %}
+                <div class="performance-chart-wrap">
+                  <canvas id="futuresPaperPerformanceChart"></canvas>
+                </div>
+                {% else %}
+                <div class="alert alert-light border mb-0">No futures performance data yet</div>
+                {% endif %}
+              </div>
+            </div>
           </div>
           <div class="col-12">
             <div class="card shadow-sm">
@@ -612,4 +623,71 @@
     </div>
   </div>
 </div>
+{% if futures_paper_performance %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  fetch("/api/futures/paper_performance")
+    .then((response) => response.json())
+    .then((payload) => {
+      const rows = payload.data || [];
+      const context = document.getElementById("futuresPaperPerformanceChart");
+      if (!context || rows.length === 0) {
+        return;
+      }
+
+      new Chart(context, {
+        type: "line",
+        data: {
+          labels: rows.map((row) => row.timestamp),
+          datasets: [
+            {
+              label: "Total PnL",
+              data: rows.map((row) => row.total_pnl),
+              borderColor: "#2563eb",
+              backgroundColor: "rgba(37, 99, 235, 0.12)",
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.25,
+              fill: true,
+            },
+            {
+              label: "Cumulative Realized PnL",
+              data: rows.map((row) => row.cumulative_realized_pnl),
+              borderColor: "#16a34a",
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.25,
+            },
+            {
+              label: "Unrealized PnL",
+              data: rows.map((row) => row.unrealized_pnl),
+              borderColor: "#f97316",
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.25,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: "index",
+            intersect: false,
+          },
+          scales: {
+            x: {
+              ticks: {
+                maxTicksLimit: 8,
+              },
+            },
+            y: {
+              beginAtZero: false,
+            },
+          },
+        },
+      });
+    });
+</script>
+{% endif %}
 {% endblock %}
