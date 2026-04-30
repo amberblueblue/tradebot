@@ -36,7 +36,9 @@ from execution.account_risk import (
 from futures_bot.config_loader import (
     ALLOWED_FUTURES_STRATEGIES,
     ALLOWED_FUTURES_TIMEFRAMES,
+    DEFAULT_FUTURES_SETTINGS_PATH,
     load_futures_config,
+    load_yaml_mapping,
     load_futures_symbols_config,
     save_futures_symbols_config,
 )
@@ -65,6 +67,75 @@ FUTURES_PAPER_STATE_PATH = BASE_DIR / "data" / "futures_paper_state.json"
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
 FUTURES_TIMEFRAME_OPTIONS = ("5m", "15m", "1h", "4h", "1d")
+FUTURES_RISK_SETTING_FIELDS = (
+    ("risk.max_leverage", "最大杠杆", "number", "0.0001"),
+    ("risk.max_margin_per_trade_usdt", "单笔最大保证金 USDT", "number", "0.0001"),
+    ("risk.max_position_ratio", "最大仓位占比", "number", "0.0001"),
+    ("risk.min_liquidation_distance_pct", "最小爆仓距离 %", "number", "0.0001"),
+    ("risk.max_funding_rate_abs", "最大资金费率", "number", "0.000001"),
+    ("risk.max_consecutive_losing_trades", "最大连续亏损次数", "number", "1"),
+    ("risk.paper_test_max_funding_rate_abs", "测试资金费率（仅 Paper）", "number", "0.000001"),
+)
+SPOT_SETTING_LABELS = {
+    "app.mode": "运行模式",
+    "exchange.name": "交易所名称",
+    "exchange.base_url": "交易所 API 地址",
+    "exchange.recv_window": "请求窗口",
+    "exchange.request_timeout_seconds": "请求超时秒数",
+    "binance.rules_cache_ttl_seconds": "交易规则缓存秒数",
+    "market.default_symbol": "默认标的",
+    "market.default_symbols": "默认标的列表",
+    "market.timeframe.entry": "入场周期",
+    "market.timeframe.trend": "趋势周期",
+    "market.polling_interval_seconds": "轮询间隔秒数",
+    "backtest.initial_capital": "回测初始资金",
+    "backtest.report_file": "回测报告文件",
+    "backtest.log_file": "回测日志文件",
+    "paper.initial_cash": "Paper 初始现金",
+    "paper.state_file": "Paper 状态文件",
+    "paper.trade_log_file": "Paper 交易日志",
+    "execution.enabled_symbols": "启用标的列表",
+    "execution.fixed_order_quote_amount": "固定下单金额",
+    "execution.cash_usage_pct": "现金使用比例",
+    "execution.max_positions": "最大持仓数量",
+    "execution.stop_loss_pct": "止损百分比",
+    "execution.take_profit_pct": "止盈百分比",
+    "execution.max_consecutive_errors": "最大连续错误次数",
+    "execution.runtime_state_file": "运行状态文件",
+    "execution.robot_initial_status": "机器人初始状态",
+    "execution.status_file": "状态文件",
+    "safety.allow_live_trading": "允许实盘交易",
+    "safety.live_execute_enabled": "启用实盘执行",
+    "safety.require_manual_confirm": "需要人工确认",
+    "safety.real_order_method_enabled": "真实下单方法开关",
+    "safety.max_consecutive_errors": "安全连续错误上限",
+    "logging.level": "日志级别",
+    "logging.system_log_file": "系统日志文件",
+    "logging.trade_log_file": "交易日志文件",
+    "logging.error_log_file": "错误日志文件",
+    "live.enabled": "实盘模式启用",
+    "feature_engine.atr_period": "ATR 周期",
+    "feature_engine.macd_fast": "MACD 快线",
+    "feature_engine.macd_slow": "MACD 慢线",
+    "feature_engine.macd_signal": "MACD 信号线",
+    "feature_engine.rsi_period": "RSI 周期",
+    "feature_engine.swing_atr_multiplier": "摆动 ATR 倍数",
+    "strategy.ema_slope_lookback": "EMA 斜率回看",
+    "strategy.macd_decay_bars": "MACD 衰减根数",
+    "strategy.rsi_overheat": "RSI 过热阈值",
+    "strategy.entry_cooldown_bars": "入场冷却根数",
+    "strategy.max_hold_bars": "最大持有根数",
+    "strategy.min_expected_return": "最小预期收益",
+    "risk.max_single_order_usdt": "单笔最大下单 USDT",
+    "risk.max_consecutive_losing_trades": "连续亏损限制",
+    "risk.stop_loss_pct": "止损百分比",
+    "risk.partial1_sell_pct": "第一档止盈卖出比例",
+    "risk.partial2_sell_pct": "第二档止盈卖出比例",
+    "risk.big_candle_multiplier": "大 K 线倍数",
+    "risk.big_candle_body_lookback": "大 K 线实体回看",
+    "risk.profit_giveback_ratio": "利润回撤比例",
+    "risk.profit_protection_trigger_pct": "利润保护触发百分比",
+}
 LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
 REAL_EXECUTE_ENV_VAR = "TRADEBOT_EXECUTE_REAL"
 FINAL_REAL_ORDER_ENV_VAR = "TRADEBOT_FINAL_REAL_ORDER"
@@ -597,6 +668,138 @@ def _parse_positive_amount(form: dict[str, str], field_name: str) -> float:
     return value
 
 
+def _parse_non_negative_number(form: dict[str, str], field_name: str) -> float:
+    raw_value = form.get(field_name, "").strip()
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be a number greater than or equal to 0") from exc
+    if value < 0:
+        raise ValueError(f"{field_name} must be greater than or equal to 0")
+    return value
+
+
+def _parse_positive_int(form: dict[str, str], field_name: str) -> int:
+    raw_value = form.get(field_name, "").strip()
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an integer greater than 0") from exc
+    if value <= 0:
+        raise ValueError(f"{field_name} must be greater than 0")
+    return value
+
+
+def _get_path_value(payload: dict[str, object], dotted_path: str):
+    current: object = payload
+    for part in dotted_path.split("."):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def _set_path_value(payload: dict[str, object], dotted_path: str, value) -> None:
+    current = payload
+    parts = dotted_path.split(".")
+    for part in parts[:-1]:
+        child = current.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            current[part] = child
+        current = child
+    current[parts[-1]] = value
+
+
+def _flatten_editable_settings(payload: dict[str, object], prefix: str = "") -> list[dict[str, object]]:
+    fields: list[dict[str, object]] = []
+    for key, value in payload.items():
+        if key == "symbols_config":
+            continue
+        dotted_path = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(value, dict):
+            fields.extend(_flatten_editable_settings(value, dotted_path))
+            continue
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            value_type = "bool" if isinstance(value, bool) else "number" if isinstance(value, (int, float)) else "text"
+            fields.append(
+                {
+                    "path": dotted_path,
+                    "label": SPOT_SETTING_LABELS.get(dotted_path, dotted_path),
+                    "value": value,
+                    "value_type": value_type,
+                    "input_type": "number" if value_type == "number" else "text",
+                    "step": "1" if isinstance(value, int) and not isinstance(value, bool) else "0.0001",
+                }
+            )
+            continue
+        if isinstance(value, list) and all(not isinstance(item, (dict, list)) for item in value):
+            fields.append(
+                {
+                    "path": dotted_path,
+                    "label": SPOT_SETTING_LABELS.get(dotted_path, dotted_path),
+                    "value": ", ".join(str(item) for item in value),
+                    "value_type": "list",
+                    "input_type": "text",
+                    "step": "1",
+                }
+            )
+    return fields
+
+
+def _coerce_spot_setting_value(raw_value: str, current_value):
+    value = raw_value.strip()
+    if isinstance(current_value, bool):
+        normalized = value.lower()
+        if normalized not in BOOLEAN_FORM_VALUES:
+            raise ValueError("布尔值必须是 true 或 false")
+        return BOOLEAN_FORM_VALUES[normalized]
+    if isinstance(current_value, int) and not isinstance(current_value, bool):
+        if value == "":
+            raise ValueError("必填字段不能为空")
+        return int(value)
+    if isinstance(current_value, float):
+        if value == "":
+            raise ValueError("必填字段不能为空")
+        return float(value)
+    if isinstance(current_value, list):
+        if value == "":
+            return []
+        return [item.strip() for item in value.split(",") if item.strip()]
+    if value == "":
+        raise ValueError("必填字段不能为空")
+    return value
+
+
+def _spot_config_view(message: str | None = None, error: str | None = None) -> dict[str, object]:
+    try:
+        settings = load_project_config()
+        settings_to_edit = {key: value for key, value in settings.items() if key != "symbols_config"}
+        fields = _flatten_editable_settings(settings_to_edit)
+    except Exception as exc:
+        return {"config_error": str(exc), "fields": [], "message": message, "error": error}
+    return {"config_error": None, "fields": fields, "message": message, "error": error}
+
+
+def _futures_config_view(message: str | None = None, error: str | None = None) -> dict[str, object]:
+    try:
+        raw_settings = load_yaml_mapping(DEFAULT_FUTURES_SETTINGS_PATH)
+    except Exception as exc:
+        return {"config_error": str(exc), "fields": [], "message": message, "error": error}
+    fields = []
+    for path, label, input_type, step in FUTURES_RISK_SETTING_FIELDS:
+        fields.append(
+            {
+                "path": path,
+                "label": label,
+                "value": _get_path_value(raw_settings, path),
+                "input_type": input_type,
+                "step": step,
+            }
+        )
+    return {"config_error": None, "fields": fields, "message": message, "error": error}
+
+
 def _parse_timeframe(form: dict[str, str], field_name: str) -> str:
     value = form.get(field_name, "").strip()
     if value not in VALID_SYMBOL_TIMEFRAMES:
@@ -957,6 +1160,15 @@ def _log_futures_symbol_action(action: str, symbol: str, **payload: object) -> N
     )
 
 
+def _log_settings_action(action: str, *, mode: str, **payload: object) -> None:
+    StructuredLogger(str(LOG_FILE_MAP["system"])).log(
+        action=action,
+        symbol="-",
+        mode=mode,
+        **payload,
+    )
+
+
 def _futures_symbols_redirect(
     *,
     message: str | None = None,
@@ -1027,6 +1239,30 @@ def _parse_futures_symbol_config_from_form(form: dict[str, str], risk_config) ->
     }
 
 
+def _parse_futures_risk_settings_from_form(form: dict[str, str]) -> dict[str, object]:
+    max_leverage = _parse_positive_amount(form, "risk.max_leverage")
+    max_margin = _parse_positive_amount(form, "risk.max_margin_per_trade_usdt")
+    max_position_ratio = _parse_positive_amount(form, "risk.max_position_ratio")
+    if max_position_ratio > 1:
+        raise ValueError("最大仓位占比必须小于或等于 1")
+    min_liquidation_distance = _parse_positive_amount(form, "risk.min_liquidation_distance_pct")
+    max_funding = _parse_non_negative_number(form, "risk.max_funding_rate_abs")
+    paper_test_max_funding = _parse_non_negative_number(
+        form,
+        "risk.paper_test_max_funding_rate_abs",
+    )
+    max_losing_trades = _parse_positive_int(form, "risk.max_consecutive_losing_trades")
+    return {
+        "max_leverage": max_leverage,
+        "max_margin_per_trade_usdt": max_margin,
+        "max_position_ratio": max_position_ratio,
+        "min_liquidation_distance_pct": min_liquidation_distance,
+        "max_funding_rate_abs": max_funding,
+        "max_consecutive_losing_trades": max_losing_trades,
+        "paper_test_max_funding_rate_abs": paper_test_max_funding,
+    }
+
+
 def _render_futures_symbol_edit_page(
     request: Request,
     symbol: str,
@@ -1075,6 +1311,7 @@ def _load_futures_view() -> dict:
     futures_strategy_signals = _load_futures_strategy_signals()
     futures_loop_state = _load_futures_loop_state()
     futures_symbol_configs: list[dict[str, object]] = []
+    futures_config_view = _futures_config_view()
     futures_risk_controls = {
         "max_leverage": None,
         "max_margin_per_trade_usdt": None,
@@ -1100,6 +1337,7 @@ def _load_futures_view() -> dict:
             "futures_strategy_signals": futures_strategy_signals,
             "futures_loop_state": futures_loop_state,
             "futures_symbol_configs": futures_symbol_configs,
+            "futures_config_view": futures_config_view,
             "futures_risk_controls": futures_risk_controls,
             "rows": [],
             "warnings": [f"Futures config error: {exc}"],
@@ -1143,6 +1381,7 @@ def _load_futures_view() -> dict:
         "futures_strategy_signals": futures_strategy_signals,
         "futures_loop_state": futures_loop_state,
         "futures_symbol_configs": futures_symbol_configs,
+        "futures_config_view": futures_config_view,
         "futures_risk_controls": futures_risk_controls,
         "rows": [],
         "warnings": warnings,
@@ -1472,6 +1711,7 @@ def _load_spot_view(symbol: str = "") -> dict:
         "spot_performance": _load_performance_view(symbol=symbol),
         "spot_account": _load_account_view(),
         "spot_symbols": _load_symbols_view(),
+        "spot_config": _spot_config_view(),
     }
 
 
@@ -1517,22 +1757,101 @@ def health_page(request: Request):
 @app.get("/futures", response_class=HTMLResponse)
 def futures_page(request: Request):
     context = _load_futures_view()
+    futures_symbol_message = request.query_params.get("futures_symbol_message")
+    futures_symbol_error = request.query_params.get("futures_symbol_error")
+    futures_config_message = request.query_params.get("futures_config_message")
+    futures_config_error = request.query_params.get("futures_config_error")
+    futures_active_tab = "positions"
+    if futures_symbol_message or futures_symbol_error or context.get("futures_symbol_edit_config"):
+        futures_active_tab = "symbols"
+    if futures_config_message or futures_config_error:
+        futures_active_tab = "config"
     context.update(
         {
             "request": request,
             "project_name": "TraderBot Local Console",
-            "futures_symbol_message": request.query_params.get("futures_symbol_message"),
-            "futures_symbol_error": request.query_params.get("futures_symbol_error"),
+            "futures_symbol_message": futures_symbol_message,
+            "futures_symbol_error": futures_symbol_error,
+            "futures_active_tab": futures_active_tab,
         }
     )
+    context["futures_config_view"]["message"] = futures_config_message
+    context["futures_config_view"]["error"] = futures_config_error
     return templates.TemplateResponse(request, "futures.html", context)
 
 
 @app.get("/spot", response_class=HTMLResponse)
 def spot_page(request: Request, symbol: str = ""):
     context = _load_spot_view(symbol=symbol)
-    context.update({"request": request})
+    spot_config_message = request.query_params.get("spot_config_message")
+    spot_config_error = request.query_params.get("spot_config_error")
+    context.update(
+        {
+            "request": request,
+            "spot_active_tab": "config" if spot_config_message or spot_config_error else "positions",
+        }
+    )
+    context["spot_config"]["message"] = spot_config_message
+    context["spot_config"]["error"] = spot_config_error
     return templates.TemplateResponse(request, "spot.html", context)
+
+
+@app.post("/spot/config")
+async def spot_config_save(request: Request):
+    form = await _read_form_data(request)
+    try:
+        settings = load_project_config()
+        updated_settings = {key: value for key, value in settings.items() if key != "symbols_config"}
+        fields = _flatten_editable_settings(updated_settings)
+        for field in fields:
+            path = str(field["path"])
+            form_key = f"setting__{path}"
+            if form_key not in form:
+                continue
+            current_value = _get_path_value(updated_settings, path)
+            _set_path_value(
+                updated_settings,
+                path,
+                _coerce_spot_setting_value(form[form_key], current_value),
+            )
+        _write_settings_config(updated_settings)
+        _log_settings_action("spot_settings_update", mode="spot")
+    except Exception as exc:
+        return RedirectResponse(
+            url=f"/spot?spot_config_error={quote(str(exc))}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        url="/spot?spot_config_message=Spot%20%E9%85%8D%E7%BD%AE%E5%B7%B2%E6%9B%B4%E6%96%B0",
+        status_code=303,
+    )
+
+
+@app.post("/futures/config")
+async def futures_config_save(request: Request):
+    form = await _read_form_data(request)
+    try:
+        risk_updates = _parse_futures_risk_settings_from_form(form)
+        settings = load_yaml_mapping(DEFAULT_FUTURES_SETTINGS_PATH)
+        risk = settings.setdefault("risk", {})
+        if not isinstance(risk, dict):
+            raise ValueError("risk must be a mapping")
+        risk.update(risk_updates)
+        DEFAULT_FUTURES_SETTINGS_PATH.write_text(_dump_yaml(settings), encoding="utf-8")
+        _log_settings_action(
+            "futures_risk_settings_update",
+            mode="futures",
+            updated_fields=tuple(risk_updates.keys()),
+        )
+    except Exception as exc:
+        return RedirectResponse(
+            url=f"/futures?futures_config_error={quote(str(exc))}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        url="/futures?futures_config_message=Futures%20%E9%A3%8E%E6%8E%A7%E5%8F%82%E6%95%B0%E5%B7%B2%E6%9B%B4%E6%96%B0",
+        status_code=303,
+    )
 
 
 @app.get("/futures/symbols/{symbol}/edit", response_class=HTMLResponse)

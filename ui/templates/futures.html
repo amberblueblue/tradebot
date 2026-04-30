@@ -7,7 +7,7 @@
   <div class="col-12">
     <ul class="nav nav-tabs" id="futuresTabs" role="tablist">
       <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="futures-positions-tab" data-bs-toggle="tab" data-bs-target="#futures-positions-tab-pane" type="button" role="tab" aria-controls="futures-positions-tab-pane" aria-selected="true">Positions</button>
+        <button class="nav-link {% if futures_active_tab == 'positions' %}active{% endif %}" id="futures-positions-tab" data-bs-toggle="tab" data-bs-target="#futures-positions-tab-pane" type="button" role="tab" aria-controls="futures-positions-tab-pane" aria-selected="{{ 'true' if futures_active_tab == 'positions' else 'false' }}">Positions</button>
       </li>
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="futures-performance-tab" data-bs-toggle="tab" data-bs-target="#futures-performance-tab-pane" type="button" role="tab" aria-controls="futures-performance-tab-pane" aria-selected="false">Performance</button>
@@ -16,12 +16,15 @@
         <button class="nav-link" id="futures-account-tab" data-bs-toggle="tab" data-bs-target="#futures-account-tab-pane" type="button" role="tab" aria-controls="futures-account-tab-pane" aria-selected="false">Account</button>
       </li>
       <li class="nav-item" role="presentation">
-        <button class="nav-link" id="futures-symbols-tab" data-bs-toggle="tab" data-bs-target="#futures-symbols-tab-pane" type="button" role="tab" aria-controls="futures-symbols-tab-pane" aria-selected="false">Symbols</button>
+        <button class="nav-link {% if futures_active_tab == 'symbols' %}active{% endif %}" id="futures-symbols-tab" data-bs-toggle="tab" data-bs-target="#futures-symbols-tab-pane" type="button" role="tab" aria-controls="futures-symbols-tab-pane" aria-selected="{{ 'true' if futures_active_tab == 'symbols' else 'false' }}">Symbols</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link {% if futures_active_tab == 'config' %}active{% endif %}" id="futures-config-tab" data-bs-toggle="tab" data-bs-target="#futures-config-tab-pane" type="button" role="tab" aria-controls="futures-config-tab-pane" aria-selected="{{ 'true' if futures_active_tab == 'config' else 'false' }}">Config</button>
       </li>
     </ul>
 
     <div class="tab-content pt-4" id="futuresTabsContent">
-      <div class="tab-pane fade show active" id="futures-positions-tab-pane" role="tabpanel" aria-labelledby="futures-positions-tab" tabindex="0">
+      <div class="tab-pane fade {% if futures_active_tab == 'positions' %}show active{% endif %}" id="futures-positions-tab-pane" role="tabpanel" aria-labelledby="futures-positions-tab" tabindex="0">
         <div class="row g-4">
           <div class="col-12">
             <div class="card shadow-sm">
@@ -263,15 +266,15 @@
           <div class="col-12">
             <div class="card shadow-sm">
               <div class="card-body">
-                <h2 class="h5 mb-3">Futures Risk Controls</h2>
+                <h2 class="h5 mb-3">Futures 风控参数</h2>
                 <div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-3">
-                  <div class="col"><h3 class="h6 text-secondary">Max Leverage</h3><p class="mb-0">{% if futures_risk_controls.max_leverage is not none %}{{ futures_risk_controls.max_leverage }}{% else %}n/a{% endif %}</p></div>
-                  <div class="col"><h3 class="h6 text-secondary">Max Margin</h3><p class="mb-0">{% if futures_risk_controls.max_margin_per_trade_usdt is not none %}{{ futures_risk_controls.max_margin_per_trade_usdt }} USDT{% else %}n/a{% endif %}</p></div>
-                  <div class="col"><h3 class="h6 text-secondary">Max Position Ratio</h3><p class="mb-0">{% if futures_risk_controls.max_position_ratio is not none %}{{ futures_risk_controls.max_position_ratio }}{% else %}n/a{% endif %}</p></div>
-                  <div class="col"><h3 class="h6 text-secondary">Min Liq. Distance</h3><p class="mb-0">{% if futures_risk_controls.min_liquidation_distance_pct is not none %}{{ futures_risk_controls.min_liquidation_distance_pct }}%{% else %}n/a{% endif %}</p></div>
-                  <div class="col"><h3 class="h6 text-secondary">Max Funding Abs</h3><p class="mb-0">{% if futures_risk_controls.max_funding_rate_abs is not none %}{{ futures_risk_controls.max_funding_rate_abs }}{% else %}n/a{% endif %}</p></div>
-                  <div class="col"><h3 class="h6 text-secondary">Paper Test Funding Abs</h3><p class="mb-0">{% if futures_risk_controls.paper_test_max_funding_rate_abs is not none %}{{ futures_risk_controls.paper_test_max_funding_rate_abs }}{% else %}n/a{% endif %}</p></div>
-                  <div class="col"><h3 class="h6 text-secondary">Max Losing Trades</h3><p class="mb-0">{% if futures_risk_controls.max_consecutive_losing_trades is not none %}{{ futures_risk_controls.max_consecutive_losing_trades }}{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">最大杠杆</h3><p class="mb-0">{% if futures_risk_controls.max_leverage is not none %}{{ futures_risk_controls.max_leverage }}{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">单笔最大保证金</h3><p class="mb-0">{% if futures_risk_controls.max_margin_per_trade_usdt is not none %}{{ futures_risk_controls.max_margin_per_trade_usdt }} USDT{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">最大仓位占比</h3><p class="mb-0">{% if futures_risk_controls.max_position_ratio is not none %}{{ futures_risk_controls.max_position_ratio }}{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">最小爆仓距离</h3><p class="mb-0">{% if futures_risk_controls.min_liquidation_distance_pct is not none %}{{ futures_risk_controls.min_liquidation_distance_pct }}%{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">最大资金费率</h3><p class="mb-0">{% if futures_risk_controls.max_funding_rate_abs is not none %}{{ futures_risk_controls.max_funding_rate_abs }}{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">测试资金费率（仅 Paper）</h3><p class="mb-0">{% if futures_risk_controls.paper_test_max_funding_rate_abs is not none %}{{ futures_risk_controls.paper_test_max_funding_rate_abs }}{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">最大连续亏损次数</h3><p class="mb-0">{% if futures_risk_controls.max_consecutive_losing_trades is not none %}{{ futures_risk_controls.max_consecutive_losing_trades }}{% else %}n/a{% endif %}</p></div>
                 </div>
               </div>
             </div>
@@ -420,7 +423,7 @@
         </div>
       </div>
 
-      <div class="tab-pane fade" id="futures-symbols-tab-pane" role="tabpanel" aria-labelledby="futures-symbols-tab" tabindex="0">
+      <div class="tab-pane fade {% if futures_active_tab == 'symbols' %}show active{% endif %}" id="futures-symbols-tab-pane" role="tabpanel" aria-labelledby="futures-symbols-tab" tabindex="0">
         <div class="row g-4">
           {% if futures_symbol_message %}
           <div class="col-12">
@@ -611,6 +614,10 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <div class="tab-pane fade {% if futures_active_tab == 'config' %}show active{% endif %}" id="futures-config-tab-pane" role="tabpanel" aria-labelledby="futures-config-tab" tabindex="0">
+        {% include "partials/futures_config.html" %}
       </div>
     </div>
   </div>

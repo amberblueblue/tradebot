@@ -1,0 +1,38 @@
+{% if futures_config_view.config_error %}
+<div class="alert alert-danger mb-0">配置读取失败：{{ futures_config_view.config_error }}</div>
+{% else %}
+{% if futures_config_view.message %}
+<div class="alert alert-success mb-3">{{ futures_config_view.message }}</div>
+{% endif %}
+{% if futures_config_view.error %}
+<div class="alert alert-danger mb-3">{{ futures_config_view.error }}</div>
+{% endif %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h5 mb-3">Futures 风控参数</h2>
+    <form method="post" action="/futures/config">
+      <div class="row g-3">
+        {% for field in futures_config_view.fields %}
+        <div class="col-md-6 col-xl-4">
+          <label class="form-label" for="futures-setting-{{ loop.index }}">{{ field.label }}</label>
+          <input
+            class="form-control"
+            id="futures-setting-{{ loop.index }}"
+            name="{{ field.path }}"
+            type="{{ field.input_type }}"
+            step="{{ field.step }}"
+            min="0"
+            value="{{ field.value }}"
+            required
+          >
+          <div class="form-text">{{ field.path }}</div>
+        </div>
+        {% endfor %}
+        <div class="col-12">
+          <button class="btn btn-primary" type="submit">保存 Futures 风控参数</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}

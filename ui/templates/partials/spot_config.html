@@ -1,0 +1,44 @@
+{% if spot_config.config_error %}
+<div class="alert alert-danger mb-0">配置读取失败：{{ spot_config.config_error }}</div>
+{% else %}
+{% if spot_config.message %}
+<div class="alert alert-success mb-3">{{ spot_config.message }}</div>
+{% endif %}
+{% if spot_config.error %}
+<div class="alert alert-danger mb-3">{{ spot_config.error }}</div>
+{% endif %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h5 mb-3">Spot 配置</h2>
+    <form method="post" action="/spot/config">
+      <div class="row g-3">
+        {% for field in spot_config.fields %}
+        <div class="col-md-6 col-xl-4">
+          <label class="form-label" for="spot-setting-{{ loop.index }}">{{ field.label }}</label>
+          {% if field.value_type == "bool" %}
+          <select class="form-select" id="spot-setting-{{ loop.index }}" name="setting__{{ field.path }}" required>
+            <option value="true" {% if field.value %}selected{% endif %}>是</option>
+            <option value="false" {% if not field.value %}selected{% endif %}>否</option>
+          </select>
+          {% else %}
+          <input
+            class="form-control"
+            id="spot-setting-{{ loop.index }}"
+            name="setting__{{ field.path }}"
+            type="{{ field.input_type }}"
+            step="{{ field.step }}"
+            value="{{ field.value }}"
+            required
+          >
+          {% endif %}
+          <div class="form-text">{{ field.path }}</div>
+        </div>
+        {% endfor %}
+        <div class="col-12">
+          <button class="btn btn-primary" type="submit">保存 Spot 配置</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}

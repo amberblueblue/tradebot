@@ -7,7 +7,7 @@
   <div class="col-12">
     <ul class="nav nav-tabs" id="spotTabs" role="tablist">
       <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="spot-positions-tab" data-bs-toggle="tab" data-bs-target="#spot-positions" type="button" role="tab" aria-controls="spot-positions" aria-selected="true">Positions</button>
+        <button class="nav-link {% if spot_active_tab == 'positions' %}active{% endif %}" id="spot-positions-tab" data-bs-toggle="tab" data-bs-target="#spot-positions" type="button" role="tab" aria-controls="spot-positions" aria-selected="{{ 'true' if spot_active_tab == 'positions' else 'false' }}">Positions</button>
       </li>
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="spot-performance-tab" data-bs-toggle="tab" data-bs-target="#spot-performance" type="button" role="tab" aria-controls="spot-performance" aria-selected="false">Performance</button>
@@ -18,9 +18,12 @@
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="spot-symbols-tab" data-bs-toggle="tab" data-bs-target="#spot-symbols" type="button" role="tab" aria-controls="spot-symbols" aria-selected="false">Symbols</button>
       </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link {% if spot_active_tab == 'config' %}active{% endif %}" id="spot-config-tab" data-bs-toggle="tab" data-bs-target="#spot-config" type="button" role="tab" aria-controls="spot-config" aria-selected="{{ 'true' if spot_active_tab == 'config' else 'false' }}">Config</button>
+      </li>
     </ul>
     <div class="tab-content pt-4" id="spotTabsContent">
-      <div class="tab-pane fade show active" id="spot-positions" role="tabpanel" aria-labelledby="spot-positions-tab" tabindex="0">
+      <div class="tab-pane fade {% if spot_active_tab == 'positions' %}show active{% endif %}" id="spot-positions" role="tabpanel" aria-labelledby="spot-positions-tab" tabindex="0">
         {% with config_error=spot_positions.config_error, positions=spot_positions.positions, has_configured_symbols=spot_positions.has_configured_symbols, has_active_symbols=spot_positions.has_active_symbols %}
           {% include "partials/spot_positions.html" %}
         {% endwith %}
@@ -39,6 +42,9 @@
         {% with config_error=spot_symbols.config_error, symbols=spot_symbols.symbols, message=spot_symbols.message, error=spot_symbols.error %}
           {% include "partials/spot_symbols.html" %}
         {% endwith %}
+      </div>
+      <div class="tab-pane fade {% if spot_active_tab == 'config' %}show active{% endif %}" id="spot-config" role="tabpanel" aria-labelledby="spot-config-tab" tabindex="0">
+        {% include "partials/spot_config.html" %}
       </div>
     </div>
   </div>
