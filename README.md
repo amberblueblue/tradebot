@@ -351,11 +351,37 @@ BINANCE_API_SECRET=your_read_only_api_secret_here
 - 手动真实 MARKET BUY 必须满足 `app.mode=live`、`safety.allow_live_trading=true`、`safety.live_execute_enabled=true`、`safety.real_order_method_enabled=true`、`TRADEBOT_CONFIRM_LIVE=YES`、`TRADEBOT_EXECUTE_REAL=YES`、`TRADEBOT_FINAL_REAL_ORDER=YES`
 - 强烈建议首次真实手动买入 `amount <= 6 USDT`
 
-## 从 dev 发布到 prod
+## 三环境发布流程
 
-开发环境目录为 `/Users/eason/traderbot_dev`，生产环境目录为 `/Users/eason/traderbot_prod`。生产环境由 launchd 管理，并保留自己的 `.env`、`logs/` 和 `data/tradebot.sqlite3`。
+项目按三套本地环境发布：
 
-从开发环境发布到生产环境：
+- `/Users/eason/traderbot_dev`：开发环境，Codex 在这里修改代码。
+- `/Users/eason/traderbot_test`：测试环境，用来验收 dev 代码。
+- `/Users/eason/traderbot_prod`：生产环境，稳定运行。
+
+推荐发布链路是 `dev -> test -> prod`。生产参数在 prod 前端维护，不随代码发布覆盖。
+
+从开发环境同步到测试环境：
+
+```bash
+cd /Users/eason/traderbot_dev
+bash scripts/deploy_to_test.sh
+```
+
+`deploy_to_test.sh` 会从 dev 同步代码到 test，排除 `.env`、`logs/`、`data/`、`.git/`、`__pycache__/` 和 `.DS_Store`。测试环境允许覆盖 config，用来跟随 dev 验收。同步后会在 test 里运行 `py_compile`。
+
+测试验收通过后，从测试环境发布到生产环境：
+
+```bash
+cd /Users/eason/traderbot_test
+bash scripts/deploy_test_to_prod.sh
+```
+
+`deploy_test_to_prod.sh` 会先在 test 运行 `py_compile`，然后停止 prod，同步代码到 prod，再启动 prod 并运行 `status_prod.sh`。同步到 prod 时会排除 `.env`、`logs/`、`data/`、`config/settings.yaml`、`config/symbols.yaml`、`config/futures_settings.yaml` 和 `config/futures_symbols.yaml`，避免覆盖生产 API key、日志、状态数据和生产配置。
+
+### 旧 dev 到 prod 脚本
+
+保留 `scripts/deploy_to_prod.sh` 作为旧流程，但推荐优先使用 `dev -> test -> prod`。
 
 ```bash
 cd /Users/eason/traderbot_dev
