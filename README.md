@@ -209,6 +209,8 @@ python3 futures_bot/run_futures_bot.py --once
 
 循环间隔读取 `config/futures_settings.yaml` 中的 `app.polling_interval_seconds`。`/futures` 页面会显示最近一次 futures loop 时间、每个 symbol 最近一次 signal、reason 和更新时间，并继续显示 Futures Paper Positions 和 Trade History。
 
+`trend_long_test` is available as a loose Futures strategy for paper-loop validation only. It is explicitly marked `paper_only=true`, is rejected when `app.mode` is not `paper`, and must never be used for real trading.
+
 合约交易风险高于现货交易。后续阶段会单独实现 futures 风控，包括杠杆限制、保证金限制、强平距离、资金费率过滤和独立运行时安全控制；在这些风控完成前，futures bot 仍保持公共数据只读模式。
 
 ### Futures Read-only API Key
@@ -261,7 +263,9 @@ Futures 风控骨架已接入配置、CLI dry-run 和 `/futures` 只读展示。
 config/futures_settings.yaml
 ```
 
-当前支持的参数包括 `max_leverage`、`max_margin_per_trade_usdt`、`max_position_ratio`、`min_liquidation_distance_pct`、`max_funding_rate_abs` 和 `max_consecutive_losing_trades`。
+当前支持的参数包括 `max_leverage`、`max_margin_per_trade_usdt`、`max_position_ratio`、`min_liquidation_distance_pct`、`max_funding_rate_abs`、`paper_test_max_funding_rate_abs` 和 `max_consecutive_losing_trades`。
+
+`paper_test_max_funding_rate_abs` 只用于 `app.mode=paper` 且 `strategy=trend_long_test` 同时满足的 paper 测试信号和 paper 风控检查，不参与真实风控，不用于实盘，也不影响正常 `trend_long`。`trend_long` 永远使用 `risk.max_funding_rate_abs`。
 
 当前阶段只是开仓前 dry-run 风控检查：
 

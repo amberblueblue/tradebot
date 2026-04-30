@@ -25,6 +25,7 @@ class StrategySignal:
 
 class FuturesStrategy(Protocol):
     name: str
+    paper_only: bool
 
     def generate_signal(
         self,

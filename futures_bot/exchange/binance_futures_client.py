@@ -21,6 +21,9 @@ DEFAULT_TIMEOUT_SECONDS = 10
 DEFAULT_RECV_WINDOW = 15000
 DEFAULT_FUTURES_LOG_FILE = "logs/futures.log"
 SENSITIVE_PARAM_KEYS = {"signature"}
+PUBLIC_GET_MAX_RETRIES = 3
+PUBLIC_GET_BACKOFF_SECONDS = (1, 2, 3)
+RETRYABLE_PUBLIC_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 class BinanceFuturesPublicAPIError(RuntimeError):
@@ -100,49 +103,101 @@ class BinanceFuturesClient:
             params=self._safe_params(params),
         )
 
-    def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        url = f"{self.base_url}{path}"
-        request_params = params or {}
+    def _is_retryable_public_http_error(self, exc: requests.exceptions.HTTPError) -> bool:
+        if exc.response is None:
+            return False
+        status_code = exc.response.status_code
+        return status_code in RETRYABLE_PUBLIC_STATUS_CODES
 
-        try:
-            response = requests.get(url, params=request_params, timeout=self.timeout)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.HTTPError as exc:
+    def _public_retry_reason(self, exc: BaseException, path: str) -> str:
+        if isinstance(exc, requests.exceptions.HTTPError):
             status_code = exc.response.status_code if exc.response is not None else "unknown"
             response_text = exc.response.text if exc.response is not None else ""
-            reason = (
+            return (
                 "Binance Futures public API returned "
                 f"HTTP {status_code} for {path}; body={response_text}"
             )
-            self._log_error(
-                action="futures_public_api_error",
-                reason=reason,
-                path=path,
-                params=request_params,
-            )
-            raise BinanceFuturesPublicAPIError(reason) from exc
-        except requests.exceptions.RequestException as exc:
-            reason = (
-                "Binance Futures public API request failed "
-                f"for {path}: {type(exc).__name__}: {exc}"
-            )
-            self._log_error(
-                action="futures_public_api_error",
-                reason=reason,
-                path=path,
-                params=request_params,
-            )
-            raise BinanceFuturesPublicAPIError(reason) from exc
-        except ValueError as exc:
-            reason = f"Binance Futures public API returned invalid JSON for {path}: {exc}"
-            self._log_error(
-                action="futures_public_api_error",
-                reason=reason,
-                path=path,
-                params=request_params,
-            )
-            raise BinanceFuturesPublicAPIError(reason) from exc
+        return (
+            "Binance Futures public API request failed "
+            f"for {path}: {type(exc).__name__}: {exc}"
+        )
+
+    def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        url = f"{self.base_url}{path}"
+        request_params = params or {}
+        last_error: BaseException | None = None
+        last_reason = ""
+
+        for attempt in range(PUBLIC_GET_MAX_RETRIES + 1):
+            try:
+                response = requests.get(url, params=request_params, timeout=self.timeout)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.HTTPError as exc:
+                last_error = exc
+                last_reason = self._public_retry_reason(exc, path)
+                if not self._is_retryable_public_http_error(exc):
+                    self._log_error(
+                        action="futures_public_api_failed",
+                        reason=last_reason,
+                        path=path,
+                        params=request_params,
+                    )
+                    raise BinanceFuturesPublicAPIError(last_reason) from exc
+            except (
+                requests.exceptions.SSLError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+            ) as exc:
+                last_error = exc
+                last_reason = self._public_retry_reason(exc, path)
+            except requests.exceptions.RequestException as exc:
+                last_error = exc
+                last_reason = self._public_retry_reason(exc, path)
+                self._log_error(
+                    action="futures_public_api_failed",
+                    reason=last_reason,
+                    path=path,
+                    params=request_params,
+                )
+                raise BinanceFuturesPublicAPIError(last_reason) from exc
+            except ValueError as exc:
+                last_error = exc
+                last_reason = f"Binance Futures public API returned invalid JSON for {path}: {exc}"
+                self._log_error(
+                    action="futures_public_api_failed",
+                    reason=last_reason,
+                    path=path,
+                    params=request_params,
+                )
+                raise BinanceFuturesPublicAPIError(last_reason) from exc
+
+            if attempt < PUBLIC_GET_MAX_RETRIES:
+                retry_number = attempt + 1
+                backoff_seconds = PUBLIC_GET_BACKOFF_SECONDS[attempt]
+                self._log_warning(
+                    action="futures_public_api_retry",
+                    reason=(
+                        f"{last_reason}; retry {retry_number}/{PUBLIC_GET_MAX_RETRIES} "
+                        f"after {backoff_seconds}s"
+                    ),
+                    path=path,
+                    params=request_params,
+                )
+                time.sleep(backoff_seconds)
+
+        final_reason = (
+            f"{last_reason}; retries_exhausted={PUBLIC_GET_MAX_RETRIES}"
+            if last_reason
+            else f"Binance Futures public API request failed for {path}; retries exhausted"
+        )
+        self._log_error(
+            action="futures_public_api_failed",
+            reason=final_reason,
+            path=path,
+            params=request_params,
+        )
+        raise BinanceFuturesPublicAPIError(final_reason) from last_error
 
     def _load_credentials(self) -> FuturesBinanceReadOnlyCredentials:
         return self.credentials or load_futures_binance_readonly_credentials()

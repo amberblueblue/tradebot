@@ -1,0 +1,257 @@
+{% if config_error %}
+<div class="alert alert-danger mb-0">
+  数据读取失败：{{ config_error }}
+</div>
+{% else %}
+<div class="row g-4">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <form class="row gy-2 gx-3 align-items-end" method="get" action="/performance">
+          <div class="col-sm-8 col-lg-4">
+            <label class="form-label" for="symbol">Symbol</label>
+            <select class="form-select" id="symbol" name="symbol">
+              {% if not available_symbols %}
+              <option value="">No symbols configured</option>
+              {% endif %}
+              {% for item in available_symbols %}
+              <option value="{{ item }}"{% if item == selected_symbol %} selected{% endif %}>{{ item }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-sm-4 col-lg-2">
+            <button class="btn btn-dark w-100" type="submit">Filter</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {% if not has_data %}
+  <div class="col-12">
+    <div class="alert alert-light border mb-0">
+      {{ "No symbols configured" if not available_symbols else "暂无收益数据" }}
+    </div>
+  </div>
+  {% else %}
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">当前总权益</h2>
+        <p class="fs-4 mb-0">{{ "%.4f"|format(latest.total_equity) }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">累计收益</h2>
+        {% if cumulative_return > 0 %}
+        <p class="fs-4 mb-0 text-success">{{ "%.4f"|format(cumulative_return) }}</p>
+        {% elif cumulative_return < 0 %}
+        <p class="fs-4 mb-0 text-danger">{{ "%.4f"|format(cumulative_return) }}</p>
+        {% else %}
+        <p class="fs-4 mb-0 text-secondary">{{ "%.4f"|format(cumulative_return) }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">现金余额</h2>
+        <p class="fs-4 mb-0">{{ "%.4f"|format(latest.cash) }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">持仓市值</h2>
+        <p class="fs-4 mb-0">{{ "%.4f"|format(latest.position_value) }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">已实现盈亏</h2>
+        {% if latest.realized_pnl > 0 %}
+        <p class="fs-4 mb-0 text-success">{{ "%.4f"|format(latest.realized_pnl) }}</p>
+        {% elif latest.realized_pnl < 0 %}
+        <p class="fs-4 mb-0 text-danger">{{ "%.4f"|format(latest.realized_pnl) }}</p>
+        {% else %}
+        <p class="fs-4 mb-0 text-secondary">{{ "%.4f"|format(latest.realized_pnl) }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">未实现盈亏</h2>
+        {% if latest.unrealized_pnl > 0 %}
+        <p class="fs-4 mb-0 text-success">{{ "%.4f"|format(latest.unrealized_pnl) }}</p>
+        {% elif latest.unrealized_pnl < 0 %}
+        <p class="fs-4 mb-0 text-danger">{{ "%.4f"|format(latest.unrealized_pnl) }}</p>
+        {% else %}
+        <p class="fs-4 mb-0 text-secondary">{{ "%.4f"|format(latest.unrealized_pnl) }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">总权益曲线</h2>
+        <div class="performance-chart-wrap">
+          <canvas id="equityChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">{{ selected_symbol }} 单币收益曲线</h2>
+        {% if not selected_symbol or not symbol_has_data %}
+        <div class="alert alert-light border mb-0">该币种暂无收益数据</div>
+        {% else %}
+        <div class="performance-chart-wrap">
+          <canvas id="symbolPnlChart"></canvas>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% set should_load_charts = has_data or selected_symbol and symbol_has_data %}
+{% if should_load_charts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  {% if has_data %}
+  fetch("/api/equity_curve")
+    .then((response) => response.json())
+    .then((payload) => {
+      const rows = payload.data || [];
+      const context = document.getElementById("equityChart");
+      if (!context || rows.length === 0) {
+        return;
+      }
+
+      new Chart(context, {
+        type: "line",
+        data: {
+          labels: rows.map((row) => row.timestamp),
+          datasets: [
+            {
+              label: "Total Equity",
+              data: rows.map((row) => row.total_equity),
+              borderColor: "#2563eb",
+              backgroundColor: "rgba(37, 99, 235, 0.12)",
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.25,
+              fill: true,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: "index",
+            intersect: false,
+          },
+          scales: {
+            x: {
+              ticks: {
+                maxTicksLimit: 8,
+              },
+            },
+            y: {
+              beginAtZero: false,
+            },
+          },
+        },
+      });
+    });
+  {% endif %}
+
+  {% if selected_symbol and symbol_has_data %}
+  const selectedSymbol = {{ selected_symbol | tojson }};
+  fetch(`/api/symbol_pnl_curve?symbol=${encodeURIComponent(selectedSymbol)}`)
+    .then((response) => response.json())
+    .then((payload) => {
+      const rows = payload.data || [];
+      const context = document.getElementById("symbolPnlChart");
+      if (!context || rows.length === 0) {
+        return;
+      }
+
+      new Chart(context, {
+        type: "line",
+        data: {
+          labels: rows.map((row) => row.timestamp),
+          datasets: [
+            {
+              label: "Total PnL",
+              data: rows.map((row) => row.total_pnl),
+              borderColor: "#16a34a",
+              backgroundColor: "rgba(22, 163, 74, 0.12)",
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.25,
+              fill: true,
+            },
+            {
+              label: "Realized PnL",
+              data: rows.map((row) => row.realized_pnl),
+              borderColor: "#2563eb",
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.25,
+            },
+            {
+              label: "Unrealized PnL",
+              data: rows.map((row) => row.unrealized_pnl),
+              borderColor: "#f97316",
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.25,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: "index",
+            intersect: false,
+          },
+          scales: {
+            x: {
+              ticks: {
+                maxTicksLimit: 8,
+              },
+            },
+            y: {
+              beginAtZero: false,
+            },
+          },
+        },
+      });
+    });
+  {% endif %}
+</script>
+{% endif %}

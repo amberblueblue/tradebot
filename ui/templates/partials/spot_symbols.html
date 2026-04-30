@@ -1,0 +1,101 @@
+{% if config_error %}
+<div class="alert alert-danger mb-0">
+  配置读取失败：{{ config_error }}
+</div>
+{% else %}
+{% if message %}
+<div class="alert alert-success mb-3">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-danger mb-3">{{ error }}</div>
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Add Symbol</h2>
+        <form class="row gy-2 gx-3 align-items-end" method="post" action="/symbols/add">
+          <div class="col-sm-8 col-lg-5">
+            <label class="form-label" for="symbol">Symbol</label>
+            <input
+              class="form-control"
+              id="symbol"
+              name="symbol"
+              pattern="[A-Za-z0-9]+[Uu][Ss][Dd][Tt]"
+              placeholder="ETHUSDT"
+              required
+            >
+          </div>
+          <div class="col-sm-4 col-lg-2">
+            <button class="btn btn-primary w-100" type="submit">Add</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Configured Symbols</h2>
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead>
+              <tr>
+                <th>symbol</th>
+                <th>enabled</th>
+                <th>trend_timeframe</th>
+                <th>signal_timeframe</th>
+                <th>order_amount</th>
+                <th>max_loss_amount</th>
+                <th>paused_by_loss</th>
+                <th class="text-end">actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for symbol, symbol_config in symbols.items() %}
+              <tr>
+                <td class="fw-semibold">{{ symbol }}</td>
+                <td>
+                  {% if symbol_config.enabled %}
+                  <span class="badge text-bg-success">true</span>
+                  {% else %}
+                  <span class="badge text-bg-secondary">false</span>
+                  {% endif %}
+                </td>
+                <td>{{ symbol_config.trend_timeframe }}</td>
+                <td>{{ symbol_config.signal_timeframe }}</td>
+                <td>{{ symbol_config.order_amount }}</td>
+                <td>{{ symbol_config.max_loss_amount }}</td>
+                <td>{{ symbol_config.paused_by_loss }}</td>
+                <td>
+                  <div class="d-flex justify-content-end gap-2">
+                    <a class="btn btn-sm btn-outline-primary" href="/symbols/{{ symbol }}/edit">Edit</a>
+                    <form method="post" action="/symbols/{{ symbol }}/toggle">
+                      {% if symbol_config.enabled %}
+                      <button class="btn btn-sm btn-outline-secondary" type="submit">Disable</button>
+                      {% else %}
+                      <button class="btn btn-sm btn-outline-success" type="submit">Enable</button>
+                      {% endif %}
+                    </form>
+                    <form method="post" action="/symbols/{{ symbol }}/delete" onsubmit="return confirm('Delete {{ symbol }}?');">
+                      <input type="hidden" name="confirm" value="yes">
+                      <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="8" class="text-secondary">No symbols configured</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}

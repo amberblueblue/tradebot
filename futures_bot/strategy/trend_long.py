@@ -7,6 +7,7 @@ from futures_bot.strategy.base import CLOSE, HOLD, LONG, StrategySignal
 
 class TrendLongStrategy:
     name = "trend_long"
+    paper_only = False
 
     def generate_signal(
         self,

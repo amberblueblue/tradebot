@@ -996,6 +996,7 @@ def _load_futures_view() -> dict:
         "max_position_ratio": None,
         "min_liquidation_distance_pct": None,
         "max_funding_rate_abs": None,
+        "paper_test_max_funding_rate_abs": None,
         "max_consecutive_losing_trades": None,
     }
     try:
@@ -1036,6 +1037,7 @@ def _load_futures_view() -> dict:
             "max_position_ratio": futures_config.risk.max_position_ratio,
             "min_liquidation_distance_pct": futures_config.risk.min_liquidation_distance_pct,
             "max_funding_rate_abs": futures_config.risk.max_funding_rate_abs,
+            "paper_test_max_funding_rate_abs": futures_config.risk.paper_test_max_funding_rate_abs,
             "max_consecutive_losing_trades": futures_config.risk.max_consecutive_losing_trades,
         }
     )
@@ -1377,6 +1379,15 @@ def _load_performance_view(symbol: str = "") -> dict:
     }
 
 
+def _load_spot_view(symbol: str = "") -> dict:
+    return {
+        "spot_positions": _load_positions_view(),
+        "spot_performance": _load_performance_view(symbol=symbol),
+        "spot_account": _load_account_view(),
+        "spot_symbols": _load_symbols_view(),
+    }
+
+
 def _runtime_store():
     settings = load_project_config()
     execution_config = load_execution_runtime(settings)
@@ -1428,6 +1439,13 @@ def futures_page(request: Request):
         }
     )
     return templates.TemplateResponse(request, "futures.html", context)
+
+
+@app.get("/spot", response_class=HTMLResponse)
+def spot_page(request: Request, symbol: str = ""):
+    context = _load_spot_view(symbol=symbol)
+    context.update({"request": request})
+    return templates.TemplateResponse(request, "spot.html", context)
 
 
 @app.get("/futures/symbols/{symbol}/edit", response_class=HTMLResponse)

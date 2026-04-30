@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from futures_bot.strategy.base import FuturesStrategy
 from futures_bot.strategy.trend_long import TrendLongStrategy
+from futures_bot.strategy.trend_long_test import TrendLongTestStrategy
 
 
 _STRATEGIES: dict[str, FuturesStrategy] = {}
@@ -20,3 +21,4 @@ def get_strategy(name: str) -> FuturesStrategy:
 
 
 register_strategy(TrendLongStrategy())
+register_strategy(TrendLongTestStrategy())

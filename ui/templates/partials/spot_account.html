@@ -1,0 +1,113 @@
+<div class="row g-4">
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">API Key</h2>
+        <p class="fs-5 mb-0">{{ "configured" if credentials.api_key_configured else "missing" }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">API Secret</h2>
+        <p class="fs-5 mb-0">{{ "configured" if credentials.api_secret_configured else "missing" }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Account Query</h2>
+        <p class="fs-5 mb-0 {% if query_ok %}text-success{% elif query_error %}text-danger{% endif %}">
+          {{ "success" if query_ok else "not available" }}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="card-title h6 text-secondary">Updated</h2>
+        <p class="fs-6 mb-0">
+          {% if updated_at %}
+            {{ updated_at.strftime("%Y-%m-%d %H:%M:%S %Z") }}
+          {% else %}
+            n/a
+          {% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {% if query_error %}
+  <div class="col-12">
+    <div class="alert alert-warning shadow-sm mb-0" role="alert">
+      {{ query_error }}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h5 mb-3">USDT Balance</h2>
+        {% if usdt_balance %}
+        <dl class="row mb-0">
+          <dt class="col-5">Free</dt>
+          <dd class="col-7">{{ "%.8f"|format(usdt_balance.free) }}</dd>
+          <dt class="col-5">Locked</dt>
+          <dd class="col-7">{{ "%.8f"|format(usdt_balance.locked) }}</dd>
+          <dt class="col-5">Total</dt>
+          <dd class="col-7 fw-semibold">{{ "%.8f"|format(usdt_balance.total) }}</dd>
+        </dl>
+        {% else %}
+        <p class="text-secondary mb-0">n/a</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Non-zero Assets</h2>
+        {% if nonzero_balances %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th class="text-end">Free</th>
+                <th class="text-end">Locked</th>
+                <th class="text-end">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for balance in nonzero_balances %}
+              <tr>
+                <td class="fw-semibold">{{ balance.asset }}</td>
+                <td class="text-end">{{ "%.8f"|format(balance.free) }}</td>
+                <td class="text-end">{{ "%.8f"|format(balance.locked) }}</td>
+                <td class="text-end">{{ "%.8f"|format(balance.total) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-secondary mb-0">
+          {% if query_ok %}
+            No non-zero balances.
+          {% else %}
+            Account balances are unavailable.
+          {% endif %}
+        </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>

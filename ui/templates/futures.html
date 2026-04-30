@@ -7,735 +7,607 @@
   <div class="col-12">
     <div class="hero-panel p-4 p-md-5 rounded-4">
       <p class="text-uppercase small mb-2 text-secondary">Binance USD-M Futures</p>
-      <h1 class="display-6 mb-2">Futures Public Data</h1>
+      <h1 class="display-6 mb-2">Futures</h1>
       <p class="text-secondary mb-0">Futures Bot status: {{ status }}</p>
     </div>
   </div>
 
-  <div class="col-md-4">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="card-title h6 text-secondary">Base URL</h2>
-        <p class="fs-6 mb-0">{{ base_url }}</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-4">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="card-title h6 text-secondary">Enabled Futures Symbols</h2>
-        <p class="fs-6 mb-0">
-          {% if enabled_symbols %}
-            {{ enabled_symbols | join(", ") }}
-          {% else %}
-            No futures symbols enabled
-          {% endif %}
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-4">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="card-title h6 text-secondary">Futures API Key</h2>
-        <p class="fs-6 mb-0">
-          {% if futures_credentials.configured %}
-            configured
-          {% else %}
-            Futures API key missing
-          {% endif %}
-        </p>
-      </div>
-    </div>
-  </div>
-
-  {% if warnings %}
   <div class="col-12">
-    <div class="alert alert-warning shadow-sm mb-0" role="alert">
-      <h2 class="h6 mb-2">Futures public API warning</h2>
-      <ul class="mb-0">
-        {% for warning in warnings %}
-        <li>{{ warning }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-  </div>
-  {% endif %}
+    <ul class="nav nav-tabs" id="futuresTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="futures-positions-tab" data-bs-toggle="tab" data-bs-target="#futures-positions-tab-pane" type="button" role="tab" aria-controls="futures-positions-tab-pane" aria-selected="true">Positions</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="futures-performance-tab" data-bs-toggle="tab" data-bs-target="#futures-performance-tab-pane" type="button" role="tab" aria-controls="futures-performance-tab-pane" aria-selected="false">Performance</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="futures-account-tab" data-bs-toggle="tab" data-bs-target="#futures-account-tab-pane" type="button" role="tab" aria-controls="futures-account-tab-pane" aria-selected="false">Account</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="futures-symbols-tab" data-bs-toggle="tab" data-bs-target="#futures-symbols-tab-pane" type="button" role="tab" aria-controls="futures-symbols-tab-pane" aria-selected="false">Symbols</button>
+      </li>
+    </ul>
 
-  {% if futures_symbol_message %}
-  <div class="col-12">
-    <div class="alert alert-success shadow-sm mb-0" role="alert">
-      {{ futures_symbol_message }}
-    </div>
-  </div>
-  {% endif %}
+    <div class="tab-content pt-4" id="futuresTabsContent">
+      <div class="tab-pane fade show active" id="futures-positions-tab-pane" role="tabpanel" aria-labelledby="futures-positions-tab" tabindex="0">
+        <div class="row g-4">
+          <div class="col-12">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h2 class="h5 mb-3">Futures Positions</h2>
+                {% if futures_positions %}
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th>Symbol</th>
+                        <th>Side</th>
+                        <th class="text-end">Amount</th>
+                        <th class="text-end">Entry Price</th>
+                        <th class="text-end">Mark Price</th>
+                        <th class="text-end">Unrealized PnL</th>
+                        <th class="text-end">Liq. Price</th>
+                        <th class="text-end">Leverage</th>
+                        <th>Margin Type</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for position in futures_positions %}
+                      <tr>
+                        <td class="fw-semibold">{{ position.symbol }}</td>
+                        <td>{{ position.position_side or "n/a" }}</td>
+                        <td class="text-end">{% if position.position_amount is not none %}{{ position.position_amount }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if position.entry_price is not none %}{{ position.entry_price }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if position.mark_price is not none %}{{ position.mark_price }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if position.unrealized_pnl is not none %}{{ position.unrealized_pnl }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if position.liquidation_price is not none %}{{ position.liquidation_price }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{{ position.leverage or "n/a" }}</td>
+                        <td>{{ position.margin_type or "n/a" }}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                {% else %}
+                <p class="text-secondary mb-0">No futures positions</p>
+                {% endif %}
+              </div>
+            </div>
+          </div>
 
-  {% if futures_symbol_error %}
-  <div class="col-12">
-    <div class="alert alert-danger shadow-sm mb-0" role="alert">
-      {{ futures_symbol_error }}
-    </div>
-  </div>
-  {% endif %}
-
-  {% if futures_symbol_edit_config %}
-  <div class="col-12">
-    <div class="card shadow-sm border-primary">
-      <div class="card-body">
-        <h2 class="h5 mb-3">Edit Futures Symbol</h2>
-        <p class="fw-semibold mb-3">{{ futures_symbol_edit_config.symbol }}</p>
-        {% if futures_symbol_edit_error %}
-        <div class="alert alert-danger" role="alert">
-          {{ futures_symbol_edit_error }}
+          <div class="col-12">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h2 class="h5 mb-3">Futures Paper Positions</h2>
+                {% if futures_paper_positions %}
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th>Symbol</th>
+                        <th>Side</th>
+                        <th class="text-end">Entry Price</th>
+                        <th class="text-end">Mark Price</th>
+                        <th class="text-end">Position Amount</th>
+                        <th class="text-end">Margin</th>
+                        <th class="text-end">Leverage</th>
+                        <th class="text-end">Unrealized PnL</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for position in futures_paper_positions %}
+                      <tr>
+                        <td class="fw-semibold">{{ position.symbol }}</td>
+                        <td>{{ position.side or "n/a" }}</td>
+                        <td class="text-end">{% if position.entry_price is not none %}{{ position.entry_price }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if position.mark_price is not none %}{{ position.mark_price }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if position.position_amt is not none %}{{ position.position_amt }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if position.margin is not none %}{{ position.margin }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if position.leverage is not none %}{{ position.leverage }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end {% if position.unrealized_pnl is not none and position.unrealized_pnl > 0 %}text-success{% elif position.unrealized_pnl is not none and position.unrealized_pnl < 0 %}text-danger{% endif %}">
+                          {% if position.unrealized_pnl is not none %}{{ position.unrealized_pnl }}{% else %}n/a{% endif %}
+                        </td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                {% else %}
+                <p class="text-secondary mb-0">No futures paper positions</p>
+                {% endif %}
+              </div>
+            </div>
+          </div>
         </div>
-        {% endif %}
-        <form method="post" action="/futures/symbols/{{ futures_symbol_edit_config.symbol }}/edit">
-          <div class="row g-3 align-items-end">
-            <div class="col-md-3 col-xl-2">
-              <label for="edit-futures-enabled" class="form-label">Enabled</label>
-              <select id="edit-futures-enabled" name="enabled" class="form-select" required>
-                <option value="true" {% if futures_symbol_edit_config.enabled %}selected{% endif %}>true</option>
-                <option value="false" {% if not futures_symbol_edit_config.enabled %}selected{% endif %}>false</option>
-              </select>
-            </div>
-            <div class="col-md-3 col-xl-2">
-              <label for="edit-futures-strategy" class="form-label">Strategy</label>
-              <select id="edit-futures-strategy" name="strategy" class="form-select" required>
-                {% for strategy in futures_allowed_strategies %}
-                <option value="{{ strategy }}" {% if strategy == futures_symbol_edit_config.strategy %}selected{% endif %}>{{ strategy }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-3 col-xl-2">
-              <label for="edit-futures-leverage" class="form-label">Leverage</label>
-              <input
-                id="edit-futures-leverage"
-                name="leverage"
-                type="number"
-                class="form-control"
-                min="0.0001"
-                step="0.0001"
-                value="{{ futures_symbol_edit_config.leverage }}"
-                required
-              >
-            </div>
-            <div class="col-md-3 col-xl-2">
-              <label for="edit-futures-margin" class="form-label">Margin Amount</label>
-              <input
-                id="edit-futures-margin"
-                name="margin_amount"
-                type="number"
-                class="form-control"
-                min="0.0001"
-                step="0.0001"
-                value="{{ futures_symbol_edit_config.margin_amount }}"
-                required
-              >
-            </div>
-            <div class="col-md-3 col-xl-2">
-              <label for="edit-futures-trend-timeframe" class="form-label">Trend Timeframe</label>
-              <select id="edit-futures-trend-timeframe" name="trend_timeframe" class="form-select" required>
-                {% for timeframe in futures_allowed_timeframes %}
-                <option value="{{ timeframe }}" {% if timeframe == futures_symbol_edit_config.trend_timeframe %}selected{% endif %}>{{ timeframe }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-3 col-xl-2">
-              <label for="edit-futures-signal-timeframe" class="form-label">Signal Timeframe</label>
-              <select id="edit-futures-signal-timeframe" name="signal_timeframe" class="form-select" required>
-                {% for timeframe in futures_allowed_timeframes %}
-                <option value="{{ timeframe }}" {% if timeframe == futures_symbol_edit_config.signal_timeframe %}selected{% endif %}>{{ timeframe }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-12">
-              <div class="d-flex flex-wrap gap-2">
-                <button type="submit" class="btn btn-primary">Save</button>
-                <a class="btn btn-outline-secondary" href="/futures">Cancel</a>
+      </div>
+
+      <div class="tab-pane fade" id="futures-performance-tab-pane" role="tabpanel" aria-labelledby="futures-performance-tab" tabindex="0">
+        <div class="row g-4">
+          <div class="col-12">
+            <div class="alert alert-light border mb-0">Performance chart not available yet</div>
+          </div>
+          <div class="col-12">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h2 class="h5 mb-3">Futures Paper Trade History</h2>
+                {% if futures_paper_trade_history %}
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th>Timestamp</th>
+                        <th>Symbol</th>
+                        <th>Side</th>
+                        <th class="text-end">Entry Price</th>
+                        <th class="text-end">Exit Price</th>
+                        <th class="text-end">Position Amount</th>
+                        <th class="text-end">Margin</th>
+                        <th class="text-end">Leverage</th>
+                        <th class="text-end">Realized PnL</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for trade in futures_paper_trade_history %}
+                      <tr>
+                        <td>{{ trade.timestamp or "n/a" }}</td>
+                        <td class="fw-semibold">{{ trade.symbol }}</td>
+                        <td>{{ trade.side or "n/a" }}</td>
+                        <td class="text-end">{% if trade.entry_price is not none %}{{ trade.entry_price }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if trade.exit_price is not none %}{{ trade.exit_price }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if trade.position_amt is not none %}{{ trade.position_amt }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if trade.margin is not none %}{{ trade.margin }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if trade.leverage is not none %}{{ trade.leverage }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end {% if trade.realized_pnl is not none and trade.realized_pnl > 0 %}text-success{% elif trade.realized_pnl is not none and trade.realized_pnl < 0 %}text-danger{% endif %}">
+                          {% if trade.realized_pnl is not none %}{{ trade.realized_pnl }}{% else %}n/a{% endif %}
+                        </td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                {% else %}
+                <p class="text-secondary mb-0">No futures paper trade history</p>
+                {% endif %}
               </div>
             </div>
           </div>
-        </form>
+        </div>
       </div>
-    </div>
-  </div>
-  {% endif %}
 
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h2 class="h5 mb-3">Add Futures Symbol</h2>
-        <form method="post" action="/futures/symbols/add">
-          <div class="row g-3 align-items-end">
-            <div class="col-md-3 col-xl-2">
-              <label for="futures-symbol" class="form-label">Symbol</label>
-              <input
-                id="futures-symbol"
-                name="symbol"
-                type="text"
-                class="form-control"
-                placeholder="BTCUSDT"
-                autocomplete="off"
-                required
-              >
-            </div>
-            <div class="col-md-3 col-xl-2">
-              <label for="futures-strategy" class="form-label">Strategy</label>
-              <select id="futures-strategy" name="strategy" class="form-select">
-                {% for strategy in futures_allowed_strategies %}
-                <option value="{{ strategy }}" {% if strategy == futures_symbol_form_defaults.strategy %}selected{% endif %}>{{ strategy }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-3 col-xl-1">
-              <label for="futures-leverage" class="form-label">Leverage</label>
-              <input
-                id="futures-leverage"
-                name="leverage"
-                type="number"
-                class="form-control"
-                min="0.0001"
-                step="0.0001"
-                value="{{ futures_symbol_form_defaults.leverage }}"
-                required
-              >
-            </div>
-            <div class="col-md-3 col-xl-2">
-              <label for="futures-margin" class="form-label">Margin Amount</label>
-              <input
-                id="futures-margin"
-                name="margin_amount"
-                type="number"
-                class="form-control"
-                min="0.0001"
-                step="0.0001"
-                value="{{ futures_symbol_form_defaults.margin_amount }}"
-                required
-              >
-            </div>
-            <div class="col-md-3 col-xl-2">
-              <label for="futures-trend-timeframe" class="form-label">Trend Timeframe</label>
-              <select id="futures-trend-timeframe" name="trend_timeframe" class="form-select">
-                {% for timeframe in futures_allowed_timeframes %}
-                <option value="{{ timeframe }}" {% if timeframe == futures_symbol_form_defaults.trend_timeframe %}selected{% endif %}>{{ timeframe }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-3 col-xl-2">
-              <label for="futures-signal-timeframe" class="form-label">Signal Timeframe</label>
-              <select id="futures-signal-timeframe" name="signal_timeframe" class="form-select">
-                {% for timeframe in futures_allowed_timeframes %}
-                <option value="{{ timeframe }}" {% if timeframe == futures_symbol_form_defaults.signal_timeframe %}selected{% endif %}>{{ timeframe }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-3 col-xl-1">
-              <div class="form-check mb-2">
-                <input
-                  id="futures-enabled"
-                  name="enabled"
-                  type="checkbox"
-                  class="form-check-input"
-                  value="true"
-                  {% if futures_symbol_form_defaults.enabled %}checked{% endif %}
-                >
-                <label for="futures-enabled" class="form-check-label">Enabled</label>
+      <div class="tab-pane fade" id="futures-account-tab-pane" role="tabpanel" aria-labelledby="futures-account-tab" tabindex="0">
+        <div class="row g-4">
+          <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+              <div class="card-body">
+                <h2 class="card-title h6 text-secondary">Base URL</h2>
+                <p class="fs-6 mb-0">{{ base_url }}</p>
               </div>
             </div>
-            <div class="col-md-3 col-xl-12">
-              <button type="submit" class="btn btn-primary">Add</button>
+          </div>
+          <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+              <div class="card-body">
+                <h2 class="card-title h6 text-secondary">Enabled Futures Symbols</h2>
+                <p class="fs-6 mb-0">
+                  {% if enabled_symbols %}{{ enabled_symbols | join(", ") }}{% else %}No futures symbols enabled{% endif %}
+                </p>
+              </div>
             </div>
           </div>
-        </form>
-      </div>
-    </div>
-  </div>
+          <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+              <div class="card-body">
+                <h2 class="card-title h6 text-secondary">Futures API Key</h2>
+                <p class="fs-6 mb-0">
+                  {% if futures_credentials.configured %}configured{% else %}Futures API key missing{% endif %}
+                </p>
+              </div>
+            </div>
+          </div>
 
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h2 class="h5 mb-3">Futures Symbols</h2>
-        {% if futures_symbol_configs %}
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Enabled</th>
-                <th>Strategy</th>
-                <th class="text-end">Leverage</th>
-                <th class="text-end">Margin Amount</th>
-                <th>Trend Timeframe</th>
-                <th>Signal Timeframe</th>
-                <th class="text-end">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for symbol_config in futures_symbol_configs %}
-              <tr>
-                <td class="fw-semibold">{{ symbol_config.symbol }}</td>
-                <td>
-                  {% if symbol_config.enabled %}
-                    <span class="badge bg-success">enabled</span>
-                  {% else %}
-                    <span class="badge bg-secondary">disabled</span>
-                  {% endif %}
-                </td>
-                <td>{{ symbol_config.strategy }}</td>
-                <td class="text-end">{{ symbol_config.leverage }}</td>
-                <td class="text-end">{{ symbol_config.margin_amount }}</td>
-                <td>{{ symbol_config.trend_timeframe }}</td>
-                <td>{{ symbol_config.signal_timeframe }}</td>
-                <td>
-                  <div class="d-flex flex-wrap gap-2 justify-content-end">
-                    <a class="btn btn-sm btn-outline-secondary" href="/futures/symbols/{{ symbol_config.symbol }}/edit">Edit</a>
-                    <form method="post" action="/futures/symbols/{{ symbol_config.symbol }}/toggle">
-                      <button type="submit" class="btn btn-sm btn-outline-primary">
-                        {% if symbol_config.enabled %}Disable{% else %}Enable{% endif %}
-                      </button>
-                    </form>
-                    <form method="post" action="/futures/symbols/{{ symbol_config.symbol }}/delete">
-                      <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
-                    </form>
+          {% if warnings %}
+          <div class="col-12">
+            <div class="alert alert-warning shadow-sm mb-0" role="alert">
+              <h2 class="h6 mb-2">Futures public API warning</h2>
+              <ul class="mb-0">
+                {% for warning in warnings %}
+                <li>{{ warning }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+          {% endif %}
+
+          <div class="col-12">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h2 class="h5 mb-3">Futures Account</h2>
+                <div class="row row-cols-1 row-cols-md-2 row-cols-xl-6 g-3">
+                  <div class="col">
+                    <h3 class="h6 text-secondary">API Key</h3>
+                    <p class="mb-0">{{ futures_account.api_key_status }}</p>
                   </div>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <p class="text-secondary mb-0">No futures symbols configured</p>
-        {% endif %}
-      </div>
-    </div>
-  </div>
+                  <div class="col">
+                    <h3 class="h6 text-secondary">Account Query</h3>
+                    <p class="mb-0 {% if futures_account.query_status == 'ok' %}text-success{% elif futures_account.query_status == 'error' %}text-danger{% endif %}">
+                      {{ futures_account.query_status }}
+                    </p>
+                  </div>
+                  <div class="col">
+                    <h3 class="h6 text-secondary">USDT Wallet</h3>
+                    <p class="mb-0">{% if futures_account.wallet_balance is not none %}{{ futures_account.wallet_balance }}{% else %}n/a{% endif %}</p>
+                  </div>
+                  <div class="col">
+                    <h3 class="h6 text-secondary">Available</h3>
+                    <p class="mb-0">{% if futures_account.available_balance is not none %}{{ futures_account.available_balance }}{% else %}n/a{% endif %}</p>
+                  </div>
+                  <div class="col">
+                    <h3 class="h6 text-secondary">Margin Balance</h3>
+                    <p class="mb-0">{% if futures_account.margin_balance is not none %}{{ futures_account.margin_balance }}{% else %}n/a{% endif %}</p>
+                  </div>
+                  <div class="col">
+                    <h3 class="h6 text-secondary">Unrealized PnL</h3>
+                    <p class="mb-0">{% if futures_account.unrealized_pnl is not none %}{{ futures_account.unrealized_pnl }}{% else %}n/a{% endif %}</p>
+                  </div>
+                </div>
+                {% if futures_account.error %}
+                <p class="text-warning small mb-0 mt-3">{{ futures_account.error }}</p>
+                {% endif %}
+              </div>
+            </div>
+          </div>
 
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h2 class="h5 mb-3">Futures Risk Controls</h2>
-        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-6 g-3">
-          <div class="col">
-            <h3 class="h6 text-secondary">Max Leverage</h3>
-            <p class="mb-0">
-              {% if futures_risk_controls.max_leverage is not none %}{{ futures_risk_controls.max_leverage }}{% else %}n/a{% endif %}
-            </p>
+          <div class="col-12">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h2 class="h5 mb-3">Futures Risk Controls</h2>
+                <div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-3">
+                  <div class="col"><h3 class="h6 text-secondary">Max Leverage</h3><p class="mb-0">{% if futures_risk_controls.max_leverage is not none %}{{ futures_risk_controls.max_leverage }}{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">Max Margin</h3><p class="mb-0">{% if futures_risk_controls.max_margin_per_trade_usdt is not none %}{{ futures_risk_controls.max_margin_per_trade_usdt }} USDT{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">Max Position Ratio</h3><p class="mb-0">{% if futures_risk_controls.max_position_ratio is not none %}{{ futures_risk_controls.max_position_ratio }}{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">Min Liq. Distance</h3><p class="mb-0">{% if futures_risk_controls.min_liquidation_distance_pct is not none %}{{ futures_risk_controls.min_liquidation_distance_pct }}%{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">Max Funding Abs</h3><p class="mb-0">{% if futures_risk_controls.max_funding_rate_abs is not none %}{{ futures_risk_controls.max_funding_rate_abs }}{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">Paper Test Funding Abs</h3><p class="mb-0">{% if futures_risk_controls.paper_test_max_funding_rate_abs is not none %}{{ futures_risk_controls.paper_test_max_funding_rate_abs }}{% else %}n/a{% endif %}</p></div>
+                  <div class="col"><h3 class="h6 text-secondary">Max Losing Trades</h3><p class="mb-0">{% if futures_risk_controls.max_consecutive_losing_trades is not none %}{{ futures_risk_controls.max_consecutive_losing_trades }}{% else %}n/a{% endif %}</p></div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="col">
-            <h3 class="h6 text-secondary">Max Margin</h3>
-            <p class="mb-0">
-              {% if futures_risk_controls.max_margin_per_trade_usdt is not none %}{{ futures_risk_controls.max_margin_per_trade_usdt }} USDT{% else %}n/a{% endif %}
-            </p>
+
+          <div class="col-12">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h2 class="h5 mb-3">Futures Automatic Paper Loop</h2>
+                <p class="text-secondary mb-3">Last loop: {% if futures_loop_state.last_loop_at %}{{ futures_loop_state.last_loop_at }}{% else %}n/a{% endif %}</p>
+                {% if futures_loop_state.signals %}
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th>Symbol</th>
+                        <th>Strategy</th>
+                        <th>Last Signal</th>
+                        <th>Reason</th>
+                        <th>Updated At</th>
+                        <th>Trend Timeframe</th>
+                        <th>Signal Timeframe</th>
+                        <th class="text-end">Mark Price</th>
+                        <th class="text-end">Funding Rate</th>
+                        <th>Paper Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for signal in futures_loop_state.signals %}
+                      <tr>
+                        <td class="fw-semibold">{{ signal.symbol }}</td>
+                        <td>{{ signal.strategy or "n/a" }}</td>
+                        <td>{{ signal.action or "n/a" }}</td>
+                        <td>{{ signal.reason or signal.error or "n/a" }}</td>
+                        <td>{{ signal.updated_at or "n/a" }}</td>
+                        <td>{{ signal.trend_timeframe or "n/a" }}</td>
+                        <td>{{ signal.signal_timeframe or "n/a" }}</td>
+                        <td class="text-end">{% if signal.mark_price is not none %}{{ signal.mark_price }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if signal.funding_rate is not none %}{{ signal.funding_rate }}{% else %}n/a{% endif %}</td>
+                        <td>{{ signal.paper_action or "n/a" }}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                {% else %}
+                <p class="text-secondary mb-0">No futures loop signals yet</p>
+                {% endif %}
+              </div>
+            </div>
           </div>
-          <div class="col">
-            <h3 class="h6 text-secondary">Max Position Ratio</h3>
-            <p class="mb-0">
-              {% if futures_risk_controls.max_position_ratio is not none %}{{ futures_risk_controls.max_position_ratio }}{% else %}n/a{% endif %}
-            </p>
+
+          <div class="col-12">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h2 class="h5 mb-3">Futures Strategy Signals</h2>
+                {% if futures_strategy_signals %}
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th>Symbol</th>
+                        <th>Strategy</th>
+                        <th>Last Action</th>
+                        <th>Reason</th>
+                        <th>Trend Timeframe</th>
+                        <th>Signal Timeframe</th>
+                        <th class="text-end">Mark Price</th>
+                        <th class="text-end">Funding Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for signal in futures_strategy_signals %}
+                      <tr>
+                        <td class="fw-semibold">{{ signal.symbol }}</td>
+                        <td>{{ signal.strategy or "n/a" }}</td>
+                        <td>{{ signal.action or "n/a" }}</td>
+                        <td>{{ signal.reason or "n/a" }}</td>
+                        <td>{{ signal.trend_timeframe or "n/a" }}</td>
+                        <td>{{ signal.signal_timeframe or "n/a" }}</td>
+                        <td class="text-end">{% if signal.mark_price is not none %}{{ signal.mark_price }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if signal.funding_rate is not none %}{{ signal.funding_rate }}{% else %}n/a{% endif %}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                {% else %}
+                <p class="text-secondary mb-0">No futures strategy signals yet</p>
+                {% endif %}
+              </div>
+            </div>
           </div>
-          <div class="col">
-            <h3 class="h6 text-secondary">Min Liq. Distance</h3>
-            <p class="mb-0">
-              {% if futures_risk_controls.min_liquidation_distance_pct is not none %}{{ futures_risk_controls.min_liquidation_distance_pct }}%{% else %}n/a{% endif %}
-            </p>
-          </div>
-          <div class="col">
-            <h3 class="h6 text-secondary">Max Funding Abs</h3>
-            <p class="mb-0">
-              {% if futures_risk_controls.max_funding_rate_abs is not none %}{{ futures_risk_controls.max_funding_rate_abs }}{% else %}n/a{% endif %}
-            </p>
-          </div>
-          <div class="col">
-            <h3 class="h6 text-secondary">Max Losing Trades</h3>
-            <p class="mb-0">
-              {% if futures_risk_controls.max_consecutive_losing_trades is not none %}{{ futures_risk_controls.max_consecutive_losing_trades }}{% else %}n/a{% endif %}
-            </p>
+
+          <div class="col-12">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h2 class="h5 mb-3">Public Market Data</h2>
+                {% if rows %}
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th>Symbol</th>
+                        <th class="text-end">Ticker Price</th>
+                        <th class="text-end">Mark Price</th>
+                        <th class="text-end">Funding Rate</th>
+                        <th class="text-end">Funding Risk</th>
+                        <th class="text-end">Next Funding Time</th>
+                        <th class="text-end">Min Notional</th>
+                        <th class="text-end">Tick Size</th>
+                        <th class="text-end">Step Size</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for row in rows %}
+                      <tr>
+                        <td class="fw-semibold">{{ row.symbol }}</td>
+                        <td class="text-end">{% if row.ticker_price is not none %}{{ row.ticker_price }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if row.mark_price is not none %}{{ row.mark_price }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if row.funding_rate is not none %}{{ row.funding_rate }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">
+                          {% if row.funding_rate_exceeds_max is sameas true %}
+                            <span class="text-danger">exceeds max</span>
+                          {% elif row.funding_rate_exceeds_max is sameas false %}
+                            <span class="text-success">ok</span>
+                          {% else %}
+                            n/a
+                          {% endif %}
+                        </td>
+                        <td class="text-end">{% if row.next_funding_time %}{{ row.next_funding_time }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if row.min_notional is not none %}{{ row.min_notional }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if row.tick_size is not none %}{{ row.tick_size }}{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if row.step_size is not none %}{{ row.step_size }}{% else %}n/a{% endif %}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                {% else %}
+                <p class="text-secondary mb-0">No futures symbols enabled</p>
+                {% endif %}
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </div>
 
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h2 class="h5 mb-3">Futures Automatic Paper Loop</h2>
-        <p class="text-secondary mb-3">
-          Last loop:
-          {% if futures_loop_state.last_loop_at %}
-            {{ futures_loop_state.last_loop_at }}
-          {% else %}
-            n/a
+      <div class="tab-pane fade" id="futures-symbols-tab-pane" role="tabpanel" aria-labelledby="futures-symbols-tab" tabindex="0">
+        <div class="row g-4">
+          {% if futures_symbol_message %}
+          <div class="col-12">
+            <div class="alert alert-success shadow-sm mb-0" role="alert">{{ futures_symbol_message }}</div>
+          </div>
           {% endif %}
-        </p>
-        {% if futures_loop_state.signals %}
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Strategy</th>
-                <th>Last Signal</th>
-                <th>Reason</th>
-                <th>Updated At</th>
-                <th>Trend Timeframe</th>
-                <th>Signal Timeframe</th>
-                <th class="text-end">Mark Price</th>
-                <th class="text-end">Funding Rate</th>
-                <th>Paper Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for signal in futures_loop_state.signals %}
-              <tr>
-                <td class="fw-semibold">{{ signal.symbol }}</td>
-                <td>{{ signal.strategy or "n/a" }}</td>
-                <td>{{ signal.action or "n/a" }}</td>
-                <td>{{ signal.reason or signal.error or "n/a" }}</td>
-                <td>{{ signal.updated_at or "n/a" }}</td>
-                <td>{{ signal.trend_timeframe or "n/a" }}</td>
-                <td>{{ signal.signal_timeframe or "n/a" }}</td>
-                <td class="text-end">
-                  {% if signal.mark_price is not none %}{{ signal.mark_price }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if signal.funding_rate is not none %}{{ signal.funding_rate }}{% else %}n/a{% endif %}
-                </td>
-                <td>{{ signal.paper_action or "n/a" }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <p class="text-secondary mb-0">No futures loop signals yet</p>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h2 class="h5 mb-3">Public Market Data</h2>
-        {% if rows %}
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th class="text-end">Ticker Price</th>
-                <th class="text-end">Mark Price</th>
-                <th class="text-end">Funding Rate</th>
-                <th class="text-end">Funding Risk</th>
-                <th class="text-end">Next Funding Time</th>
-                <th class="text-end">Min Notional</th>
-                <th class="text-end">Tick Size</th>
-                <th class="text-end">Step Size</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in rows %}
-              <tr>
-                <td class="fw-semibold">{{ row.symbol }}</td>
-                <td class="text-end">
-                  {% if row.ticker_price is not none %}{{ row.ticker_price }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if row.mark_price is not none %}{{ row.mark_price }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if row.funding_rate is not none %}{{ row.funding_rate }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if row.funding_rate_exceeds_max is sameas true %}
-                    <span class="text-danger">exceeds max</span>
-                  {% elif row.funding_rate_exceeds_max is sameas false %}
-                    <span class="text-success">ok</span>
-                  {% else %}
-                    n/a
-                  {% endif %}
-                </td>
-                <td class="text-end">
-                  {% if row.next_funding_time %}{{ row.next_funding_time }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if row.min_notional is not none %}{{ row.min_notional }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if row.tick_size is not none %}{{ row.tick_size }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if row.step_size is not none %}{{ row.step_size }}{% else %}n/a{% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <p class="text-secondary mb-0">No futures symbols enabled</p>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h2 class="h5 mb-3">Futures Account</h2>
-        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-6 g-3">
-          <div class="col">
-            <h3 class="h6 text-secondary">API Key</h3>
-            <p class="mb-0">{{ futures_account.api_key_status }}</p>
+          {% if futures_symbol_error %}
+          <div class="col-12">
+            <div class="alert alert-danger shadow-sm mb-0" role="alert">{{ futures_symbol_error }}</div>
           </div>
-          <div class="col">
-            <h3 class="h6 text-secondary">Account Query</h3>
-            <p class="mb-0 {% if futures_account.query_status == 'ok' %}text-success{% elif futures_account.query_status == 'error' %}text-danger{% endif %}">
-              {{ futures_account.query_status }}
-            </p>
-          </div>
-          <div class="col">
-            <h3 class="h6 text-secondary">USDT Wallet</h3>
-            <p class="mb-0">
-              {% if futures_account.wallet_balance is not none %}{{ futures_account.wallet_balance }}{% else %}n/a{% endif %}
-            </p>
-          </div>
-          <div class="col">
-            <h3 class="h6 text-secondary">Available</h3>
-            <p class="mb-0">
-              {% if futures_account.available_balance is not none %}{{ futures_account.available_balance }}{% else %}n/a{% endif %}
-            </p>
-          </div>
-          <div class="col">
-            <h3 class="h6 text-secondary">Margin Balance</h3>
-            <p class="mb-0">
-              {% if futures_account.margin_balance is not none %}{{ futures_account.margin_balance }}{% else %}n/a{% endif %}
-            </p>
-          </div>
-          <div class="col">
-            <h3 class="h6 text-secondary">Unrealized PnL</h3>
-            <p class="mb-0">
-              {% if futures_account.unrealized_pnl is not none %}{{ futures_account.unrealized_pnl }}{% else %}n/a{% endif %}
-            </p>
-          </div>
-        </div>
-        {% if futures_account.error %}
-        <p class="text-warning small mb-0 mt-3">{{ futures_account.error }}</p>
-        {% endif %}
-      </div>
-    </div>
-  </div>
+          {% endif %}
 
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h2 class="h5 mb-3">Futures Positions</h2>
-        {% if futures_positions %}
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Side</th>
-                <th class="text-end">Amount</th>
-                <th class="text-end">Entry Price</th>
-                <th class="text-end">Mark Price</th>
-                <th class="text-end">Unrealized PnL</th>
-                <th class="text-end">Liq. Price</th>
-                <th class="text-end">Leverage</th>
-                <th>Margin Type</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for position in futures_positions %}
-              <tr>
-                <td class="fw-semibold">{{ position.symbol }}</td>
-                <td>{{ position.position_side or "n/a" }}</td>
-                <td class="text-end">
-                  {% if position.position_amount is not none %}{{ position.position_amount }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if position.entry_price is not none %}{{ position.entry_price }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if position.mark_price is not none %}{{ position.mark_price }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if position.unrealized_pnl is not none %}{{ position.unrealized_pnl }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if position.liquidation_price is not none %}{{ position.liquidation_price }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">{{ position.leverage or "n/a" }}</td>
-                <td>{{ position.margin_type or "n/a" }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <p class="text-secondary mb-0">No futures positions</p>
-        {% endif %}
-      </div>
-    </div>
-  </div>
+          {% if futures_symbol_edit_config %}
+          <div class="col-12">
+            <div class="card shadow-sm border-primary">
+              <div class="card-body">
+                <h2 class="h5 mb-3">Edit Futures Symbol</h2>
+                <p class="fw-semibold mb-3">{{ futures_symbol_edit_config.symbol }}</p>
+                {% if futures_symbol_edit_error %}
+                <div class="alert alert-danger" role="alert">{{ futures_symbol_edit_error }}</div>
+                {% endif %}
+                <form method="post" action="/futures/symbols/{{ futures_symbol_edit_config.symbol }}/edit">
+                  <div class="row g-3 align-items-end">
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-enabled" class="form-label">Enabled</label>
+                      <select id="edit-futures-enabled" name="enabled" class="form-select" required>
+                        <option value="true" {% if futures_symbol_edit_config.enabled %}selected{% endif %}>true</option>
+                        <option value="false" {% if not futures_symbol_edit_config.enabled %}selected{% endif %}>false</option>
+                      </select>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-strategy" class="form-label">Strategy</label>
+                      <select id="edit-futures-strategy" name="strategy" class="form-select" required>
+                        {% for strategy in futures_allowed_strategies %}
+                        <option value="{{ strategy }}" {% if strategy == futures_symbol_edit_config.strategy %}selected{% endif %}>{{ strategy }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-leverage" class="form-label">Leverage</label>
+                      <input id="edit-futures-leverage" name="leverage" type="number" class="form-control" min="0.0001" step="0.0001" value="{{ futures_symbol_edit_config.leverage }}" required>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-margin" class="form-label">Margin Amount</label>
+                      <input id="edit-futures-margin" name="margin_amount" type="number" class="form-control" min="0.0001" step="0.0001" value="{{ futures_symbol_edit_config.margin_amount }}" required>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-trend-timeframe" class="form-label">Trend Timeframe</label>
+                      <select id="edit-futures-trend-timeframe" name="trend_timeframe" class="form-select" required>
+                        {% for timeframe in futures_allowed_timeframes %}
+                        <option value="{{ timeframe }}" {% if timeframe == futures_symbol_edit_config.trend_timeframe %}selected{% endif %}>{{ timeframe }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-signal-timeframe" class="form-label">Signal Timeframe</label>
+                      <select id="edit-futures-signal-timeframe" name="signal_timeframe" class="form-select" required>
+                        {% for timeframe in futures_allowed_timeframes %}
+                        <option value="{{ timeframe }}" {% if timeframe == futures_symbol_edit_config.signal_timeframe %}selected{% endif %}>{{ timeframe }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-12">
+                      <div class="d-flex flex-wrap gap-2">
+                        <button type="submit" class="btn btn-primary">Save</button>
+                        <a class="btn btn-outline-secondary" href="/futures">Cancel</a>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% endif %}
 
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h2 class="h5 mb-3">Futures Paper Positions</h2>
-        {% if futures_paper_positions %}
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Side</th>
-                <th class="text-end">Entry Price</th>
-                <th class="text-end">Mark Price</th>
-                <th class="text-end">Position Amount</th>
-                <th class="text-end">Margin</th>
-                <th class="text-end">Leverage</th>
-                <th class="text-end">Unrealized PnL</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for position in futures_paper_positions %}
-              <tr>
-                <td class="fw-semibold">{{ position.symbol }}</td>
-                <td>{{ position.side or "n/a" }}</td>
-                <td class="text-end">
-                  {% if position.entry_price is not none %}{{ position.entry_price }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if position.mark_price is not none %}{{ position.mark_price }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if position.position_amt is not none %}{{ position.position_amt }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if position.margin is not none %}{{ position.margin }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if position.leverage is not none %}{{ position.leverage }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end {% if position.unrealized_pnl is not none and position.unrealized_pnl > 0 %}text-success{% elif position.unrealized_pnl is not none and position.unrealized_pnl < 0 %}text-danger{% endif %}">
-                  {% if position.unrealized_pnl is not none %}{{ position.unrealized_pnl }}{% else %}n/a{% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <p class="text-secondary mb-0">No futures paper positions</p>
-        {% endif %}
-      </div>
-    </div>
-  </div>
+          <div class="col-12">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h2 class="h5 mb-3">Add Futures Symbol</h2>
+                <form method="post" action="/futures/symbols/add">
+                  <div class="row g-3 align-items-end">
+                    <div class="col-md-3 col-xl-2">
+                      <label for="futures-symbol" class="form-label">Symbol</label>
+                      <input id="futures-symbol" name="symbol" type="text" class="form-control" placeholder="BTCUSDT" autocomplete="off" required>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="futures-strategy" class="form-label">Strategy</label>
+                      <select id="futures-strategy" name="strategy" class="form-select">
+                        {% for strategy in futures_allowed_strategies %}
+                        <option value="{{ strategy }}" {% if strategy == futures_symbol_form_defaults.strategy %}selected{% endif %}>{{ strategy }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-3 col-xl-1">
+                      <label for="futures-leverage" class="form-label">Leverage</label>
+                      <input id="futures-leverage" name="leverage" type="number" class="form-control" min="0.0001" step="0.0001" value="{{ futures_symbol_form_defaults.leverage }}" required>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="futures-margin" class="form-label">Margin Amount</label>
+                      <input id="futures-margin" name="margin_amount" type="number" class="form-control" min="0.0001" step="0.0001" value="{{ futures_symbol_form_defaults.margin_amount }}" required>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="futures-trend-timeframe" class="form-label">Trend Timeframe</label>
+                      <select id="futures-trend-timeframe" name="trend_timeframe" class="form-select">
+                        {% for timeframe in futures_allowed_timeframes %}
+                        <option value="{{ timeframe }}" {% if timeframe == futures_symbol_form_defaults.trend_timeframe %}selected{% endif %}>{{ timeframe }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="futures-signal-timeframe" class="form-label">Signal Timeframe</label>
+                      <select id="futures-signal-timeframe" name="signal_timeframe" class="form-select">
+                        {% for timeframe in futures_allowed_timeframes %}
+                        <option value="{{ timeframe }}" {% if timeframe == futures_symbol_form_defaults.signal_timeframe %}selected{% endif %}>{{ timeframe }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-3 col-xl-1">
+                      <div class="form-check mb-2">
+                        <input id="futures-enabled" name="enabled" type="checkbox" class="form-check-input" value="true" {% if futures_symbol_form_defaults.enabled %}checked{% endif %}>
+                        <label for="futures-enabled" class="form-check-label">Enabled</label>
+                      </div>
+                    </div>
+                    <div class="col-md-3 col-xl-12">
+                      <button type="submit" class="btn btn-primary">Add</button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
 
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h2 class="h5 mb-3">Futures Strategy Signals</h2>
-        {% if futures_strategy_signals %}
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Strategy</th>
-                <th>Last Action</th>
-                <th>Reason</th>
-                <th>Trend Timeframe</th>
-                <th>Signal Timeframe</th>
-                <th class="text-end">Mark Price</th>
-                <th class="text-end">Funding Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for signal in futures_strategy_signals %}
-              <tr>
-                <td class="fw-semibold">{{ signal.symbol }}</td>
-                <td>{{ signal.strategy or "n/a" }}</td>
-                <td>{{ signal.action or "n/a" }}</td>
-                <td>{{ signal.reason or "n/a" }}</td>
-                <td>{{ signal.trend_timeframe or "n/a" }}</td>
-                <td>{{ signal.signal_timeframe or "n/a" }}</td>
-                <td class="text-end">
-                  {% if signal.mark_price is not none %}{{ signal.mark_price }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if signal.funding_rate is not none %}{{ signal.funding_rate }}{% else %}n/a{% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+          <div class="col-12">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h2 class="h5 mb-3">Futures Symbols</h2>
+                {% if futures_symbol_configs %}
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th>Symbol</th>
+                        <th>Enabled</th>
+                        <th>Strategy</th>
+                        <th class="text-end">Leverage</th>
+                        <th class="text-end">Margin Amount</th>
+                        <th>Trend Timeframe</th>
+                        <th>Signal Timeframe</th>
+                        <th class="text-end">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for symbol_config in futures_symbol_configs %}
+                      <tr>
+                        <td class="fw-semibold">{{ symbol_config.symbol }}</td>
+                        <td>
+                          {% if symbol_config.enabled %}
+                            <span class="badge bg-success">enabled</span>
+                          {% else %}
+                            <span class="badge bg-secondary">disabled</span>
+                          {% endif %}
+                        </td>
+                        <td>{{ symbol_config.strategy }}</td>
+                        <td class="text-end">{{ symbol_config.leverage }}</td>
+                        <td class="text-end">{{ symbol_config.margin_amount }}</td>
+                        <td>{{ symbol_config.trend_timeframe }}</td>
+                        <td>{{ symbol_config.signal_timeframe }}</td>
+                        <td>
+                          <div class="d-flex flex-wrap gap-2 justify-content-end">
+                            <a class="btn btn-sm btn-outline-secondary" href="/futures/symbols/{{ symbol_config.symbol }}/edit">Edit</a>
+                            <form method="post" action="/futures/symbols/{{ symbol_config.symbol }}/toggle">
+                              <button type="submit" class="btn btn-sm btn-outline-primary">{% if symbol_config.enabled %}Disable{% else %}Enable{% endif %}</button>
+                            </form>
+                            <form method="post" action="/futures/symbols/{{ symbol_config.symbol }}/delete">
+                              <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                          </div>
+                        </td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                {% else %}
+                <p class="text-secondary mb-0">No futures symbols configured</p>
+                {% endif %}
+              </div>
+            </div>
+          </div>
         </div>
-        {% else %}
-        <p class="text-secondary mb-0">No futures strategy signals yet</p>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h2 class="h5 mb-3">Futures Paper Trade History</h2>
-        {% if futures_paper_trade_history %}
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Timestamp</th>
-                <th>Symbol</th>
-                <th>Side</th>
-                <th class="text-end">Entry Price</th>
-                <th class="text-end">Exit Price</th>
-                <th class="text-end">Position Amount</th>
-                <th class="text-end">Margin</th>
-                <th class="text-end">Leverage</th>
-                <th class="text-end">Realized PnL</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for trade in futures_paper_trade_history %}
-              <tr>
-                <td>{{ trade.timestamp or "n/a" }}</td>
-                <td class="fw-semibold">{{ trade.symbol }}</td>
-                <td>{{ trade.side or "n/a" }}</td>
-                <td class="text-end">
-                  {% if trade.entry_price is not none %}{{ trade.entry_price }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if trade.exit_price is not none %}{{ trade.exit_price }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if trade.position_amt is not none %}{{ trade.position_amt }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if trade.margin is not none %}{{ trade.margin }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end">
-                  {% if trade.leverage is not none %}{{ trade.leverage }}{% else %}n/a{% endif %}
-                </td>
-                <td class="text-end {% if trade.realized_pnl is not none and trade.realized_pnl > 0 %}text-success{% elif trade.realized_pnl is not none and trade.realized_pnl < 0 %}text-danger{% endif %}">
-                  {% if trade.realized_pnl is not none %}{{ trade.realized_pnl }}{% else %}n/a{% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <p class="text-secondary mb-0">No futures paper trade history</p>
-        {% endif %}
       </div>
     </div>
   </div>

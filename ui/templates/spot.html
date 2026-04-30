@@ -1,0 +1,54 @@
+{% extends "layout.html" %}
+
+{% block title %}Spot | TraderBot Console{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-12">
+    <div class="hero-panel p-4 p-md-5 rounded-4">
+      <p class="text-uppercase small mb-2 text-secondary">Spot Bot</p>
+      <h1 class="display-6 mb-2">Spot</h1>
+      <p class="text-secondary mb-0">Spot positions, performance, account, and symbols in one workspace.</p>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <ul class="nav nav-tabs" id="spotTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="spot-positions-tab" data-bs-toggle="tab" data-bs-target="#spot-positions" type="button" role="tab" aria-controls="spot-positions" aria-selected="true">Positions</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="spot-performance-tab" data-bs-toggle="tab" data-bs-target="#spot-performance" type="button" role="tab" aria-controls="spot-performance" aria-selected="false">Performance</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="spot-account-tab" data-bs-toggle="tab" data-bs-target="#spot-account" type="button" role="tab" aria-controls="spot-account" aria-selected="false">Account</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="spot-symbols-tab" data-bs-toggle="tab" data-bs-target="#spot-symbols" type="button" role="tab" aria-controls="spot-symbols" aria-selected="false">Symbols</button>
+      </li>
+    </ul>
+    <div class="tab-content pt-4" id="spotTabsContent">
+      <div class="tab-pane fade show active" id="spot-positions" role="tabpanel" aria-labelledby="spot-positions-tab" tabindex="0">
+        {% with config_error=spot_positions.config_error, positions=spot_positions.positions, has_configured_symbols=spot_positions.has_configured_symbols, has_active_symbols=spot_positions.has_active_symbols %}
+          {% include "partials/spot_positions.html" %}
+        {% endwith %}
+      </div>
+      <div class="tab-pane fade" id="spot-performance" role="tabpanel" aria-labelledby="spot-performance-tab" tabindex="0">
+        {% with config_error=spot_performance.config_error, latest=spot_performance.latest, cumulative_return=spot_performance.cumulative_return, has_data=spot_performance.has_data, available_symbols=spot_performance.available_symbols, selected_symbol=spot_performance.selected_symbol, symbol_has_data=spot_performance.symbol_has_data %}
+          {% include "partials/spot_performance.html" %}
+        {% endwith %}
+      </div>
+      <div class="tab-pane fade" id="spot-account" role="tabpanel" aria-labelledby="spot-account-tab" tabindex="0">
+        {% with credentials=spot_account.credentials, query_ok=spot_account.query_ok, query_error=spot_account.query_error, updated_at=spot_account.updated_at, usdt_balance=spot_account.usdt_balance, nonzero_balances=spot_account.nonzero_balances %}
+          {% include "partials/spot_account.html" %}
+        {% endwith %}
+      </div>
+      <div class="tab-pane fade" id="spot-symbols" role="tabpanel" aria-labelledby="spot-symbols-tab" tabindex="0">
+        {% with config_error=spot_symbols.config_error, symbols=spot_symbols.symbols, message=spot_symbols.message, error=spot_symbols.error %}
+          {% include "partials/spot_symbols.html" %}
+        {% endwith %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

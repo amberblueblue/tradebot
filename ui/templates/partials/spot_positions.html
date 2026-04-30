@@ -1,0 +1,71 @@
+{% if config_error %}
+<div class="alert alert-danger mb-0">
+  配置读取失败：{{ config_error }}
+</div>
+{% else %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h5 mb-3">Current Positions</h2>
+    {% if not positions %}
+    <div class="alert alert-light border mb-0">
+      {{ "No symbols configured" if not has_configured_symbols else "No active symbols" }}
+    </div>
+    {% else %}
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>symbol</th>
+            <th>enabled</th>
+            <th>paused_by_loss</th>
+            <th class="text-end">quantity</th>
+            <th class="text-end">avg_price</th>
+            <th class="text-end">current_price</th>
+            <th class="text-end">market_value</th>
+            <th class="text-end">unrealized_pnl</th>
+            <th class="text-end">order_amount</th>
+            <th class="text-end">max_loss_amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for position in positions %}
+          <tr>
+            <td class="fw-semibold">{{ position.symbol }}</td>
+            <td>
+              {% if position.enabled %}
+              <span class="badge text-bg-success">true</span>
+              {% else %}
+              <span class="badge text-bg-secondary">false</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if position.paused_by_loss %}
+              <span class="badge text-bg-danger">true</span>
+              {% else %}
+              <span class="badge text-bg-secondary">false</span>
+              {% endif %}
+            </td>
+            <td class="text-end">{{ "%.8f"|format(position.quantity) }}</td>
+            <td class="text-end">{{ "%.8f"|format(position.avg_price) }}</td>
+            <td class="text-end">{{ "%.8f"|format(position.current_price) }}</td>
+            <td class="text-end">{{ "%.4f"|format(position.market_value) }}</td>
+            <td class="text-end">
+              {% if position.unrealized_pnl > 0 %}
+              <span class="text-success fw-semibold">{{ "%.4f"|format(position.unrealized_pnl) }}</span>
+              {% elif position.unrealized_pnl < 0 %}
+              <span class="text-danger fw-semibold">{{ "%.4f"|format(position.unrealized_pnl) }}</span>
+              {% else %}
+              <span class="text-secondary">{{ "%.4f"|format(position.unrealized_pnl) }}</span>
+              {% endif %}
+            </td>
+            <td class="text-end">{{ position.order_amount }}</td>
+            <td class="text-end">{{ position.max_loss_amount }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

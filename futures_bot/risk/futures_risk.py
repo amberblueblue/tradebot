@@ -67,6 +67,7 @@ def check_futures_pre_open_risk(
     account_equity,
     liquidation_price=None,
     existing_position_notional=0,
+    max_funding_rate_abs_override=None,
 ):
     """Dry-run pre-open risk skeleton; never places orders or changes exchange state."""
     normalized_symbol = str(symbol).upper()
@@ -86,6 +87,11 @@ def check_futures_pre_open_risk(
         existing_position_notional_value = _as_float(
             existing_position_notional,
             "existing_position_notional",
+        )
+        effective_max_funding_rate_abs = (
+            risk_config.max_funding_rate_abs
+            if max_funding_rate_abs_override is None
+            else _as_float(max_funding_rate_abs_override, "max_funding_rate_abs_override")
         )
         liquidation_price_value = (
             None
@@ -136,7 +142,7 @@ def check_futures_pre_open_risk(
             failures.append("margin_amount_exceeds_max")
         if position_ratio > risk_config.max_position_ratio:
             failures.append("position_ratio_exceeds_max")
-        if abs(funding_rate_value) > risk_config.max_funding_rate_abs:
+        if abs(funding_rate_value) > effective_max_funding_rate_abs:
             failures.append("funding_rate_exceeds_max_abs")
         if (
             liquidation_distance is not None
@@ -156,6 +162,8 @@ def check_futures_pre_open_risk(
                 "max_position_ratio": risk_config.max_position_ratio,
                 "min_liquidation_distance_pct": risk_config.min_liquidation_distance_pct,
                 "max_funding_rate_abs": risk_config.max_funding_rate_abs,
+                "paper_test_max_funding_rate_abs": risk_config.paper_test_max_funding_rate_abs,
+                "effective_max_funding_rate_abs": effective_max_funding_rate_abs,
             },
             "failures": failures,
         }

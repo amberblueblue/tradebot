@@ -9,7 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = PROJECT_ROOT / "config"
 DEFAULT_FUTURES_SETTINGS_PATH = CONFIG_DIR / "futures_settings.yaml"
 DEFAULT_FUTURES_SYMBOLS_PATH = CONFIG_DIR / "futures_symbols.yaml"
-ALLOWED_FUTURES_STRATEGIES = {"trend_long"}
+ALLOWED_FUTURES_STRATEGIES = {"trend_long", "trend_long_test"}
 ALLOWED_FUTURES_TIMEFRAMES = {"5m", "15m", "1h", "4h", "1d"}
 
 
@@ -33,6 +33,7 @@ class FuturesRiskConfig:
     max_position_ratio: float
     min_liquidation_distance_pct: float
     max_funding_rate_abs: float
+    paper_test_max_funding_rate_abs: float
     max_consecutive_losing_trades: int
 
 
@@ -252,6 +253,20 @@ def _load_risk_config(settings: dict[str, Any], settings_path: Path) -> FuturesR
     if max_funding_rate_abs < 0:
         raise ValueError(f"risk.max_funding_rate_abs must be greater than or equal to 0 in {settings_path}")
 
+    paper_test_max_funding_rate_abs = risk_config.get(
+        "paper_test_max_funding_rate_abs",
+        max_funding_rate_abs,
+    )
+    if (
+        not isinstance(paper_test_max_funding_rate_abs, (int, float))
+        or isinstance(paper_test_max_funding_rate_abs, bool)
+    ):
+        raise ValueError(f"risk.paper_test_max_funding_rate_abs must be a number in {settings_path}")
+    if paper_test_max_funding_rate_abs < 0:
+        raise ValueError(
+            f"risk.paper_test_max_funding_rate_abs must be greater than or equal to 0 in {settings_path}"
+        )
+
     max_position_ratio = risk_config.get("max_position_ratio")
     if not isinstance(max_position_ratio, (int, float)) or isinstance(max_position_ratio, bool):
         raise ValueError(f"risk.max_position_ratio must be a number in {settings_path}")
@@ -281,6 +296,7 @@ def _load_risk_config(settings: dict[str, Any], settings_path: Path) -> FuturesR
             settings_path,
         ),
         max_funding_rate_abs=float(max_funding_rate_abs),
+        paper_test_max_funding_rate_abs=float(paper_test_max_funding_rate_abs),
         max_consecutive_losing_trades=max_consecutive_losing_trades,
     )
 

@@ -163,6 +163,27 @@ def _load_account_equity(client: BinanceFuturesClient) -> tuple[float, str]:
     return FALLBACK_ACCOUNT_EQUITY, "fallback_missing_usdt_equity"
 
 
+def _funding_rate_limit_for_strategy(config, strategy_name: str) -> tuple[float, str]:
+    if config.app.mode == "paper" and strategy_name == "trend_long_test":
+        return (
+            config.risk.paper_test_max_funding_rate_abs,
+            "paper_test_max_funding_rate_abs",
+        )
+    return config.risk.max_funding_rate_abs, "max_funding_rate_abs"
+
+
+def _paper_only_strategy_violations(config) -> list[str]:
+    violations: list[str] = []
+    if config.app.mode == "paper":
+        return violations
+    for symbol in config.enabled_symbols:
+        symbol_config = config.symbols[symbol]
+        strategy = get_strategy(symbol_config.strategy)
+        if bool(getattr(strategy, "paper_only", False)):
+            violations.append(f"{symbol}:{strategy.name}")
+    return violations
+
+
 def run_startup_readonly_sync(config) -> dict[str, Any]:
     credentials = load_futures_binance_readonly_credentials()
     if not credentials.configured:
@@ -254,6 +275,11 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                 existing_position = updated_position
 
             strategy = get_strategy(symbol_config.strategy)
+            paper_only = bool(getattr(strategy, "paper_only", False))
+            max_funding_rate_abs, funding_rate_limit_source = _funding_rate_limit_for_strategy(
+                config,
+                symbol_config.strategy,
+            )
             signal = strategy.generate_signal(
                 symbol=symbol,
                 trend_klines=trend_klines,
@@ -262,7 +288,7 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                 funding_rate=funding_rate,
                 trend_timeframe=symbol_config.trend_timeframe,
                 signal_timeframe=symbol_config.signal_timeframe,
-                max_funding_rate_abs=config.risk.max_funding_rate_abs,
+                max_funding_rate_abs=max_funding_rate_abs,
             )
             signal_action = signal.action
             record = _signal_record(
@@ -277,13 +303,25 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                 signal_bar_time=signal_bar_time,
                 paper_action="none",
             )
+            record["funding_rate_limit_used"] = max_funding_rate_abs
+            record["funding_rate_limit_source"] = funding_rate_limit_source
+            record["app_mode"] = config.app.mode
+            record["paper_only"] = paper_only
             loop_state["signals"][symbol] = record
             _log("futures_signal", **record)
 
             if signal_action == "HOLD":
                 record["paper_action"] = "hold"
                 _log("futures_signal_hold", **record)
-                print(f"[futures_strategy] {symbol} HOLD: {signal.reason}")
+                if signal.reason == "funding_rate_exceeds_max_abs":
+                    print(
+                        f"[futures_strategy] {symbol} HOLD: {signal.reason} "
+                        f"(funding_rate={funding_rate}, "
+                        f"limit={max_funding_rate_abs}, "
+                        f"source={funding_rate_limit_source})"
+                    )
+                else:
+                    print(f"[futures_strategy] {symbol} HOLD: {signal.reason}")
                 results.append(record)
                 continue
 
@@ -314,6 +352,7 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                     mark_price=mark_price,
                     funding_rate=funding_rate,
                     account_equity=account_equity,
+                    max_funding_rate_abs_override=max_funding_rate_abs,
                 )
                 record["risk"] = {
                     "ok": risk_result.ok,
@@ -325,7 +364,15 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                 if not risk_result.ok:
                     record["paper_action"] = "risk_blocked"
                     _log("futures_risk_blocked", **record)
-                    print(f"[futures_strategy] {symbol} LONG blocked: {risk_result.reason}")
+                    if risk_result.reason == "funding_rate_exceeds_max_abs":
+                        print(
+                            f"[futures_strategy] {symbol} LONG blocked: {risk_result.reason} "
+                            f"(funding_rate={funding_rate}, "
+                            f"limit={max_funding_rate_abs}, "
+                            f"source={funding_rate_limit_source})"
+                        )
+                    else:
+                        print(f"[futures_strategy] {symbol} LONG blocked: {risk_result.reason}")
                     results.append(record)
                     continue
 
@@ -410,6 +457,21 @@ def run_loop(*, once: bool = False) -> int:
     while True:
         config = load_futures_config()
         _print_startup(config)
+        paper_only_violations = _paper_only_strategy_violations(config)
+        if paper_only_violations:
+            reason = "paper_only_strategy_not_allowed"
+            print(
+                "[futures_startup_refused] "
+                f"{reason}: {', '.join(paper_only_violations)}"
+            )
+            _log(
+                "futures_startup_refused",
+                enabled_symbols=list(config.enabled_symbols),
+                app_mode=config.app.mode,
+                reason=reason,
+                violations=paper_only_violations,
+            )
+            return 1
         if not startup_synced:
             run_startup_readonly_sync(config)
             startup_synced = True

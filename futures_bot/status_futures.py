@@ -46,6 +46,7 @@ def build_risk_config_payload() -> dict[str, object]:
         "max_position_ratio": risk.max_position_ratio,
         "min_liquidation_distance_pct": risk.min_liquidation_distance_pct,
         "max_funding_rate_abs": risk.max_funding_rate_abs,
+        "paper_test_max_funding_rate_abs": risk.paper_test_max_funding_rate_abs,
         "max_consecutive_losing_trades": risk.max_consecutive_losing_trades,
     }
 
@@ -112,7 +113,17 @@ def _risk_thresholds_payload() -> dict[str, object]:
         "max_position_ratio": risk.max_position_ratio,
         "min_liquidation_distance_pct": risk.min_liquidation_distance_pct,
         "max_funding_rate_abs": risk.max_funding_rate_abs,
+        "paper_test_max_funding_rate_abs": risk.paper_test_max_funding_rate_abs,
     }
+
+
+def _funding_rate_limit_for_strategy(config, strategy_name: str) -> tuple[float, str]:
+    if config.app.mode == "paper" and strategy_name == "trend_long_test":
+        return (
+            config.risk.paper_test_max_funding_rate_abs,
+            "paper_test_max_funding_rate_abs",
+        )
+    return config.risk.max_funding_rate_abs, "max_funding_rate_abs"
 
 
 def _is_missing_key_payload(payload: Any) -> bool:
@@ -274,6 +285,30 @@ def build_strategy_signal_payload(symbol: str) -> dict[str, object]:
             "reason": "futures_symbol_not_configured",
         }
 
+    strategy = get_strategy(symbol_config.strategy)
+    paper_only = bool(getattr(strategy, "paper_only", False))
+    max_funding_rate_abs, funding_rate_limit_source = _funding_rate_limit_for_strategy(
+        config,
+        symbol_config.strategy,
+    )
+    if paper_only and config.app.mode != "paper":
+        return {
+            "symbol": symbol,
+            "strategy": strategy.name,
+            "app_mode": config.app.mode,
+            "paper_only": paper_only,
+            "ok": False,
+            "reason": "paper_only_strategy_not_allowed",
+            "funding_rate_limit_used": max_funding_rate_abs,
+            "funding_rate_limit_source": funding_rate_limit_source,
+            "metadata": {
+                "funding_rate": None,
+                "funding_rate_limit_used": max_funding_rate_abs,
+                "funding_rate_limit_source": funding_rate_limit_source,
+                "paper_only": paper_only,
+            },
+        }
+
     client = BinanceFuturesClient(
         base_url=config.futures.base_url,
         timeout=config.futures.request_timeout_seconds,
@@ -290,6 +325,10 @@ def build_strategy_signal_payload(symbol: str) -> dict[str, object]:
             "strategy": symbol_config.strategy,
             "ok": False,
             "reason": "futures_strategy_market_data_error",
+            "app_mode": config.app.mode,
+            "paper_only": paper_only,
+            "funding_rate_limit_used": max_funding_rate_abs,
+            "funding_rate_limit_source": funding_rate_limit_source,
             "error": str(exc),
         }
 
@@ -297,19 +336,26 @@ def build_strategy_signal_payload(symbol: str) -> dict[str, object]:
         return {
             "symbol": symbol,
             "strategy": symbol_config.strategy,
+            "app_mode": config.app.mode,
+            "paper_only": paper_only,
             "ok": False,
             "reason": "missing_mark_price",
+            "funding_rate_limit_used": max_funding_rate_abs,
+            "funding_rate_limit_source": funding_rate_limit_source,
         }
     if funding_rate is None:
         return {
             "symbol": symbol,
             "strategy": symbol_config.strategy,
+            "app_mode": config.app.mode,
+            "paper_only": paper_only,
             "ok": False,
             "reason": "missing_funding_rate",
             "mark_price": mark_price,
+            "funding_rate_limit_used": max_funding_rate_abs,
+            "funding_rate_limit_source": funding_rate_limit_source,
         }
 
-    strategy = get_strategy(symbol_config.strategy)
     signal = strategy.generate_signal(
         symbol=symbol,
         trend_klines=trend_klines,
@@ -318,19 +364,33 @@ def build_strategy_signal_payload(symbol: str) -> dict[str, object]:
         funding_rate=funding_rate,
         trend_timeframe=symbol_config.trend_timeframe,
         signal_timeframe=symbol_config.signal_timeframe,
-        max_funding_rate_abs=config.risk.max_funding_rate_abs,
+        max_funding_rate_abs=max_funding_rate_abs,
+    )
+    metadata = dict(signal.metadata or {})
+    metadata.update(
+        {
+            "funding_rate": funding_rate,
+            "funding_rate_limit_used": max_funding_rate_abs,
+            "funding_rate_limit_source": funding_rate_limit_source,
+            "paper_only": paper_only,
+        }
     )
     payload: dict[str, object] = {
         "symbol": symbol,
         "strategy": strategy.name,
+        "app_mode": config.app.mode,
+        "paper_only": paper_only,
         "action": signal.action,
         "reason": signal.reason,
         "trend_timeframe": signal.trend_timeframe,
         "signal_timeframe": signal.signal_timeframe,
         "mark_price": mark_price,
         "funding_rate": funding_rate,
+        "max_funding_rate_abs": max_funding_rate_abs,
+        "funding_rate_limit_used": max_funding_rate_abs,
+        "funding_rate_limit_source": funding_rate_limit_source,
         "confidence": signal.confidence,
-        "metadata": signal.metadata,
+        "metadata": metadata,
     }
     _save_strategy_signal(payload)
     return payload
