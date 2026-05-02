@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from futures_bot.config_loader import load_futures_strategy_settings
+from futures_bot.config_loader import load_futures_config, load_futures_strategy_settings
 from futures_bot.strategy.base import CLOSE, HOLD, LONG, StrategySignal
+from futures_bot.strategy.session_filter import filter_klines_by_session
 
 
 class TrendLongStrategy:
@@ -23,20 +24,35 @@ class TrendLongStrategy:
         max_funding_rate_abs: float,
     ) -> StrategySignal:
         settings = load_futures_strategy_settings(self.name)
-        trend_candles = _klines_to_candles(trend_klines)
-        signal_candles = _klines_to_candles(signal_klines)
+        market_session_filter = _market_session_filter_for_symbol(symbol)
+        filtered_trend_klines = filter_klines_by_session(trend_klines, market_session_filter)
+        filtered_signal_klines = filter_klines_by_session(signal_klines, market_session_filter)
+        trend_candles = _klines_to_candles(filtered_trend_klines)
+        signal_candles = _klines_to_candles(filtered_signal_klines)
         metadata: dict[str, Any] = {
+            "market_session_filter": market_session_filter,
+            "total_bars": len(signal_klines),
+            "session_filtered_bars": len(filtered_signal_klines),
+            "filtered_out_bars": max(len(signal_klines) - len(filtered_signal_klines), 0),
             "trend_bars": len(trend_candles),
             "signal_bars": len(signal_candles),
+            "trend_total_bars": len(trend_klines),
+            "trend_session_filtered_bars": len(filtered_trend_klines),
+            "trend_filtered_out_bars": max(len(trend_klines) - len(filtered_trend_klines), 0),
             "max_funding_rate_abs": max_funding_rate_abs,
             "strategy_settings": settings,
         }
 
         if len(trend_candles) < 150 or len(signal_candles) < 60:
+            reason = (
+                "insufficient_session_bars"
+                if market_session_filter != "none"
+                else "insufficient_klines"
+            )
             return StrategySignal(
                 symbol=symbol,
                 action=HOLD,
-                reason="insufficient_klines",
+                reason=reason,
                 trend_timeframe=trend_timeframe,
                 signal_timeframe=signal_timeframe,
                 confidence=0.0,
@@ -116,6 +132,17 @@ class TrendLongStrategy:
             confidence=0.5,
             metadata=metadata,
         )
+
+
+def _market_session_filter_for_symbol(symbol: str) -> str:
+    try:
+        config = load_futures_config()
+    except Exception:
+        return "none"
+    symbol_config = config.symbols.get(symbol)
+    if symbol_config is None:
+        return "none"
+    return symbol_config.market_session_filter
 
 
 def _klines_to_candles(klines: list[Any]) -> list[dict[str, float]]:

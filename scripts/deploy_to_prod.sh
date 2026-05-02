@@ -126,3 +126,7 @@ log_step "starting prod"
 log_step "checking status"
 sleep 3
 "$PROD_DIR/scripts/status_prod.sh"
+
+log_step "verifying production config files"
+require_prod_config_files
+echo "Production config files verified OK"

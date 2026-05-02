@@ -34,6 +34,7 @@ from execution.account_risk import (
     reset_account_risk,
 )
 from futures_bot.config_loader import (
+    ALLOWED_MARKET_SESSION_FILTERS,
     ALLOWED_FUTURES_STRATEGIES,
     ALLOWED_FUTURES_TIMEFRAMES,
     DEFAULT_FUTURES_SETTINGS_PATH,
@@ -45,6 +46,11 @@ from futures_bot.config_loader import (
 from futures_bot.exchange.binance_futures_client import BinanceFuturesClient
 from futures_bot.exchange.futures_rules import parse_futures_symbol_rules
 from futures_bot.execution.futures_paper_broker import FuturesPaperBroker
+from futures_bot.strategy.session_filter import (
+    filter_klines_by_session,
+    kline_open_time_local,
+    kline_open_time_utc,
+)
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
 from runtime.state import RuntimeStore, build_runtime_state, get_live_gate_status
@@ -1227,6 +1233,7 @@ def _futures_symbol_config_row(symbol_config) -> dict[str, object]:
         "margin_amount": symbol_config.margin_amount,
         "trend_timeframe": symbol_config.trend_timeframe,
         "signal_timeframe": symbol_config.signal_timeframe,
+        "market_session_filter": symbol_config.market_session_filter,
     }
 
 
@@ -1238,6 +1245,7 @@ def _futures_symbol_config_mapping(symbol_config) -> dict[str, object]:
         "margin_amount": symbol_config.margin_amount,
         "trend_timeframe": symbol_config.trend_timeframe,
         "signal_timeframe": symbol_config.signal_timeframe,
+        "market_session_filter": symbol_config.market_session_filter,
     }
 
 
@@ -1261,10 +1269,9 @@ def _futures_kline_row(kline) -> dict[str, object] | None:
     if not isinstance(kline, (list, tuple)) or len(kline) < 6:
         return None
     try:
-        opened_at = datetime.fromtimestamp(float(kline[0]) / 1000, tz=timezone.utc)
         return {
-            "open_time": opened_at.isoformat(),
-            "open_time_local": opened_at.astimezone().isoformat(),
+            "open_time": kline_open_time_utc(kline[0]),
+            "open_time_local": kline_open_time_local(kline[0]),
             "open": float(kline[1]),
             "high": float(kline[2]),
             "low": float(kline[3]),
@@ -1305,6 +1312,7 @@ def _futures_symbol_form_defaults() -> dict[str, object]:
         "margin_amount": 10,
         "trend_timeframe": "4h",
         "signal_timeframe": "15m",
+        "market_session_filter": "none",
         "enabled": True,
     }
 
@@ -1333,6 +1341,10 @@ def _parse_futures_symbol_config_from_form(form: dict[str, str], risk_config) ->
     if signal_timeframe not in ALLOWED_FUTURES_TIMEFRAMES:
         raise ValueError("signal_timeframe must be one of: 5m, 15m, 1h, 4h, 1d")
 
+    market_session_filter = form.get("market_session_filter", "none").strip()
+    if market_session_filter not in ALLOWED_MARKET_SESSION_FILTERS:
+        raise ValueError("market_session_filter must be one of: none, us_regular")
+
     leverage = _parse_positive_amount(form, "leverage")
     if leverage > risk_config.max_leverage:
         raise ValueError(f"leverage must be less than or equal to {risk_config.max_leverage}")
@@ -1351,6 +1363,7 @@ def _parse_futures_symbol_config_from_form(form: dict[str, str], risk_config) ->
         "margin_amount": margin_amount,
         "trend_timeframe": trend_timeframe,
         "signal_timeframe": signal_timeframe,
+        "market_session_filter": market_session_filter,
     }
 
 
@@ -1479,6 +1492,7 @@ def _render_futures_symbol_edit_page(
                 **symbol_config,
             },
             "futures_symbol_edit_error": error,
+            "futures_allowed_session_filters": sorted(ALLOWED_MARKET_SESSION_FILTERS),
         }
     )
     return templates.TemplateResponse(
@@ -1549,6 +1563,7 @@ def _load_futures_view() -> dict:
             "futures_symbol_form_defaults": _futures_symbol_form_defaults(),
             "futures_allowed_strategies": sorted(ALLOWED_FUTURES_STRATEGIES),
             "futures_allowed_timeframes": FUTURES_TIMEFRAME_OPTIONS,
+            "futures_allowed_session_filters": sorted(ALLOWED_MARKET_SESSION_FILTERS),
             "futures_kline_intervals": FUTURES_KLINE_INTERVAL_OPTIONS,
             "futures_symbol_edit_config": None,
             "futures_symbol_edit_error": None,
@@ -1602,6 +1617,7 @@ def _load_futures_view() -> dict:
         "futures_symbol_form_defaults": _futures_symbol_form_defaults(),
         "futures_allowed_strategies": sorted(ALLOWED_FUTURES_STRATEGIES),
         "futures_allowed_timeframes": FUTURES_TIMEFRAME_OPTIONS,
+        "futures_allowed_session_filters": sorted(ALLOWED_MARKET_SESSION_FILTERS),
         "futures_kline_intervals": FUTURES_KLINE_INTERVAL_OPTIONS,
         "futures_symbol_edit_config": None,
         "futures_symbol_edit_error": None,
@@ -2114,6 +2130,7 @@ async def futures_symbol_edit_save(request: Request, symbol: str):
         "margin_amount": form.get("margin_amount", ""),
         "trend_timeframe": form.get("trend_timeframe", "4h"),
         "signal_timeframe": form.get("signal_timeframe", "15m"),
+        "market_session_filter": form.get("market_session_filter", "none"),
     }
 
     try:
@@ -2141,6 +2158,7 @@ async def futures_symbol_edit_save(request: Request, symbol: str):
             margin_amount=updated_config["margin_amount"],
             trend_timeframe=updated_config["trend_timeframe"],
             signal_timeframe=updated_config["signal_timeframe"],
+            market_session_filter=updated_config["market_session_filter"],
         )
     except Exception as exc:
         return _render_futures_symbol_edit_page(
@@ -2164,6 +2182,7 @@ async def futures_symbol_add(request: Request):
     margin_amount = str(form.get("margin_amount", "10"))
     trend_timeframe = str(form.get("trend_timeframe", "4h"))
     signal_timeframe = str(form.get("signal_timeframe", "15m"))
+    market_session_filter = str(form.get("market_session_filter", "none"))
     enabled = str(form.get("enabled", "")).lower() in {"1", "true", "yes", "on"}
 
     normalized_symbol = symbol.strip().upper()
@@ -2175,6 +2194,8 @@ async def futures_symbol_add(request: Request):
         return _futures_symbols_redirect(error="invalid_trend_timeframe")
     if signal_timeframe not in ALLOWED_FUTURES_TIMEFRAMES:
         return _futures_symbols_redirect(error="invalid_signal_timeframe")
+    if market_session_filter not in ALLOWED_MARKET_SESSION_FILTERS:
+        return _futures_symbols_redirect(error="invalid_market_session_filter")
 
     parsed_leverage, leverage_error = _parse_futures_symbol_number(leverage, "leverage")
     if leverage_error:
@@ -2198,6 +2219,7 @@ async def futures_symbol_add(request: Request):
         "margin_amount": parsed_margin,
         "trend_timeframe": trend_timeframe,
         "signal_timeframe": signal_timeframe,
+        "market_session_filter": market_session_filter,
     }
     result = save_futures_symbols_config(updated_symbols)
     if not result.get("ok"):
@@ -2213,6 +2235,7 @@ async def futures_symbol_add(request: Request):
         margin_amount=parsed_margin,
         trend_timeframe=trend_timeframe,
         signal_timeframe=signal_timeframe,
+        market_session_filter=market_session_filter,
     )
     return _futures_symbols_redirect(message=f"{normalized_symbol} added")
 
@@ -2317,13 +2340,15 @@ def futures_klines_api(
         )
     if normalized_symbol not in config.symbols:
         return JSONResponse({"error": "symbol_not_configured"}, status_code=404)
+    symbol_config = config.symbols[normalized_symbol]
 
     client = BinanceFuturesClient(
         base_url=config.futures.base_url,
         timeout=config.futures.request_timeout_seconds,
     )
     try:
-        raw_klines = client.get_klines(normalized_symbol, interval, limit=limit)
+        query_limit = 1000 if symbol_config.market_session_filter == "us_regular" else limit
+        raw_klines = client.get_klines(normalized_symbol, interval, limit=query_limit)
     except Exception as exc:
         return JSONResponse(
             {"error": "futures_klines_query_failed", "message": str(exc)},
@@ -2335,9 +2360,14 @@ def futures_klines_api(
             status_code=502,
         )
 
+    filtered_klines = filter_klines_by_session(
+        raw_klines,
+        symbol_config.market_session_filter,
+    )
+    display_klines = filtered_klines[-limit:]
     rows = [
         row
-        for row in (_futures_kline_row(kline) for kline in raw_klines)
+        for row in (_futures_kline_row(kline) for kline in display_klines)
         if row is not None
     ]
     return JSONResponse(
@@ -2345,6 +2375,10 @@ def futures_klines_api(
             "symbol": normalized_symbol,
             "interval": interval,
             "limit": limit,
+            "market_session_filter": symbol_config.market_session_filter,
+            "raw_bars_count": len(raw_klines),
+            "filtered_bars_count": len(filtered_klines),
+            "filtered_out_bars": max(len(raw_klines) - len(filtered_klines), 0),
             "klines": rows,
         }
     )

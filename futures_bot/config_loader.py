@@ -11,6 +11,7 @@ DEFAULT_FUTURES_SETTINGS_PATH = CONFIG_DIR / "futures_settings.yaml"
 DEFAULT_FUTURES_SYMBOLS_PATH = CONFIG_DIR / "futures_symbols.yaml"
 ALLOWED_FUTURES_STRATEGIES = {"trend_long", "trend_long_test"}
 ALLOWED_FUTURES_TIMEFRAMES = {"5m", "15m", "1h", "4h", "1d"}
+ALLOWED_MARKET_SESSION_FILTERS = {"none", "us_regular"}
 DEFAULT_FUTURES_RISK_SETTINGS: dict[str, int | float] = {
     "max_single_order_usdt": 20,
     "max_consecutive_losing_trades": 4,
@@ -90,6 +91,7 @@ class FuturesSymbolConfig:
     margin_amount: float
     trend_timeframe: str
     signal_timeframe: str
+    market_session_filter: str = "none"
 
 
 @dataclass(frozen=True)
@@ -511,6 +513,7 @@ def _symbol_config_to_mapping(symbol_config: FuturesSymbolConfig | dict[str, Any
             "margin_amount": symbol_config.margin_amount,
             "trend_timeframe": symbol_config.trend_timeframe,
             "signal_timeframe": symbol_config.signal_timeframe,
+            "market_session_filter": symbol_config.market_session_filter,
         }
     if isinstance(symbol_config, dict):
         return dict(symbol_config)
@@ -570,6 +573,16 @@ def _validate_symbol_configs(
                 f"{sorted(ALLOWED_FUTURES_TIMEFRAMES)} in {symbols_path}"
             )
 
+        market_session_filter = raw_mapping.get("market_session_filter", "none")
+        if (
+            not isinstance(market_session_filter, str)
+            or market_session_filter not in ALLOWED_MARKET_SESSION_FILTERS
+        ):
+            raise ValueError(
+                f"{field_prefix}.market_session_filter must be one of "
+                f"{sorted(ALLOWED_MARKET_SESSION_FILTERS)} in {symbols_path}"
+            )
+
         loaded_symbols[symbol] = FuturesSymbolConfig(
             symbol=symbol,
             enabled=enabled,
@@ -578,6 +591,7 @@ def _validate_symbol_configs(
             margin_amount=margin_amount,
             trend_timeframe=trend_timeframe,
             signal_timeframe=signal_timeframe,
+            market_session_filter=market_session_filter,
         )
     return loaded_symbols
 
@@ -608,6 +622,7 @@ def dump_futures_symbols_yaml(symbols: dict[str, FuturesSymbolConfig]) -> str:
                 f"    margin_amount: {_format_yaml_scalar(symbol_config.margin_amount)}",
                 f"    trend_timeframe: {_format_yaml_scalar(symbol_config.trend_timeframe)}",
                 f"    signal_timeframe: {_format_yaml_scalar(symbol_config.signal_timeframe)}",
+                f"    market_session_filter: {_format_yaml_scalar(symbol_config.market_session_filter)}",
             ]
         )
     return "\n".join(lines) + "\n"

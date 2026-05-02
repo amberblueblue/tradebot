@@ -436,51 +436,6 @@
           </div>
           {% endif %}
 
-          <div id="futuresKlineCard" class="col-12 d-none">
-            <div class="card shadow-sm border-primary">
-              <div class="card-body">
-                <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mb-3">
-                  <h2 class="h5 mb-0"><span id="futuresKlineSymbolTitle">Symbol</span> K线</h2>
-                  <div class="d-flex flex-wrap gap-2 align-items-center">
-                    <label for="futures-kline-interval" class="form-label mb-0">周期</label>
-                    <select id="futures-kline-interval" class="form-select form-select-sm w-auto">
-                      {% for interval in futures_kline_intervals %}
-                      <option value="{{ interval }}" {% if interval == '5m' %}selected{% endif %}>{{ interval }}</option>
-                      {% endfor %}
-                    </select>
-                    <button id="futures-kline-close" type="button" class="btn btn-sm btn-outline-secondary">Close</button>
-                  </div>
-                </div>
-
-                <div id="futuresKlineError" class="alert alert-danger d-none" role="alert"></div>
-
-                <div class="performance-chart-wrap">
-                  <canvas id="futuresKlineChart"></canvas>
-                </div>
-
-                <div class="table-responsive mt-4">
-                  <table class="table table-sm align-middle mb-0">
-                    <thead>
-                      <tr>
-                        <th>时间</th>
-                        <th class="text-end">open</th>
-                        <th class="text-end">high</th>
-                        <th class="text-end">low</th>
-                        <th class="text-end">close</th>
-                        <th class="text-end">volume</th>
-                      </tr>
-                    </thead>
-                    <tbody id="futuresKlineTableBody">
-                      <tr>
-                        <td colspan="6" class="text-secondary">请选择标的查看K线</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-
           {% if futures_symbol_edit_config %}
           <div class="col-12">
             <div class="card shadow-sm border-primary">
@@ -529,6 +484,13 @@
                         {% for timeframe in futures_allowed_timeframes %}
                         <option value="{{ timeframe }}" {% if timeframe == futures_symbol_edit_config.signal_timeframe %}selected{% endif %}>{{ timeframe }}</option>
                         {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-session-filter" class="form-label">K线过滤</label>
+                      <select id="edit-futures-session-filter" name="market_session_filter" class="form-select" required>
+                        <option value="none" {% if futures_symbol_edit_config.market_session_filter == 'none' %}selected{% endif %}>不过滤，24小时</option>
+                        <option value="us_regular" {% if futures_symbol_edit_config.market_session_filter == 'us_regular' %}selected{% endif %}>美股常规交易时段</option>
                       </select>
                     </div>
                     <div class="col-12">
@@ -586,6 +548,13 @@
                         {% endfor %}
                       </select>
                     </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="futures-session-filter" class="form-label">K线过滤</label>
+                      <select id="futures-session-filter" name="market_session_filter" class="form-select">
+                        <option value="none" {% if futures_symbol_form_defaults.market_session_filter == 'none' %}selected{% endif %}>不过滤，24小时</option>
+                        <option value="us_regular" {% if futures_symbol_form_defaults.market_session_filter == 'us_regular' %}selected{% endif %}>美股常规交易时段</option>
+                      </select>
+                    </div>
                     <div class="col-md-3 col-xl-1">
                       <div class="form-check mb-2">
                         <input id="futures-enabled" name="enabled" type="checkbox" class="form-check-input" value="true" {% if futures_symbol_form_defaults.enabled %}checked{% endif %}>
@@ -617,6 +586,7 @@
                         <th class="text-end">Margin Amount</th>
                         <th>Trend Timeframe</th>
                         <th>Signal Timeframe</th>
+                        <th>K线过滤</th>
                         <th class="text-end">Actions</th>
                       </tr>
                     </thead>
@@ -636,6 +606,13 @@
                         <td class="text-end">{{ symbol_config.margin_amount }}</td>
                         <td>{{ symbol_config.trend_timeframe }}</td>
                         <td>{{ symbol_config.signal_timeframe }}</td>
+                        <td>
+                          {% if symbol_config.market_session_filter == "us_regular" %}
+                            美股常规交易时段
+                          {% else %}
+                            不过滤，24小时
+                          {% endif %}
+                        </td>
                         <td>
                           <div class="d-flex flex-wrap gap-2 justify-content-end">
                             <button type="button" class="btn btn-sm btn-outline-success futures-kline-open" data-symbol="{{ symbol_config.symbol }}">查看K线</button>
@@ -659,6 +636,78 @@
               </div>
             </div>
           </div>
+
+          <div id="futuresKlineCard" class="col-12 d-none">
+            <div class="card shadow-sm border-primary">
+              <div class="card-body">
+                <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mb-3">
+                  <h2 class="h5 mb-0"><span id="futuresKlineSymbolTitle">Symbol</span> K线</h2>
+                  <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <label for="futures-kline-interval" class="form-label mb-0">周期</label>
+                    <select id="futures-kline-interval" class="form-select form-select-sm w-auto">
+                      {% for interval in futures_kline_intervals %}
+                      <option value="{{ interval }}" {% if interval == '5m' %}selected{% endif %}>{{ interval }}</option>
+                      {% endfor %}
+                    </select>
+                    <button id="futures-kline-close" type="button" class="btn btn-sm btn-outline-secondary">Close</button>
+                  </div>
+                </div>
+
+                <div id="futuresKlineError" class="alert alert-danger d-none" role="alert"></div>
+
+                <div class="row row-cols-1 row-cols-md-3 row-cols-xl-6 g-3 mb-3">
+                  <div class="col">
+                    <h3 class="h6 text-secondary">Symbol</h3>
+                    <p id="futures-kline-current-symbol" class="mb-0">n/a</p>
+                  </div>
+                  <div class="col">
+                    <h3 class="h6 text-secondary">Interval</h3>
+                    <p id="futures-kline-current-interval" class="mb-0">n/a</p>
+                  </div>
+                  <div class="col">
+                    <h3 class="h6 text-secondary">K线过滤</h3>
+                    <p id="futures-kline-current-filter" class="mb-0">n/a</p>
+                  </div>
+                  <div class="col">
+                    <h3 class="h6 text-secondary">Raw Bars</h3>
+                    <p id="futures-kline-raw-count" class="mb-0">n/a</p>
+                  </div>
+                  <div class="col">
+                    <h3 class="h6 text-secondary">Filtered Bars</h3>
+                    <p id="futures-kline-filtered-count" class="mb-0">n/a</p>
+                  </div>
+                  <div class="col">
+                    <h3 class="h6 text-secondary">Filtered Out</h3>
+                    <p id="futures-kline-filtered-out" class="mb-0">n/a</p>
+                  </div>
+                </div>
+
+                <div class="performance-chart-wrap">
+                  <canvas id="futuresKlineChart"></canvas>
+                </div>
+
+                <div class="table-responsive mt-4">
+                  <table class="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th>时间</th>
+                        <th class="text-end">open</th>
+                        <th class="text-end">high</th>
+                        <th class="text-end">low</th>
+                        <th class="text-end">close</th>
+                        <th class="text-end">volume</th>
+                      </tr>
+                    </thead>
+                    <tbody id="futuresKlineTableBody">
+                      <tr>
+                        <td colspan="6" class="text-secondary">请选择标的查看K线</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -668,8 +717,8 @@
     </div>
   </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 {% if futures_paper_performance %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
   fetch("/api/futures/paper_performance")
     .then((response) => response.json())
@@ -742,8 +791,13 @@
   const klineTableBody = document.getElementById("futuresKlineTableBody");
   const klineTitle = document.getElementById("futuresKlineSymbolTitle");
   const klineClose = document.getElementById("futures-kline-close");
+  const klineCurrentSymbol = document.getElementById("futures-kline-current-symbol");
+  const klineCurrentInterval = document.getElementById("futures-kline-current-interval");
+  const klineCurrentFilter = document.getElementById("futures-kline-current-filter");
+  const klineRawCount = document.getElementById("futures-kline-raw-count");
+  const klineFilteredCount = document.getElementById("futures-kline-filtered-count");
+  const klineFilteredOut = document.getElementById("futures-kline-filtered-out");
   let selectedKlineSymbol = "";
-  let futuresKlineChart = null;
 
   function setKlineError(message) {
     if (!klineError) {
@@ -774,50 +828,101 @@
     `).join("");
   }
 
+  function setKlineText(element, value) {
+    if (element) {
+      element.textContent = value;
+    }
+  }
+
+  function sessionFilterLabel(value) {
+    if (value === "us_regular") {
+      return "美股常规交易时段";
+    }
+    return "不过滤，24小时";
+  }
+
   function renderKlineChart(rows, payload) {
-    const context = document.getElementById("futuresKlineChart");
-    if (!context || typeof Chart === "undefined") {
+    const canvas = document.getElementById("futuresKlineChart");
+    if (!canvas) {
       return;
     }
-    if (futuresKlineChart) {
-      futuresKlineChart.destroy();
+    const parent = canvas.parentElement;
+    const width = Math.max(parent ? parent.clientWidth : 800, 320);
+    const height = Math.max(parent ? parent.clientHeight : 360, 260);
+    const scale = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(width * scale);
+    canvas.height = Math.floor(height * scale);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    const context = canvas.getContext("2d");
+    context.setTransform(scale, 0, 0, scale, 0, 0);
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+
+    if (!rows.length) {
+      context.fillStyle = "#6b7280";
+      context.font = "14px sans-serif";
+      context.fillText("暂无K线数据", 20, 32);
+      return;
     }
-    futuresKlineChart = new Chart(context, {
-      type: "line",
-      data: {
-        labels: rows.map((row) => row.open_time_local),
-        datasets: [
-          {
-            label: `${payload.symbol} close`,
-            data: rows.map((row) => row.close),
-            borderColor: "#0f766e",
-            backgroundColor: "rgba(15, 118, 110, 0.12)",
-            borderWidth: 2,
-            pointRadius: 0,
-            tension: 0.2,
-            fill: true,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: {
-          mode: "index",
-          intersect: false,
-        },
-        scales: {
-          x: {
-            ticks: {
-              maxTicksLimit: 8,
-            },
-          },
-          y: {
-            beginAtZero: false,
-          },
-        },
-      },
+
+    const padding = { top: 18, right: 56, bottom: 36, left: 18 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+    const highs = rows.map((row) => Number(row.high));
+    const lows = rows.map((row) => Number(row.low));
+    const maxPrice = Math.max(...highs);
+    const minPrice = Math.min(...lows);
+    const priceRange = maxPrice - minPrice || 1;
+    const yForPrice = (price) => (
+      padding.top + ((maxPrice - price) / priceRange) * chartHeight
+    );
+    const slotWidth = chartWidth / rows.length;
+    const candleWidth = Math.max(Math.min(slotWidth * 0.58, 14), 3);
+
+    context.strokeStyle = "#e5e7eb";
+    context.lineWidth = 1;
+    for (let index = 0; index <= 4; index += 1) {
+      const y = padding.top + (chartHeight / 4) * index;
+      context.beginPath();
+      context.moveTo(padding.left, y);
+      context.lineTo(width - padding.right, y);
+      context.stroke();
+      const price = maxPrice - (priceRange / 4) * index;
+      context.fillStyle = "#6b7280";
+      context.font = "12px sans-serif";
+      context.fillText(price.toFixed(4), width - padding.right + 8, y + 4);
+    }
+
+    rows.forEach((row, index) => {
+      const open = Number(row.open);
+      const high = Number(row.high);
+      const low = Number(row.low);
+      const close = Number(row.close);
+      const x = padding.left + slotWidth * index + slotWidth / 2;
+      const yHigh = yForPrice(high);
+      const yLow = yForPrice(low);
+      const yOpen = yForPrice(open);
+      const yClose = yForPrice(close);
+      const rising = close >= open;
+      const color = rising ? "#16a34a" : "#dc2626";
+      const bodyTop = Math.min(yOpen, yClose);
+      const bodyHeight = Math.max(Math.abs(yClose - yOpen), 1);
+
+      context.strokeStyle = color;
+      context.fillStyle = color;
+      context.beginPath();
+      context.moveTo(x, yHigh);
+      context.lineTo(x, yLow);
+      context.stroke();
+      context.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
     });
+
+    context.fillStyle = "#374151";
+    context.font = "12px sans-serif";
+    context.fillText(`${payload.symbol} ${payload.interval}`, padding.left, height - 12);
   }
 
   async function loadFuturesKlines(symbol) {
@@ -837,6 +942,12 @@
         throw new Error(payload.message || payload.error || "K线请求失败");
       }
       const rows = payload.klines || [];
+      setKlineText(klineCurrentSymbol, payload.symbol);
+      setKlineText(klineCurrentInterval, payload.interval);
+      setKlineText(klineCurrentFilter, sessionFilterLabel(payload.market_session_filter));
+      setKlineText(klineRawCount, payload.raw_bars_count);
+      setKlineText(klineFilteredCount, payload.filtered_bars_count);
+      setKlineText(klineFilteredOut, payload.filtered_out_bars);
       renderKlineChart(rows, payload);
       renderKlineTable(rows);
     } catch (error) {
