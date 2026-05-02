@@ -67,6 +67,7 @@ FUTURES_PAPER_STATE_PATH = BASE_DIR / "data" / "futures_paper_state.json"
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+USDT$")
 BOOLEAN_FORM_VALUES = {"true": True, "false": False}
 FUTURES_TIMEFRAME_OPTIONS = ("5m", "15m", "1h", "4h", "1d")
+FUTURES_KLINE_INTERVAL_OPTIONS = ("5m", "15m", "1h", "4h", "1d")
 FUTURES_RISK_SETTING_FIELDS = (
     ("risk.max_leverage", "最大杠杆", "number", "0.0001", ""),
     ("risk.max_margin_per_trade_usdt", "单笔最大保证金 USDT", "number", "0.0001", ""),
@@ -1256,6 +1257,24 @@ def _log_futures_symbol_action(action: str, symbol: str, **payload: object) -> N
     )
 
 
+def _futures_kline_row(kline) -> dict[str, object] | None:
+    if not isinstance(kline, (list, tuple)) or len(kline) < 6:
+        return None
+    try:
+        opened_at = datetime.fromtimestamp(float(kline[0]) / 1000, tz=timezone.utc)
+        return {
+            "open_time": opened_at.isoformat(),
+            "open_time_local": opened_at.astimezone().isoformat(),
+            "open": float(kline[1]),
+            "high": float(kline[2]),
+            "low": float(kline[3]),
+            "close": float(kline[4]),
+            "volume": float(kline[5]),
+        }
+    except (TypeError, ValueError, OSError):
+        return None
+
+
 def _log_settings_action(action: str, *, mode: str, **payload: object) -> None:
     StructuredLogger(str(LOG_FILE_MAP["system"])).log(
         action=action,
@@ -1530,6 +1549,7 @@ def _load_futures_view() -> dict:
             "futures_symbol_form_defaults": _futures_symbol_form_defaults(),
             "futures_allowed_strategies": sorted(ALLOWED_FUTURES_STRATEGIES),
             "futures_allowed_timeframes": FUTURES_TIMEFRAME_OPTIONS,
+            "futures_kline_intervals": FUTURES_KLINE_INTERVAL_OPTIONS,
             "futures_symbol_edit_config": None,
             "futures_symbol_edit_error": None,
         }
@@ -1582,6 +1602,7 @@ def _load_futures_view() -> dict:
         "futures_symbol_form_defaults": _futures_symbol_form_defaults(),
         "futures_allowed_strategies": sorted(ALLOWED_FUTURES_STRATEGIES),
         "futures_allowed_timeframes": FUTURES_TIMEFRAME_OPTIONS,
+        "futures_kline_intervals": FUTURES_KLINE_INTERVAL_OPTIONS,
         "futures_symbol_edit_config": None,
         "futures_symbol_edit_error": None,
     }
@@ -2271,6 +2292,62 @@ def account_risk_reset_api(request: Request):
     if "text/html" in accept_header:
         return RedirectResponse(url="/", status_code=303)
     return JSONResponse(account_risk_status_payload(state))
+
+
+@app.get("/api/futures/klines")
+def futures_klines_api(
+    symbol: str,
+    interval: str = "5m",
+    limit: int = 40,
+):
+    normalized_symbol = symbol.strip().upper()
+    if not SYMBOL_PATTERN.fullmatch(normalized_symbol):
+        return JSONResponse({"error": "invalid_symbol"}, status_code=400)
+    if interval not in FUTURES_KLINE_INTERVAL_OPTIONS:
+        return JSONResponse({"error": "invalid_interval"}, status_code=400)
+    if limit < 1 or limit > 1000:
+        return JSONResponse({"error": "limit_must_be_between_1_and_1000"}, status_code=400)
+
+    try:
+        config = load_futures_config()
+    except Exception as exc:
+        return JSONResponse(
+            {"error": "futures_config_error", "message": str(exc)},
+            status_code=500,
+        )
+    if normalized_symbol not in config.symbols:
+        return JSONResponse({"error": "symbol_not_configured"}, status_code=404)
+
+    client = BinanceFuturesClient(
+        base_url=config.futures.base_url,
+        timeout=config.futures.request_timeout_seconds,
+    )
+    try:
+        raw_klines = client.get_klines(normalized_symbol, interval, limit=limit)
+    except Exception as exc:
+        return JSONResponse(
+            {"error": "futures_klines_query_failed", "message": str(exc)},
+            status_code=502,
+        )
+    if not isinstance(raw_klines, list):
+        return JSONResponse(
+            {"error": "unexpected_futures_klines_payload"},
+            status_code=502,
+        )
+
+    rows = [
+        row
+        for row in (_futures_kline_row(kline) for kline in raw_klines)
+        if row is not None
+    ]
+    return JSONResponse(
+        {
+            "symbol": normalized_symbol,
+            "interval": interval,
+            "limit": limit,
+            "klines": rows,
+        }
+    )
 
 
 @app.get("/logs", response_class=HTMLResponse)

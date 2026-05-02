@@ -436,6 +436,51 @@
           </div>
           {% endif %}
 
+          <div id="futuresKlineCard" class="col-12 d-none">
+            <div class="card shadow-sm border-primary">
+              <div class="card-body">
+                <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mb-3">
+                  <h2 class="h5 mb-0"><span id="futuresKlineSymbolTitle">Symbol</span> K线</h2>
+                  <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <label for="futures-kline-interval" class="form-label mb-0">周期</label>
+                    <select id="futures-kline-interval" class="form-select form-select-sm w-auto">
+                      {% for interval in futures_kline_intervals %}
+                      <option value="{{ interval }}" {% if interval == '5m' %}selected{% endif %}>{{ interval }}</option>
+                      {% endfor %}
+                    </select>
+                    <button id="futures-kline-close" type="button" class="btn btn-sm btn-outline-secondary">Close</button>
+                  </div>
+                </div>
+
+                <div id="futuresKlineError" class="alert alert-danger d-none" role="alert"></div>
+
+                <div class="performance-chart-wrap">
+                  <canvas id="futuresKlineChart"></canvas>
+                </div>
+
+                <div class="table-responsive mt-4">
+                  <table class="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th>时间</th>
+                        <th class="text-end">open</th>
+                        <th class="text-end">high</th>
+                        <th class="text-end">low</th>
+                        <th class="text-end">close</th>
+                        <th class="text-end">volume</th>
+                      </tr>
+                    </thead>
+                    <tbody id="futuresKlineTableBody">
+                      <tr>
+                        <td colspan="6" class="text-secondary">请选择标的查看K线</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {% if futures_symbol_edit_config %}
           <div class="col-12">
             <div class="card shadow-sm border-primary">
@@ -593,6 +638,7 @@
                         <td>{{ symbol_config.signal_timeframe }}</td>
                         <td>
                           <div class="d-flex flex-wrap gap-2 justify-content-end">
+                            <button type="button" class="btn btn-sm btn-outline-success futures-kline-open" data-symbol="{{ symbol_config.symbol }}">查看K线</button>
                             <a class="btn btn-sm btn-outline-secondary" href="/futures/symbols/{{ symbol_config.symbol }}/edit">Edit</a>
                             <form method="post" action="/futures/symbols/{{ symbol_config.symbol }}/toggle">
                               <button type="submit" class="btn btn-sm btn-outline-primary">{% if symbol_config.enabled %}Disable{% else %}Enable{% endif %}</button>
@@ -622,8 +668,8 @@
     </div>
   </div>
 </div>
-{% if futures_paper_performance %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% if futures_paper_performance %}
 <script>
   fetch("/api/futures/paper_performance")
     .then((response) => response.json())
@@ -689,4 +735,144 @@
     });
 </script>
 {% endif %}
+<script>
+  const klineCard = document.getElementById("futuresKlineCard");
+  const klineError = document.getElementById("futuresKlineError");
+  const klineInterval = document.getElementById("futures-kline-interval");
+  const klineTableBody = document.getElementById("futuresKlineTableBody");
+  const klineTitle = document.getElementById("futuresKlineSymbolTitle");
+  const klineClose = document.getElementById("futures-kline-close");
+  let selectedKlineSymbol = "";
+  let futuresKlineChart = null;
+
+  function setKlineError(message) {
+    if (!klineError) {
+      return;
+    }
+    klineError.textContent = message || "";
+    klineError.classList.toggle("d-none", !message);
+  }
+
+  function renderKlineTable(rows) {
+    if (!klineTableBody) {
+      return;
+    }
+    const latestRows = rows.slice(-40).reverse();
+    if (latestRows.length === 0) {
+      klineTableBody.innerHTML = '<tr><td colspan="6" class="text-secondary">暂无K线数据</td></tr>';
+      return;
+    }
+    klineTableBody.innerHTML = latestRows.map((row) => `
+      <tr>
+        <td>${row.open_time_local}</td>
+        <td class="text-end">${row.open}</td>
+        <td class="text-end">${row.high}</td>
+        <td class="text-end">${row.low}</td>
+        <td class="text-end">${row.close}</td>
+        <td class="text-end">${row.volume}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderKlineChart(rows, payload) {
+    const context = document.getElementById("futuresKlineChart");
+    if (!context || typeof Chart === "undefined") {
+      return;
+    }
+    if (futuresKlineChart) {
+      futuresKlineChart.destroy();
+    }
+    futuresKlineChart = new Chart(context, {
+      type: "line",
+      data: {
+        labels: rows.map((row) => row.open_time_local),
+        datasets: [
+          {
+            label: `${payload.symbol} close`,
+            data: rows.map((row) => row.close),
+            borderColor: "#0f766e",
+            backgroundColor: "rgba(15, 118, 110, 0.12)",
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.2,
+            fill: true,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: "index",
+          intersect: false,
+        },
+        scales: {
+          x: {
+            ticks: {
+              maxTicksLimit: 8,
+            },
+          },
+          y: {
+            beginAtZero: false,
+          },
+        },
+      },
+    });
+  }
+
+  async function loadFuturesKlines(symbol) {
+    if (!symbol || !klineInterval) {
+      return;
+    }
+    setKlineError("");
+    const params = new URLSearchParams({
+      symbol,
+      interval: klineInterval.value,
+      limit: "40",
+    });
+    try {
+      const response = await fetch(`/api/futures/klines?${params.toString()}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.message || payload.error || "K线请求失败");
+      }
+      const rows = payload.klines || [];
+      renderKlineChart(rows, payload);
+      renderKlineTable(rows);
+    } catch (error) {
+      setKlineError(`获取K线失败：${error.message}`);
+      renderKlineTable([]);
+    }
+  }
+
+  document.querySelectorAll(".futures-kline-open").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedKlineSymbol = button.dataset.symbol || "";
+      if (!selectedKlineSymbol || !klineCard) {
+        return;
+      }
+      if (klineTitle) {
+        klineTitle.textContent = selectedKlineSymbol;
+      }
+      if (klineInterval) {
+        klineInterval.value = "5m";
+      }
+      klineCard.classList.remove("d-none");
+      klineCard.scrollIntoView({ behavior: "smooth", block: "start" });
+      loadFuturesKlines(selectedKlineSymbol);
+    });
+  });
+
+  if (klineInterval) {
+    klineInterval.addEventListener("change", () => {
+      loadFuturesKlines(selectedKlineSymbol);
+    });
+  }
+
+  if (klineClose && klineCard) {
+    klineClose.addEventListener("click", () => {
+      klineCard.classList.add("d-none");
+    });
+  }
+</script>
 {% endblock %}
