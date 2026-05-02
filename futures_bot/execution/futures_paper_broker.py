@@ -23,6 +23,13 @@ class FuturesPosition:
     unrealized_pnl: float
     leverage: float
     margin: float
+    entry_time: str | None = None
+    entry_bar_index: int | None = None
+    partial1_done: bool = False
+    partial2_done: bool = False
+    max_unrealized_return: float = 0.0
+    current_return: float = 0.0
+    holding_bars: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -81,6 +88,7 @@ class FuturesPaperBroker:
         margin: float,
         leverage: float,
         price: float,
+        entry_bar_index: int | None = None,
     ) -> FuturesPosition:
         normalized_side = side.upper()
         if normalized_side not in {"LONG", "SHORT"}:
@@ -102,6 +110,13 @@ class FuturesPaperBroker:
             unrealized_pnl=0.0,
             leverage=leverage,
             margin=margin,
+            entry_time=datetime.now(timezone.utc).isoformat(),
+            entry_bar_index=entry_bar_index,
+            partial1_done=False,
+            partial2_done=False,
+            max_unrealized_return=0.0,
+            current_return=0.0,
+            holding_bars=0,
         )
         self._positions[symbol] = position
         self.save_state()
@@ -124,8 +139,52 @@ class FuturesPaperBroker:
                 "margin": position.margin,
                 "leverage": position.leverage,
                 "realized_pnl": position.unrealized_pnl,
+                "close_type": "full",
+                "sell_pct": 100.0,
             }
         )
+        self.save_state()
+        return position
+
+    def close_partial(self, symbol: str, sell_pct: float, price: float) -> FuturesPosition:
+        if price <= 0:
+            raise ValueError("price must be greater than zero")
+        if not 0 < sell_pct <= 100:
+            raise ValueError("sell_pct must be greater than 0 and less than or equal to 100")
+        position = self._positions[symbol]
+        close_amt = position.position_amt * (sell_pct / 100)
+        if close_amt <= 0:
+            raise ValueError("partial close amount must be greater than zero")
+        realized_pnl = self._calculate_unrealized_pnl_for_amount(position, price, close_amt)
+        remaining_amt = position.position_amt - close_amt
+        position.position_amt = max(remaining_amt, 0.0)
+        position.margin = max(position.margin * (1 - sell_pct / 100), 0.0)
+        position.mark_price = price
+        position.unrealized_pnl = self._calculate_unrealized_pnl(position)
+        position.current_return = self._calculate_current_return(position)
+        position.max_unrealized_return = max(position.max_unrealized_return, position.current_return)
+        if abs(sell_pct - 30) < 0.000001:
+            position.partial1_done = True
+        elif abs(sell_pct - 50) < 0.000001:
+            position.partial2_done = True
+        self._closed_trades.append(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "symbol": position.symbol,
+                "side": position.side,
+                "entry_price": position.entry_price,
+                "exit_price": price,
+                "position_amt": close_amt,
+                "remaining_position_amt": position.position_amt,
+                "margin": position.margin,
+                "leverage": position.leverage,
+                "realized_pnl": realized_pnl,
+                "close_type": "partial",
+                "sell_pct": sell_pct,
+            }
+        )
+        if position.position_amt <= 0:
+            self._positions.pop(symbol, None)
         self.save_state()
         return position
 
@@ -135,6 +194,17 @@ class FuturesPaperBroker:
         position = self._positions[symbol]
         position.mark_price = mark_price
         position.unrealized_pnl = self._calculate_unrealized_pnl(position)
+        position.current_return = self._calculate_current_return(position)
+        position.max_unrealized_return = max(position.max_unrealized_return, position.current_return)
+        self.save_state()
+        return position
+
+    def update_position_metrics(self, symbol: str, *, current_bar_index: int | None = None) -> FuturesPosition:
+        position = self._positions[symbol]
+        position.current_return = self._calculate_current_return(position)
+        position.max_unrealized_return = max(position.max_unrealized_return, position.current_return)
+        if current_bar_index is not None and position.entry_bar_index is not None:
+            position.holding_bars = max(current_bar_index - position.entry_bar_index, 0)
         self.save_state()
         return position
 
@@ -163,6 +233,17 @@ class FuturesPaperBroker:
                     unrealized_pnl=float(item["unrealized_pnl"]),
                     leverage=float(item["leverage"]),
                     margin=float(item["margin"]),
+                    entry_time=item.get("entry_time"),
+                    entry_bar_index=(
+                        int(item["entry_bar_index"])
+                        if item.get("entry_bar_index") is not None
+                        else None
+                    ),
+                    partial1_done=bool(item.get("partial1_done", False)),
+                    partial2_done=bool(item.get("partial2_done", False)),
+                    max_unrealized_return=float(item.get("max_unrealized_return", 0.0)),
+                    current_return=float(item.get("current_return", 0.0)),
+                    holding_bars=int(item.get("holding_bars", 0)),
                 )
             except (KeyError, TypeError, ValueError):
                 continue
@@ -171,8 +252,30 @@ class FuturesPaperBroker:
 
     @staticmethod
     def _calculate_unrealized_pnl(position: FuturesPosition) -> float:
+        return FuturesPaperBroker._calculate_unrealized_pnl_for_amount(
+            position,
+            position.mark_price,
+            position.position_amt,
+        )
+
+    @staticmethod
+    def _calculate_unrealized_pnl_for_amount(
+        position: FuturesPosition,
+        price: float,
+        amount: float,
+    ) -> float:
         if position.side == "LONG":
-            return (position.mark_price - position.entry_price) * position.position_amt
+            return (price - position.entry_price) * amount
         if position.side == "SHORT":
-            return (position.entry_price - position.mark_price) * position.position_amt
+            return (position.entry_price - price) * amount
+        raise ValueError("side must be LONG or SHORT")
+
+    @staticmethod
+    def _calculate_current_return(position: FuturesPosition) -> float:
+        if position.entry_price <= 0:
+            return 0.0
+        if position.side == "LONG":
+            return ((position.mark_price - position.entry_price) / position.entry_price) * 100
+        if position.side == "SHORT":
+            return ((position.entry_price - position.mark_price) / position.entry_price) * 100
         raise ValueError("side must be LONG or SHORT")

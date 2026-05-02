@@ -7,6 +7,9 @@ from typing import Any, Protocol
 LONG = "LONG"
 HOLD = "HOLD"
 CLOSE = "CLOSE"
+CLOSE_FULL = "CLOSE_FULL"
+CLOSE_PARTIAL_30 = "CLOSE_PARTIAL_30"
+CLOSE_PARTIAL_50 = "CLOSE_PARTIAL_50"
 
 
 @dataclass(frozen=True)

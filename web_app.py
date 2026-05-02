@@ -100,6 +100,9 @@ FUTURES_STRATEGY_SETTING_FIELDS = (
     ("strategy.trend_long.rsi_period", "trend_long RSI 周期", "number", "1", ""),
     ("strategy.trend_long.min_rsi", "trend_long 最小 RSI", "number", "0.0001", ""),
     ("strategy.trend_long.max_rsi", "trend_long 最大 RSI", "number", "0.0001", ""),
+    ("strategy.trend_long.rsi_overheat", "RSI过热阈值", "number", "0.0001", ""),
+    ("strategy.trend_long.max_hold_bars", "最大持仓K线数", "number", "1", ""),
+    ("strategy.trend_long.min_expected_return", "最低预期收益", "number", "0.0001", ""),
     ("strategy.trend_long_test.ema_fast", "trend_long_test 快速 EMA", "number", "1", ""),
     ("strategy.trend_long_test.macd_fast", "trend_long_test MACD 快线周期", "number", "1", ""),
     ("strategy.trend_long_test.macd_slow", "trend_long_test MACD 慢线周期", "number", "1", ""),
@@ -1047,6 +1050,11 @@ def _futures_paper_position_row(position: dict[str, object]) -> dict[str, object
         "unrealized_pnl": _to_optional_float(position.get("unrealized_pnl")),
         "leverage": _to_optional_float(position.get("leverage")),
         "margin": _to_optional_float(position.get("margin")),
+        "current_return": _to_optional_float(position.get("current_return")),
+        "max_unrealized_return": _to_optional_float(position.get("max_unrealized_return")),
+        "partial1_done": bool(position.get("partial1_done", False)),
+        "partial2_done": bool(position.get("partial2_done", False)),
+        "holding_bars": position.get("holding_bars"),
     }
 
 
@@ -1072,6 +1080,8 @@ def _futures_paper_trade_row(trade: dict[str, object]) -> dict[str, object]:
         "margin": _to_optional_float(trade.get("margin")),
         "leverage": _to_optional_float(trade.get("leverage")),
         "realized_pnl": _to_optional_float(trade.get("realized_pnl")),
+        "close_type": trade.get("close_type", "full"),
+        "sell_pct": _to_optional_float(trade.get("sell_pct")),
     }
 
 
@@ -1414,6 +1424,7 @@ def _coerce_futures_setting_value(path: str, raw_value: str):
         "strategy.trend_long.macd_slow",
         "strategy.trend_long.macd_signal",
         "strategy.trend_long.rsi_period",
+        "strategy.trend_long.max_hold_bars",
         "strategy.trend_long_test.ema_fast",
         "strategy.trend_long_test.macd_fast",
         "strategy.trend_long_test.macd_slow",
@@ -1426,6 +1437,8 @@ def _coerce_futures_setting_value(path: str, raw_value: str):
         return number
     if path.startswith("strategy."):
         number = float(value)
+        if path == "strategy.trend_long.min_expected_return":
+            return number
         if number <= 0:
             raise ValueError(f"{path} must be greater than 0")
         return number

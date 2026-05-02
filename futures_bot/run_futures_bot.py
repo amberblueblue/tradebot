@@ -16,6 +16,7 @@ from futures_bot.config_loader import load_futures_config  # noqa: E402
 from futures_bot.exchange.binance_futures_client import BinanceFuturesClient  # noqa: E402
 from futures_bot.execution.futures_paper_broker import FuturesPaperBroker  # noqa: E402
 from futures_bot.risk.futures_risk import check_futures_pre_open_risk  # noqa: E402
+from futures_bot.strategy.base import CLOSE, CLOSE_FULL, CLOSE_PARTIAL_30, CLOSE_PARTIAL_50, HOLD, LONG  # noqa: E402
 from futures_bot.strategy.registry import get_strategy  # noqa: E402
 from observability.event_logger import StructuredLogger  # noqa: E402
 
@@ -310,7 +311,7 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
             loop_state["signals"][symbol] = record
             _log("futures_signal", **record)
 
-            if signal_action == "HOLD":
+            if signal_action == HOLD:
                 record["paper_action"] = "hold"
                 _log("futures_signal_hold", **record)
                 if signal.reason == "funding_rate_exceeds_max_abs":
@@ -328,7 +329,7 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
             processed_key = f"{symbol}:{symbol_config.signal_timeframe}"
             last_processed_bar = loop_state["last_processed_bars"].get(processed_key)
 
-            if signal_action == "LONG":
+            if signal_action == LONG:
                 if signal_bar_time is not None and last_processed_bar == signal_bar_time:
                     record["paper_action"] = "duplicate_bar_skipped"
                     _log("futures_duplicate_bar_skipped", **record)
@@ -382,13 +383,14 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                     margin=symbol_config.margin_amount,
                     leverage=symbol_config.leverage,
                     price=mark_price,
+                    entry_bar_index=len(signal_klines) - 1,
                 )
                 record["paper_action"] = "opened"
                 record["position"] = position.to_dict()
                 loop_state["last_processed_bars"][processed_key] = signal_bar_time
                 _log("futures_paper_open", **record)
                 print(f"[futures_strategy] {symbol} LONG opened in paper")
-            elif signal_action == "CLOSE":
+            elif signal_action in {CLOSE, CLOSE_FULL}:
                 if existing_position is None:
                     record["paper_action"] = "close_skipped_no_position"
                     _log("futures_signal_hold", **record)
@@ -403,6 +405,50 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                 loop_state["last_processed_bars"][processed_key] = signal_bar_time
                 _log("futures_paper_close", **record)
                 print(f"[futures_paper_close] {symbol} CLOSE closed in paper")
+            elif signal_action == CLOSE_PARTIAL_30:
+                if existing_position is None:
+                    record["paper_action"] = "partial_close_skipped_no_position"
+                    _log("futures_signal_hold", **record)
+                    print(f"[futures_strategy] {symbol} partial close skipped: no paper position")
+                    results.append(record)
+                    continue
+                if existing_position.partial1_done:
+                    record["paper_action"] = "partial1_skipped_already_done"
+                    _log("futures_signal_hold", **record)
+                    print(f"[futures_strategy] {symbol} partial1 skipped: already done")
+                    results.append(record)
+                    continue
+                partial_position = broker.close_partial(symbol, config.risk.partial1_sell_pct, mark_price)
+                partial_position.partial1_done = True
+                broker.save_state()
+                record["paper_action"] = "partial_closed"
+                record["sell_pct"] = config.risk.partial1_sell_pct
+                record["position"] = partial_position.to_dict()
+                loop_state["last_processed_bars"][processed_key] = signal_bar_time
+                _log("futures_paper_partial_close", **record)
+                print(f"[futures_paper_close] {symbol} CLOSE_PARTIAL_30 closed in paper")
+            elif signal_action == CLOSE_PARTIAL_50:
+                if existing_position is None:
+                    record["paper_action"] = "partial_close_skipped_no_position"
+                    _log("futures_signal_hold", **record)
+                    print(f"[futures_strategy] {symbol} partial close skipped: no paper position")
+                    results.append(record)
+                    continue
+                if existing_position.partial2_done:
+                    record["paper_action"] = "partial2_skipped_already_done"
+                    _log("futures_signal_hold", **record)
+                    print(f"[futures_strategy] {symbol} partial2 skipped: already done")
+                    results.append(record)
+                    continue
+                partial_position = broker.close_partial(symbol, config.risk.partial2_sell_pct, mark_price)
+                partial_position.partial2_done = True
+                broker.save_state()
+                record["paper_action"] = "partial_closed"
+                record["sell_pct"] = config.risk.partial2_sell_pct
+                record["position"] = partial_position.to_dict()
+                loop_state["last_processed_bars"][processed_key] = signal_bar_time
+                _log("futures_paper_partial_close", **record)
+                print(f"[futures_paper_close] {symbol} CLOSE_PARTIAL_50 closed in paper")
             else:
                 record["paper_action"] = "unknown_signal_hold"
                 _log("futures_signal_hold", **record)

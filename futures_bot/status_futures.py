@@ -409,6 +409,19 @@ def build_strategy_signal_payload(symbol: str) -> dict[str, object]:
         "confidence": signal.confidence,
         "metadata": metadata,
     }
+    for key in (
+        "current_return",
+        "max_unrealized_return",
+        "holding_bars",
+        "partial1_done",
+        "partial2_done",
+        "bearish_divergence",
+        "exit_rule_triggered",
+        "strategy_settings",
+        "risk_settings",
+    ):
+        if key in metadata:
+            payload[key] = metadata[key]
     _save_strategy_signal(payload)
     return payload
 

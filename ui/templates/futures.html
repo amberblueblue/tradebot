@@ -87,6 +87,11 @@
                         <th class="text-end">Margin</th>
                         <th class="text-end">Leverage</th>
                         <th class="text-end">Unrealized PnL</th>
+                        <th class="text-end">Current Return</th>
+                        <th class="text-end">Max Return</th>
+                        <th>Partial 1</th>
+                        <th>Partial 2</th>
+                        <th class="text-end">Holding Bars</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -102,6 +107,11 @@
                         <td class="text-end {% if position.unrealized_pnl is not none and position.unrealized_pnl > 0 %}text-success{% elif position.unrealized_pnl is not none and position.unrealized_pnl < 0 %}text-danger{% endif %}">
                           {% if position.unrealized_pnl is not none %}{{ position.unrealized_pnl }}{% else %}n/a{% endif %}
                         </td>
+                        <td class="text-end">{% if position.current_return is not none %}{{ position.current_return }}%{% else %}n/a{% endif %}</td>
+                        <td class="text-end">{% if position.max_unrealized_return is not none %}{{ position.max_unrealized_return }}%{% else %}n/a{% endif %}</td>
+                        <td>{% if position.partial1_done %}done{% else %}pending{% endif %}</td>
+                        <td>{% if position.partial2_done %}done{% else %}pending{% endif %}</td>
+                        <td class="text-end">{{ position.holding_bars if position.holding_bars is not none else "n/a" }}</td>
                       </tr>
                       {% endfor %}
                     </tbody>
@@ -149,6 +159,8 @@
                         <th class="text-end">Position Amount</th>
                         <th class="text-end">Margin</th>
                         <th class="text-end">Leverage</th>
+                        <th>Close Type</th>
+                        <th class="text-end">Sell %</th>
                         <th class="text-end">Realized PnL</th>
                       </tr>
                     </thead>
@@ -163,6 +175,8 @@
                         <td class="text-end">{% if trade.position_amt is not none %}{{ trade.position_amt }}{% else %}n/a{% endif %}</td>
                         <td class="text-end">{% if trade.margin is not none %}{{ trade.margin }}{% else %}n/a{% endif %}</td>
                         <td class="text-end">{% if trade.leverage is not none %}{{ trade.leverage }}{% else %}n/a{% endif %}</td>
+                        <td>{{ trade.close_type or "full" }}</td>
+                        <td class="text-end">{% if trade.sell_pct is not none %}{{ trade.sell_pct }}%{% else %}n/a{% endif %}</td>
                         <td class="text-end {% if trade.realized_pnl is not none and trade.realized_pnl > 0 %}text-success{% elif trade.realized_pnl is not none and trade.realized_pnl < 0 %}text-danger{% endif %}">
                           {% if trade.realized_pnl is not none %}{{ trade.realized_pnl }}{% else %}n/a{% endif %}
                         </td>

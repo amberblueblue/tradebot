@@ -27,12 +27,15 @@ DEFAULT_FUTURES_STRATEGY_SETTINGS: dict[str, dict[str, int | float]] = {
     "trend_long": {
         "ema_fast": 44,
         "ema_slow": 144,
-        "macd_fast": 12,
-        "macd_slow": 26,
+        "macd_fast": 16,
+        "macd_slow": 32,
         "macd_signal": 9,
         "rsi_period": 14,
         "min_rsi": 45,
         "max_rsi": 75,
+        "rsi_overheat": 75,
+        "max_hold_bars": 30,
+        "min_expected_return": 0.0,
     },
     "trend_long_test": {
         "ema_fast": 44,
@@ -226,6 +229,9 @@ def load_futures_strategy_settings(
     for key, default_value in defaults.items():
         value = configured.get(key, default_value)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if key == "min_expected_return":
+            result[key] = float(value)
             continue
         if value <= 0:
             continue
