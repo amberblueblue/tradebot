@@ -408,6 +408,13 @@ prod 参数应在生产前端修改，尤其是：
 - `config/futures_settings.yaml`
 - `config/futures_symbols.yaml`
 
+生产部署不会覆盖 `config`。如需把生产环境 symbol 配置重置到安全初始状态，只保留 disabled 的 `BTCUSDT`，手动运行：
+
+```bash
+cd /Users/eason/traderbot_dev
+bash scripts/reset_prod_symbols_safe.sh
+```
+
 ## Health Check
 
 控制台提供统一健康检查页面和 JSON API：
