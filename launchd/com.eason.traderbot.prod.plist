@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.eason.traderbot.prod</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/eason/traderbot_prod/scripts/start_prod.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/eason/traderbot_prod</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/eason/traderbot_prod/logs/launchd.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/eason/traderbot_prod/logs/launchd.err.log</string>
+</dict>
+</plist>

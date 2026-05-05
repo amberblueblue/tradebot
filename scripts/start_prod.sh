@@ -13,11 +13,26 @@ mkdir -p "$PROD_DIR/logs" "$PROD_DIR/runtime"
 cd "$PROD_DIR" || exit 1
 export PATH="$PROD_DIR/.venv/bin:/Library/Frameworks/Python.framework/Versions/3.14/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-exec > >("$PYTHON_ENV" python3 -m observability.event_logger --rotate-stream "$LOG_FILE") 2>&1
+exec >> "$LOG_FILE" 2>&1
 
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] traderbot_prod launch start"
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] python3=$(command -v python3 || echo missing)"
-STARTED_PIDS=""
+
+shutdown() {
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] traderbot_prod launch stop requested"
+  for pid_file in "$PROD_DIR/runtime/web_app.pid" "$PROD_DIR/runtime/run_bot.pid"; do
+    if [ -f "$pid_file" ]; then
+      pid=$(cat "$pid_file")
+      if [ -n "$pid" ] && kill -0 "$pid" >/dev/null 2>&1; then
+        echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] stopping child pid=$pid"
+        kill "$pid" >/dev/null 2>&1 || true
+      fi
+    fi
+  done
+  exit 0
+}
+
+trap shutdown TERM INT
 
 is_running() {
   local script_path="$1"
@@ -41,19 +56,17 @@ start_process() {
     echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] starting $name"
     echo "working_directory=$PROD_DIR"
     echo "script=$script_path"
-  } | "$PYTHON_ENV" python3 -m observability.event_logger --rotate-stream "$process_log"
-  nohup bash -c 'PYTHONUNBUFFERED=1 "$1" python3 "$2" 2>&1 | "$1" python3 -m observability.event_logger --rotate-stream "$3"' _ "$PYTHON_ENV" "$script_path" "$process_log" &
+  } >> "$process_log"
+  nohup "$PYTHON_ENV" PYTHONUNBUFFERED=1 python3 "$script_path" >> "$process_log" 2>&1 &
   echo $! > "$pid_file"
-  STARTED_PIDS="$STARTED_PIDS $!"
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $name pid=$!"
 }
 
-start_process "web_app" "$WEB_SCRIPT" "$PROD_DIR/runtime/web_app.pid" "$WEB_LOG_FILE"
-start_process "run_bot" "$BOT_SCRIPT" "$PROD_DIR/runtime/run_bot.pid" "$BOT_LOG_FILE"
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] traderbot_prod supervisor running"
 
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] traderbot_prod launch done"
-
-if [ -n "${STARTED_PIDS// }" ]; then
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] waiting for child pids:$STARTED_PIDS"
-  wait $STARTED_PIDS
-fi
+while true; do
+  start_process "web_app" "$WEB_SCRIPT" "$PROD_DIR/runtime/web_app.pid" "$WEB_LOG_FILE"
+  start_process "run_bot" "$BOT_SCRIPT" "$PROD_DIR/runtime/run_bot.pid" "$BOT_LOG_FILE"
+  sleep 10 &
+  wait $!
+done
