@@ -401,6 +401,15 @@ bash scripts/deploy_to_prod.sh
 
 同步时会排除 `.env`、`logs/`、`data/`、`__pycache__/`、`.git/`、`.DS_Store`、`config/settings.yaml`、`config/symbols.yaml`、`config/futures_settings.yaml`、`config/futures_symbols.yaml`、生产 launchd plist、生产启动脚本、虚拟环境、pid 文件和 `runtime/*.json`，不会覆盖生产 API key、生产日志、生产数据库、生产配置、生产虚拟环境、生产运行态或生产自启动管理文件。
 
+一键安全发布可使用：
+
+```bash
+cd /Users/eason/traderbot_dev
+bash scripts/safe_deploy_to_prod.sh
+```
+
+`safe_deploy_to_prod.sh` 会按 `stopping prod -> verifying stopped -> deploying -> starting prod -> checking status` 执行。它会先停止 prod 并确认没有 `/Users/eason/traderbot_prod` 相关进程，再调用 `deploy_to_prod.sh` 发布代码。发布仍然沿用 `deploy_to_prod.sh` 的排除清单，不覆盖 `.env`、`logs/`、`data/`、`config/settings.yaml`、`config/symbols.yaml`、`config/futures_settings.yaml` 和 `config/futures_symbols.yaml`。状态检查后，如果 `web_app.py` 或 `run_bot.py` 未运行，会输出 warning。Futures bot 当前不由 launchd 管理，需要时手动启动。
+
 prod 参数应在生产前端修改，尤其是：
 
 - `config/settings.yaml`
