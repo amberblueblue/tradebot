@@ -460,3 +460,13 @@ python3 status.py --account-risk-status
 ```
 
 输出包括 `consecutive_losing_trades`、`account_risk_blocked` 和 `blocked_reason`。
+
+## Production Spot Test State Cleanup
+
+如生产 Spot 页面残留测试仓位，可手动运行：
+
+```bash
+bash scripts/clear_prod_spot_test_state.sh
+```
+
+脚本会先备份生产 `data/` 和 `runtime/` 中的 Spot 运行态到 `backups/spot_state_cleanup_YYYYMMDD_HHMMSS/`，再清理 Spot paper positions、测试 position、Spot runtime state 和 Spot paper trade state 中残留的测试仓位；不会修改配置、日志、`.env` 或 Futures paper state。

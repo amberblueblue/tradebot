@@ -1526,7 +1526,6 @@ def _render_futures_symbol_edit_page(
 
 def _load_futures_view() -> dict:
     futures_credentials = load_futures_binance_readonly_credentials().public_status()
-    safety_status = safety_status_payload(account_equity=None)
     try:
         spot_settings = load_project_config()
         spot_execution_config = load_execution_runtime(spot_settings)
@@ -1595,7 +1594,6 @@ def _load_futures_view() -> dict:
             "futures_kline_intervals": FUTURES_KLINE_INTERVAL_OPTIONS,
             "futures_symbol_edit_config": None,
             "futures_symbol_edit_error": None,
-            "safety_status": safety_status,
             "is_live_mode": is_live_mode,
         }
 
@@ -1651,7 +1649,6 @@ def _load_futures_view() -> dict:
         "futures_kline_intervals": FUTURES_KLINE_INTERVAL_OPTIONS,
         "futures_symbol_edit_config": None,
         "futures_symbol_edit_error": None,
-        "safety_status": safety_status,
         "is_live_mode": is_live_mode,
     }
 
@@ -1801,7 +1798,7 @@ def _load_positions_view() -> dict:
         for position in runtime_positions
         if isinstance(position, dict) and position.get("symbol")
     }
-    symbols = sorted(set(symbols_config) | set(paper_positions) | runtime_position_symbols | set(sqlite_positions))
+    symbols = sorted(set(paper_positions) | runtime_position_symbols | set(sqlite_positions))
 
     rows = []
     for symbol in symbols:
@@ -1980,18 +1977,8 @@ def _load_spot_view(symbol: str = "") -> dict:
         "spot_account": _load_account_view(),
         "spot_symbols": _load_symbols_view(),
         "spot_config": _spot_config_view(),
-        "safety_status": safety_status_payload(account_equity=None),
         "is_live_mode": is_live_mode,
     }
-
-
-def _safety_redirect_target(request: Request) -> str:
-    referer = request.headers.get("referer", "/")
-    if "/futures" in referer:
-        return "/futures"
-    if "/spot" in referer:
-        return "/spot"
-    return "/"
 
 
 def _parse_safety_bool(form: dict[str, str], key: str) -> bool:
@@ -2092,7 +2079,7 @@ async def safety_save(request: Request):
             (spot_enabled and not current.spot_trading_enabled)
             or (futures_enabled and not current.futures_trading_enabled)
         ) and form.get("live_confirm", "") != "YES":
-            return RedirectResponse(url=_safety_redirect_target(request), status_code=303)
+            return RedirectResponse(url="/", status_code=303)
     save_runtime_safety_config(
         RuntimeSafetyConfig(
             global_kill_switch=_parse_safety_bool(form, "global_kill_switch"),
@@ -2103,7 +2090,7 @@ async def safety_save(request: Request):
             max_open_trades_per_hour=int(float(form.get("max_open_trades_per_hour", current.max_open_trades_per_hour))),
         )
     )
-    return RedirectResponse(url=_safety_redirect_target(request), status_code=303)
+    return RedirectResponse(url="/", status_code=303)
 
 
 @app.post("/spot/config")
