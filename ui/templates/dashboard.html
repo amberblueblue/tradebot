@@ -4,6 +4,8 @@
 
 {% block content %}
 <div class="row g-4">
+  {% include "partials/safety_controls.html" %}
+
   {% if is_error_status %}
   <div class="col-12">
     <div class="alert alert-danger shadow-sm mb-0" role="alert">

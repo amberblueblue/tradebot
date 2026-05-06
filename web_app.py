@@ -53,6 +53,12 @@ from futures_bot.strategy.session_filter import (
 )
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
+from runtime.safety import (
+    RuntimeSafetyConfig,
+    load_runtime_safety_config,
+    safety_status_payload,
+    save_runtime_safety_config,
+)
 from runtime.state import RuntimeStore, build_runtime_state, get_live_gate_status
 from storage.db import DEFAULT_DB_PATH, get_connection, initialize_database
 from storage.repository import StorageRepository
@@ -353,6 +359,7 @@ def _dashboard_context() -> dict:
         and os.environ.get(FINAL_REAL_ORDER_ENV_VAR) == "YES"
     )
     account_risk = get_account_risk_status(state_file=_account_risk_state_file(execution_config))
+    safety_status = safety_status_payload(account_equity=None)
     enabled_symbols = list(execution_config.enabled_symbols)
     configured_symbols = list(_configured_symbol_names())
     bot_idle = not enabled_symbols
@@ -383,6 +390,7 @@ def _dashboard_context() -> dict:
         "runtime_status": runtime_status,
         "account_reconciliation": runtime_status.get("account_reconciliation", {}),
         "account_risk": account_risk_status_payload(account_risk),
+        "safety_status": safety_status,
         "public_market_data": _public_market_data_status(settings, execution_config),
         "binance_credentials": load_binance_readonly_credentials().public_status(),
         "settings": settings,
@@ -1518,6 +1526,13 @@ def _render_futures_symbol_edit_page(
 
 def _load_futures_view() -> dict:
     futures_credentials = load_futures_binance_readonly_credentials().public_status()
+    safety_status = safety_status_payload(account_equity=None)
+    try:
+        spot_settings = load_project_config()
+        spot_execution_config = load_execution_runtime(spot_settings)
+        is_live_mode = spot_execution_config.mode == "live"
+    except Exception:
+        is_live_mode = False
     futures_account = {
         "api_key_status": "configured" if futures_credentials["configured"] else "missing",
         "query_status": "not_configured",
@@ -1580,6 +1595,8 @@ def _load_futures_view() -> dict:
             "futures_kline_intervals": FUTURES_KLINE_INTERVAL_OPTIONS,
             "futures_symbol_edit_config": None,
             "futures_symbol_edit_error": None,
+            "safety_status": safety_status,
+            "is_live_mode": is_live_mode,
         }
 
     enabled_symbols = list(futures_config.enabled_symbols)
@@ -1634,6 +1651,8 @@ def _load_futures_view() -> dict:
         "futures_kline_intervals": FUTURES_KLINE_INTERVAL_OPTIONS,
         "futures_symbol_edit_config": None,
         "futures_symbol_edit_error": None,
+        "safety_status": safety_status,
+        "is_live_mode": is_live_mode,
     }
 
     client = BinanceFuturesClient(
@@ -1949,13 +1968,34 @@ def _load_performance_view(symbol: str = "") -> dict:
 
 
 def _load_spot_view(symbol: str = "") -> dict:
+    try:
+        settings = load_project_config()
+        execution_config = load_execution_runtime(settings)
+        is_live_mode = execution_config.mode == "live"
+    except Exception:
+        is_live_mode = False
     return {
         "spot_positions": _load_positions_view(),
         "spot_performance": _load_performance_view(symbol=symbol),
         "spot_account": _load_account_view(),
         "spot_symbols": _load_symbols_view(),
         "spot_config": _spot_config_view(),
+        "safety_status": safety_status_payload(account_equity=None),
+        "is_live_mode": is_live_mode,
     }
+
+
+def _safety_redirect_target(request: Request) -> str:
+    referer = request.headers.get("referer", "/")
+    if "/futures" in referer:
+        return "/futures"
+    if "/spot" in referer:
+        return "/spot"
+    return "/"
+
+
+def _parse_safety_bool(form: dict[str, str], key: str) -> bool:
+    return form.get(key, "false").strip().lower() == "true"
 
 
 def _runtime_store():
@@ -2037,6 +2077,33 @@ def spot_page(request: Request, symbol: str = ""):
     context["spot_config"]["message"] = spot_config_message
     context["spot_config"]["error"] = spot_config_error
     return templates.TemplateResponse(request, "spot.html", context)
+
+
+@app.post("/safety")
+async def safety_save(request: Request):
+    form = await _read_form_data(request)
+    settings = load_project_config()
+    execution_config = load_execution_runtime(settings)
+    current = load_runtime_safety_config()
+    spot_enabled = _parse_safety_bool(form, "spot_trading_enabled")
+    futures_enabled = _parse_safety_bool(form, "futures_trading_enabled")
+    if execution_config.mode == "live":
+        if (
+            (spot_enabled and not current.spot_trading_enabled)
+            or (futures_enabled and not current.futures_trading_enabled)
+        ) and form.get("live_confirm", "") != "YES":
+            return RedirectResponse(url=_safety_redirect_target(request), status_code=303)
+    save_runtime_safety_config(
+        RuntimeSafetyConfig(
+            global_kill_switch=_parse_safety_bool(form, "global_kill_switch"),
+            spot_trading_enabled=spot_enabled,
+            futures_trading_enabled=futures_enabled,
+            daily_loss_limit_pct=float(form.get("daily_loss_limit_pct", current.daily_loss_limit_pct)),
+            max_consecutive_errors=int(float(form.get("max_consecutive_errors", current.max_consecutive_errors))),
+            max_open_trades_per_hour=int(float(form.get("max_open_trades_per_hour", current.max_open_trades_per_hour))),
+        )
+    )
+    return RedirectResponse(url=_safety_redirect_target(request), status_code=303)
 
 
 @app.post("/spot/config")

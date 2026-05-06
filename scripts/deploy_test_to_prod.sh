@@ -52,7 +52,9 @@ rsync -av --delete \
   --exclude "config/symbols.yaml" \
   --exclude "config/futures_settings.yaml" \
   --exclude "config/futures_symbols.yaml" \
+  --exclude "config/runtime_safety.yaml" \
   --exclude "runtime/*.pid" \
+  --exclude "runtime/*.json" \
   "$TEST_DIR/" "$PROD_DIR/"
 
 log_step "starting prod"

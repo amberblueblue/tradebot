@@ -1,0 +1,93 @@
+{% set safety = safety_status %}
+<div class="col-12">
+  <div class="card shadow-sm border {% if safety.global_kill_switch %}border-danger{% elif safety.consecutive_errors %}border-warning{% else %}border-success{% endif %}">
+    <div class="card-body">
+      <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+        <div>
+          <h2 class="h5 mb-1">Safety Status</h2>
+          {% if safety.global_kill_switch %}
+          <p class="text-danger fw-semibold mb-0">所有交易已停止，仅允许平仓</p>
+          {% else %}
+          <p class="text-success mb-0">安全开关正常</p>
+          {% endif %}
+        </div>
+        <form method="post" action="/safety" class="d-flex flex-wrap align-items-end gap-3 safety-control-form" data-live-mode="{{ 'true' if is_live_mode else 'false' }}">
+          <div>
+            <label class="form-label small text-secondary mb-1">全局紧急停止</label>
+            <select name="global_kill_switch" class="form-select form-select-sm">
+              <option value="false" {% if not safety.global_kill_switch %}selected{% endif %}>关闭</option>
+              <option value="true" {% if safety.global_kill_switch %}selected{% endif %}>开启</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label small text-secondary mb-1">现货允许交易</label>
+            <select name="spot_trading_enabled" class="form-select form-select-sm safety-live-toggle">
+              <option value="false" {% if not safety.spot_trading_enabled %}selected{% endif %}>否</option>
+              <option value="true" {% if safety.spot_trading_enabled %}selected{% endif %}>是</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label small text-secondary mb-1">合约允许交易</label>
+            <select name="futures_trading_enabled" class="form-select form-select-sm safety-live-toggle">
+              <option value="false" {% if not safety.futures_trading_enabled %}selected{% endif %}>否</option>
+              <option value="true" {% if safety.futures_trading_enabled %}selected{% endif %}>是</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label small text-secondary mb-1">每日亏损限制 %</label>
+            <input name="daily_loss_limit_pct" class="form-control form-control-sm" type="number" step="0.1" min="0.1" value="{{ safety.daily_loss_limit_pct }}">
+          </div>
+          <div>
+            <label class="form-label small text-secondary mb-1">连续错误熔断</label>
+            <input name="max_consecutive_errors" class="form-control form-control-sm" type="number" step="1" min="1" value="{{ safety.max_consecutive_errors }}">
+          </div>
+          <div>
+            <label class="form-label small text-secondary mb-1">每小时最多开仓</label>
+            <input name="max_open_trades_per_hour" class="form-control form-control-sm" type="number" step="1" min="1" value="{{ safety.max_open_trades_per_hour }}">
+          </div>
+          <input type="hidden" name="live_confirm" class="safety-live-confirm" value="">
+          <button type="submit" class="btn btn-sm btn-primary">保存</button>
+        </form>
+      </div>
+      <dl class="row mt-3 mb-0 small">
+        <dt class="col-sm-3">Global Kill Switch</dt>
+        <dd class="col-sm-3 {% if safety.global_kill_switch %}text-danger fw-semibold{% else %}text-success{% endif %}">{{ "ON" if safety.global_kill_switch else "OFF" }}</dd>
+        <dt class="col-sm-3">Spot Trading Enabled</dt>
+        <dd class="col-sm-3">{{ "YES" if safety.spot_trading_enabled else "NO" }}</dd>
+        <dt class="col-sm-3">Futures Trading Enabled</dt>
+        <dd class="col-sm-3">{{ "YES" if safety.futures_trading_enabled else "NO" }}</dd>
+        <dt class="col-sm-3">Consecutive Errors</dt>
+        <dd class="col-sm-3">{{ safety.consecutive_errors }}</dd>
+        <dt class="col-sm-3">Today Realized PnL</dt>
+        <dd class="col-sm-3">{{ safety.today_realized_pnl }}</dd>
+        <dt class="col-sm-3">Daily Loss Limit</dt>
+        <dd class="col-sm-3">{{ safety.daily_loss_limit if safety.daily_loss_limit is not none else safety.daily_loss_limit_pct ~ "%" }}</dd>
+        <dt class="col-sm-3">Open Trades Last Hour</dt>
+        <dd class="col-sm-3">{{ safety.open_trades_last_hour }} / {{ safety.max_open_trades_per_hour }}</dd>
+        <dt class="col-sm-3">Kill Reason</dt>
+        <dd class="col-sm-3">{{ safety.kill_switch_reason or "-" }}</dd>
+      </dl>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll(".safety-control-form").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      if (form.dataset.liveMode !== "true") {
+        return;
+      }
+      const enablingLive = Array.from(form.querySelectorAll(".safety-live-toggle"))
+        .some((item) => item.value === "true");
+      if (!enablingLive) {
+        return;
+      }
+      const answer = window.prompt("确认开启实盘交易？\n请输入 YES 确认");
+      if (answer !== "YES") {
+        event.preventDefault();
+        return;
+      }
+      form.querySelector(".safety-live-confirm").value = "YES";
+    });
+  });
+</script>

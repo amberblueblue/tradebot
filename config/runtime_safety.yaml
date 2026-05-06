@@ -1,0 +1,8 @@
+global_kill_switch: false
+daily_loss_limit_pct: 5.0
+max_consecutive_errors: 5
+max_open_trades_per_hour: 5
+spot:
+  trading_enabled: false
+futures:
+  trading_enabled: false

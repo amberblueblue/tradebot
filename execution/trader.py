@@ -22,6 +22,14 @@ from execution.broker import Broker, Position
 from execution.live_broker import LiveBroker
 from execution.order_validator import validate_entry_order
 from observability.event_logger import LogRouter
+from runtime.safety import (
+    check_market_data_safe,
+    check_new_entry_allowed,
+    record_open_trade,
+    record_realized_pnl,
+    record_safety_error,
+    reset_safety_errors,
+)
 from strategy.config import StrategyConfig
 from strategy.context import MarketContext
 from strategy.position import PositionState
@@ -96,6 +104,7 @@ class TraderEngine:
         snapshots_ok = self._record_snapshots(positions_by_symbol)
         if not had_error and snapshots_ok:
             self.runtime_store.reset_consecutive_errors()
+            reset_safety_errors()
 
     def _safe_get_positions(self) -> list[Position] | None:
         try:
@@ -191,9 +200,8 @@ class TraderEngine:
         df_1h = self._klines_to_dataframe(
             self.market_client.get_klines(symbol, entry_interval, limit=300)
         )
-        df_4h = self._klines_to_dataframe(
-            self.market_client.get_klines(symbol, trend_interval, limit=300)
-        )
+        trend_klines = self.market_client.get_klines(symbol, trend_interval, limit=300)
+        df_4h = self._klines_to_dataframe(trend_klines)
         if df_1h.empty or df_4h.empty:
             raise ValueError(f"Missing Binance kline data for {symbol}")
         df_1h = feature_engine.add_features(df_1h, config=self.feature_config)
@@ -201,6 +209,9 @@ class TraderEngine:
 
         current_bar_index = len(df_1h) - 1
         current_bar = df_1h.iloc[-1]
+        safety_decision = check_market_data_safe(float(current_bar["close"]), df_1h.tail(1).values.tolist())
+        if not safety_decision.allowed:
+            raise ValueError(safety_decision.reason)
         runtime_symbol = self.runtime_store.get_symbol_state(symbol)
         current_bar_timestamp = str(current_bar["timestamp"].isoformat())
         cooldown_remaining = int(runtime_symbol["cooldown_remaining"])
@@ -366,7 +377,8 @@ class TraderEngine:
             )
             return
         if symbol in positions_by_symbol:
-            self._log_event("order_blocked", symbol=symbol, reason="position_already_exists")
+            self._log_event("order_blocked", symbol=symbol, reason="position_exists_skip")
+            print("[position_exists_skip]")
             return
         if self._is_duplicate_action(symbol, execution_context.current_bar_timestamp):
             self._log_event("order_blocked", symbol=symbol, reason="duplicate_action_bar")
@@ -413,6 +425,22 @@ class TraderEngine:
             self._log_event("order_blocked", symbol=symbol, reason="ticker_price_unavailable")
             return
 
+        account_equity = None
+        try:
+            account_equity = self.broker.get_cash_balance()
+            for position in positions_by_symbol.values():
+                account_equity += position.qty * self._get_snapshot_price(position.symbol, position.avg_price)
+        except Exception:
+            account_equity = None
+        safety_decision = check_new_entry_allowed(
+            "spot",
+            app_mode=self.execution_config.mode,
+            account_equity=account_equity,
+        )
+        if not safety_decision.allowed:
+            self._log_event("order_blocked", symbol=symbol, reason=safety_decision.reason)
+            return
+
         self._record_entry_signal(
             symbol,
             execution_context.current_bar_timestamp,
@@ -452,6 +480,7 @@ class TraderEngine:
             avg_price=result.average_price,
             realized_pnl=0.0,
         )
+        record_open_trade("spot", symbol)
         self._log_event(
             "order_filled",
             symbol=symbol,
@@ -559,6 +588,16 @@ class TraderEngine:
             reason=reason,
             trigger_price=current_price,
         )
+        realized_pnl = 0.0
+        if result.metadata:
+            realized_pnl = float(result.metadata.get("realized_pnl", 0.0) or 0.0)
+        try:
+            equity = self.broker.get_cash_balance()
+            for position in positions_by_symbol.values():
+                equity += position.qty * self._get_snapshot_price(position.symbol, position.avg_price)
+        except Exception:
+            equity = None
+        record_realized_pnl(realized_pnl, account_equity=equity)
 
     def _calculate_buy_qty(self, symbol_config: SymbolTradingConfig, current_price: float) -> float:
         if isinstance(self.broker, LiveBroker):
@@ -686,6 +725,7 @@ class TraderEngine:
         self.runtime_store.set_conservative_mode(True)
         self.runtime_store.set_robot_status("paused")
         consecutive_errors = self.runtime_store.increment_error(str(exc))
+        record_safety_error(str(exc))
         self.logger.log_error(
             symbol="SYSTEM",
             action="config_reload_failed",
@@ -886,6 +926,7 @@ class TraderEngine:
 
     def _record_error(self, symbol: str, exc: Exception) -> None:
         consecutive_errors = self.runtime_store.increment_error(str(exc))
+        record_safety_error(str(exc))
         self._log_event(
             "execution_error",
             symbol=symbol,

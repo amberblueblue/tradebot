@@ -29,6 +29,7 @@ PROD_CONFIG_FILES=(
   "config/symbols.yaml"
   "config/futures_settings.yaml"
   "config/futures_symbols.yaml"
+  "config/runtime_safety.yaml"
 )
 
 RSYNC_EXCLUDES=(
@@ -43,6 +44,7 @@ RSYNC_EXCLUDES=(
   "config/symbols.yaml"
   "config/futures_settings.yaml"
   "config/futures_symbols.yaml"
+  "config/runtime_safety.yaml"
   ".venv/"
   "venv/"
   "env/"
@@ -68,6 +70,16 @@ require_prod_config_files() {
       exit 1
     fi
   done
+}
+
+ensure_prod_runtime_safety_config() {
+  local config_file="config/runtime_safety.yaml"
+  if [ -f "$PROD_DIR/$config_file" ]; then
+    return
+  fi
+  echo "initializing missing prod config file: $PROD_DIR/$config_file"
+  mkdir -p "$PROD_DIR/config"
+  cp "$DEV_DIR/$config_file" "$PROD_DIR/$config_file"
 }
 
 print_rsync_excludes() {
@@ -101,6 +113,7 @@ if [ ! -d "$PROD_DIR" ]; then
 fi
 
 print_rsync_excludes
+ensure_prod_runtime_safety_config
 require_prod_config_files
 backup_prod_config
 

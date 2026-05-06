@@ -19,6 +19,14 @@ from futures_bot.risk.futures_risk import check_futures_pre_open_risk  # noqa: E
 from futures_bot.strategy.base import CLOSE, CLOSE_FULL, CLOSE_PARTIAL_30, CLOSE_PARTIAL_50, HOLD, LONG  # noqa: E402
 from futures_bot.strategy.registry import get_strategy  # noqa: E402
 from observability.event_logger import StructuredLogger  # noqa: E402
+from runtime.safety import (
+    check_market_data_safe,
+    check_new_entry_allowed,
+    record_open_trade,
+    record_realized_pnl,
+    record_safety_error,
+    reset_safety_errors,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -269,6 +277,25 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                 raise ValueError("missing_mark_price")
             if funding_rate is None:
                 raise ValueError("missing_funding_rate")
+            market_safety = check_market_data_safe(mark_price, signal_klines[-1:] if signal_klines else [])
+            if not market_safety.allowed:
+                record = _signal_record(
+                    symbol=symbol,
+                    strategy=symbol_config.strategy,
+                    action=HOLD,
+                    reason=market_safety.reason,
+                    trend_timeframe=symbol_config.trend_timeframe,
+                    signal_timeframe=symbol_config.signal_timeframe,
+                    mark_price=mark_price,
+                    funding_rate=funding_rate,
+                    signal_bar_time=signal_bar_time,
+                    paper_action="hold",
+                )
+                loop_state["signals"][symbol] = record
+                _log("futures_signal_hold", **record)
+                print(f"[futures_strategy] {symbol} HOLD: {market_safety.reason}")
+                results.append(record)
+                continue
 
             existing_position = _position_for_symbol(broker, symbol)
             if existing_position is not None:
@@ -339,12 +366,27 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
 
                 if existing_position is not None:
                     record["paper_action"] = "skipped_existing_position"
+                    record["reason"] = "position_exists_skip"
                     _log("futures_duplicate_bar_skipped", **record)
+                    print("[position_exists_skip]")
                     print(f"[futures_strategy] {symbol} LONG skipped: paper position exists")
                     results.append(record)
                     continue
 
                 account_equity, account_equity_source = _load_account_equity(client)
+                safety_decision = check_new_entry_allowed(
+                    "futures",
+                    app_mode=config.app.mode,
+                    account_equity=account_equity,
+                )
+                if not safety_decision.allowed:
+                    record["paper_action"] = "safety_blocked"
+                    record["reason"] = safety_decision.reason
+                    record["safety"] = {"ok": False, "reason": safety_decision.reason}
+                    _log("futures_safety_blocked", **record)
+                    print(f"[futures_strategy] {symbol} LONG blocked: {safety_decision.reason}")
+                    results.append(record)
+                    continue
                 risk_result = check_futures_pre_open_risk(
                     symbol=symbol,
                     side="long",
@@ -388,6 +430,7 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                 record["paper_action"] = "opened"
                 record["position"] = position.to_dict()
                 loop_state["last_processed_bars"][processed_key] = signal_bar_time
+                record_open_trade("futures", symbol)
                 _log("futures_paper_open", **record)
                 print(f"[futures_strategy] {symbol} LONG opened in paper")
             elif signal_action in {CLOSE, CLOSE_FULL}:
@@ -402,6 +445,7 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                 record["paper_action"] = "closed"
                 record["position"] = closed_position.to_dict()
                 record["realized_pnl"] = closed_position.unrealized_pnl
+                record_realized_pnl(closed_position.unrealized_pnl, account_equity=_load_account_equity(client)[0])
                 loop_state["last_processed_bars"][processed_key] = signal_bar_time
                 _log("futures_paper_close", **record)
                 print(f"[futures_paper_close] {symbol} CLOSE closed in paper")
@@ -424,6 +468,11 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                 record["paper_action"] = "partial_closed"
                 record["sell_pct"] = config.risk.partial1_sell_pct
                 record["position"] = partial_position.to_dict()
+                if broker.get_closed_trades():
+                    record_realized_pnl(
+                        float(broker.get_closed_trades()[-1].get("realized_pnl", 0.0) or 0.0),
+                        account_equity=_load_account_equity(client)[0],
+                    )
                 loop_state["last_processed_bars"][processed_key] = signal_bar_time
                 _log("futures_paper_partial_close", **record)
                 print(f"[futures_paper_close] {symbol} CLOSE_PARTIAL_30 closed in paper")
@@ -446,6 +495,11 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                 record["paper_action"] = "partial_closed"
                 record["sell_pct"] = config.risk.partial2_sell_pct
                 record["position"] = partial_position.to_dict()
+                if broker.get_closed_trades():
+                    record_realized_pnl(
+                        float(broker.get_closed_trades()[-1].get("realized_pnl", 0.0) or 0.0),
+                        account_equity=_load_account_equity(client)[0],
+                    )
                 loop_state["last_processed_bars"][processed_key] = signal_bar_time
                 _log("futures_paper_partial_close", **record)
                 print(f"[futures_paper_close] {symbol} CLOSE_PARTIAL_50 closed in paper")
@@ -470,12 +524,15 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                 error=str(exc),
             )
             loop_state["signals"][symbol] = error_record
+            record_safety_error(str(exc))
             _log("futures_market_data_error", **error_record)
             print(f"[futures_strategy] {symbol} error: {exc}")
             results.append(error_record)
             continue
 
     _save_loop_state(loop_state)
+    if not any("error" in result for result in results):
+        reset_safety_errors()
     return results
 
 
