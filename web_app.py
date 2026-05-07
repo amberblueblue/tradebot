@@ -186,21 +186,7 @@ SPOT_SETTING_LABELS = {
     "risk.profit_giveback_ratio": "利润回撤比例",
     "risk.profit_protection_trigger_pct": "利润保护触发百分比",
 }
-SPOT_SYMBOL_STRATEGY_FIELD_SPECS = (
-    ("ema_slope_lookback", "EMA 斜率回看", "number", "1"),
-    ("macd_decay_bars", "MACD 衰减根数", "number", "1"),
-    ("rsi_overheat", "RSI 过热阈值", "number", "0.0001"),
-    ("entry_cooldown_bars", "入场冷却根数", "number", "1"),
-    ("max_hold_bars", "最大持仓K线数", "number", "1"),
-    ("min_expected_return", "最低预期收益", "number", "0.0001"),
-)
-SPOT_SYMBOL_RISK_FIELD_SPECS = (
-    ("stop_loss_pct", "止损百分比", "number", "0.0001"),
-    ("take_profit_pct", "止盈百分比", "number", "0.0001"),
-    ("max_single_order_usdt", "单笔最大下单 USDT", "number", "0.0001"),
-    ("max_loss_amount", "最大亏损金额", "number", "0.0001"),
-)
-FUTURES_SYMBOL_STRATEGY_FIELD_SPECS = (
+SYMBOL_STRATEGY_FIELD_SPECS = (
     ("ema_fast", "快速 EMA", "number", "1"),
     ("ema_slow", "慢速 EMA", "number", "1"),
     ("macd_fast", "MACD 快线周期", "number", "1"),
@@ -212,9 +198,13 @@ FUTURES_SYMBOL_STRATEGY_FIELD_SPECS = (
     ("rsi_overheat", "RSI 过热阈值", "number", "0.0001"),
     ("max_hold_bars", "最大持仓K线数", "number", "1"),
     ("min_expected_return", "最低预期收益", "number", "0.0001"),
+    ("ema_slope_lookback", "EMA 斜率回看", "number", "1"),
+    ("macd_decay_bars", "MACD 衰减K线数", "number", "1"),
+    ("entry_cooldown_bars", "开仓冷却K线数", "number", "1"),
 )
-FUTURES_SYMBOL_RISK_FIELD_SPECS = (
+SYMBOL_RISK_FIELD_SPECS = (
     ("stop_loss_pct", "止损百分比", "number", "0.0001"),
+    ("take_profit_pct", "止盈百分比", "number", "0.0001"),
     ("partial1_sell_pct", "第一档止盈卖出比例", "number", "0.0001"),
     ("partial2_sell_pct", "第二档止盈卖出比例", "number", "0.0001"),
     ("big_candle_multiplier", "大K线倍数", "number", "0.0001"),
@@ -222,11 +212,16 @@ FUTURES_SYMBOL_RISK_FIELD_SPECS = (
     ("profit_giveback_ratio", "利润回撤比例", "number", "0.0001"),
     ("profit_protection_trigger_pct", "利润保护触发百分比", "number", "0.0001"),
     ("max_single_order_usdt", "单笔最大下单 USDT", "number", "0.0001"),
+    ("max_loss_amount", "单币最大亏损", "number", "0.0001"),
     ("max_leverage", "最大杠杆", "number", "0.0001"),
     ("max_margin_per_trade_usdt", "单笔最大保证金 USDT", "number", "0.0001"),
     ("max_position_ratio", "最大仓位占比", "number", "0.0001"),
     ("max_funding_rate_abs", "最大资金费率", "number", "0.000001"),
 )
+SPOT_SYMBOL_STRATEGY_FIELD_SPECS = SYMBOL_STRATEGY_FIELD_SPECS
+SPOT_SYMBOL_RISK_FIELD_SPECS = SYMBOL_RISK_FIELD_SPECS
+FUTURES_SYMBOL_STRATEGY_FIELD_SPECS = SYMBOL_STRATEGY_FIELD_SPECS
+FUTURES_SYMBOL_RISK_FIELD_SPECS = SYMBOL_RISK_FIELD_SPECS
 LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
 REAL_EXECUTE_ENV_VAR = "TRADEBOT_EXECUTE_REAL"
 FINAL_REAL_ORDER_ENV_VAR = "TRADEBOT_FINAL_REAL_ORDER"
@@ -1160,6 +1155,19 @@ def _load_symbol_edit_context(
         "project_name": "TraderBot Local Console",
         "symbol": normalized_symbol,
         "symbol_config": symbol_config,
+        "spot_symbol_edit_config": {
+            "symbol": normalized_symbol,
+            "enabled": bool(symbol_config.get("enabled", True)),
+            "strategy_name": symbol_config.get("strategy_name", "trend_long"),
+            "leverage": symbol_config.get("leverage", ""),
+            "margin_amount": symbol_config.get("margin_amount", ""),
+            "order_amount": symbol_config.get("order_amount", ""),
+            "max_loss_amount": symbol_config.get("max_loss_amount", ""),
+            "trend_timeframe": symbol_config.get("trend_timeframe", "4h"),
+            "signal_timeframe": symbol_config.get("signal_timeframe", "15m"),
+            "market_session_filter": symbol_config.get("market_session_filter", ""),
+            "paused_by_loss": bool(symbol_config.get("paused_by_loss", False)),
+        },
         "timeframes": VALID_SYMBOL_TIMEFRAMES,
         "spot_symbol_strategy_fields": _symbol_override_fields(
             specs=SPOT_SYMBOL_STRATEGY_FIELD_SPECS,
@@ -1175,6 +1183,31 @@ def _load_symbol_edit_context(
         ),
         "error": error,
     }
+
+
+def _render_spot_symbol_edit_page(
+    request: Request,
+    symbol: str,
+    symbol_config: dict[str, object] | None = None,
+    *,
+    error: str | None = None,
+    status_code: int = 200,
+):
+    context = _load_symbols_view()
+    edit_context = _load_symbol_edit_context(
+        request,
+        symbol,
+        symbol_config=symbol_config,
+        error=error,
+    )
+    context.update(edit_context)
+    context["error"] = error
+    return templates.TemplateResponse(
+        request,
+        "symbols.html",
+        context,
+        status_code=status_code,
+    )
 
 
 def _to_float(value, default: float = 0.0) -> float:
@@ -1713,6 +1746,7 @@ def _render_futures_symbol_edit_page(
                 "strategy_name": strategy_name,
             },
             "futures_symbol_edit_error": error,
+            "futures_active_tab": "symbols",
             "futures_allowed_session_filters": sorted(ALLOWED_MARKET_SESSION_FILTERS),
             "futures_symbol_strategy_fields": _symbol_override_fields(
                 specs=FUTURES_SYMBOL_STRATEGY_FIELD_SPECS,
@@ -2386,7 +2420,16 @@ def futures_symbol_edit_page(request: Request, symbol: str):
         return _futures_symbols_redirect(error=f"load_failed: {exc}")
 
     if normalized_symbol not in symbol_configs:
-        return _futures_symbols_redirect(error="futures_symbol_not_found")
+        context = _load_futures_view()
+        context.update(
+            {
+                "request": request,
+                "project_name": "TraderBot Local Console",
+                "futures_symbol_error": f"标的不存在：{normalized_symbol}",
+                "futures_active_tab": "symbols",
+            }
+        )
+        return templates.TemplateResponse(request, "futures.html", context, status_code=404)
 
     return _render_futures_symbol_edit_page(
         request,
@@ -2853,10 +2896,11 @@ async def add_symbol(request: Request):
 def edit_symbol_page(request: Request, symbol: str):
     normalized_symbol = symbol.strip().upper()
     try:
-        context = _load_symbol_edit_context(request, normalized_symbol)
+        return _render_spot_symbol_edit_page(request, normalized_symbol)
     except Exception as exc:
-        return RedirectResponse(url=f"/symbols?error={quote(str(exc))}", status_code=303)
-    return templates.TemplateResponse(request, "symbol_edit.html", context)
+        context = _load_symbols_view(error=f"标的不存在或无法读取：{exc}")
+        context.update({"request": request, "project_name": "TraderBot Local Console"})
+        return templates.TemplateResponse(request, "symbols.html", context, status_code=404)
 
 
 @app.post("/symbols/{symbol}/edit", response_class=HTMLResponse)
@@ -2892,10 +2936,14 @@ async def save_symbol_page(request: Request, symbol: str):
     except Exception as exc:
         submitted_config = {
             "enabled": form.get("enabled", "true").strip().lower() == "true",
+            "strategy_name": form.get("strategy_name", "trend_long"),
+            "leverage": form.get("leverage", ""),
+            "margin_amount": form.get("margin_amount", ""),
             "trend_timeframe": form.get("trend_timeframe", "4h"),
             "signal_timeframe": form.get("signal_timeframe", "15m"),
             "order_amount": form.get("order_amount", ""),
             "max_loss_amount": form.get("max_loss_amount", ""),
+            "market_session_filter": form.get("market_session_filter", ""),
             "paused_by_loss": form.get("paused_by_loss", "false").strip().lower() == "true",
             "strategy": {
                 key: form.get(f"strategy.{key}", "").strip()
@@ -2908,13 +2956,13 @@ async def save_symbol_page(request: Request, symbol: str):
                 if form.get(f"risk.{key}", "").strip() != ""
             },
         }
-        context = _load_symbol_edit_context(
+        return _render_spot_symbol_edit_page(
             request,
             normalized_symbol,
             symbol_config=submitted_config,
             error=str(exc),
+            status_code=400,
         )
-        return templates.TemplateResponse(request, "symbol_edit.html", context, status_code=400)
 
     return RedirectResponse(url=f"/symbols?message={normalized_symbol}%20saved", status_code=303)
 

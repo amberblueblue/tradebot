@@ -322,9 +322,13 @@ FUTURES_SYMBOL_STRATEGY_FIELDS = {
     "rsi_overheat": "float",
     "max_hold_bars": "int",
     "min_expected_return": "non_negative_float",
+    "ema_slope_lookback": "int",
+    "macd_decay_bars": "int",
+    "entry_cooldown_bars": "int",
 }
 FUTURES_SYMBOL_RISK_FIELDS = {
     "stop_loss_pct": "float",
+    "take_profit_pct": "float",
     "partial1_sell_pct": "pct",
     "partial2_sell_pct": "pct",
     "big_candle_multiplier": "float",
@@ -332,6 +336,7 @@ FUTURES_SYMBOL_RISK_FIELDS = {
     "profit_giveback_ratio": "ratio",
     "profit_protection_trigger_pct": "float",
     "max_single_order_usdt": "float",
+    "max_loss_amount": "float",
     "max_leverage": "float",
     "max_margin_per_trade_usdt": "float",
     "max_position_ratio": "ratio",
@@ -826,7 +831,12 @@ def get_effective_futures_symbol_config(
         else:
             effective_risk[key] = value
 
-    effective_risk_config = replace(config.risk, **effective_risk)
+    risk_config_values = {
+        key: value
+        for key, value in effective_risk.items()
+        if key in FuturesRiskConfig.__dataclass_fields__
+    }
+    effective_risk_config = replace(config.risk, **risk_config_values)
     return {
         "global_config": {
             "strategy": global_strategy,

@@ -450,101 +450,6 @@
           </div>
           {% endif %}
 
-          {% if futures_symbol_edit_config %}
-          <div class="col-12">
-            <div class="card shadow-sm border-primary">
-              <div class="card-body">
-                <h2 class="h5 mb-3">Edit Futures Symbol</h2>
-                <p class="fw-semibold mb-3">{{ futures_symbol_edit_config.symbol }}</p>
-                {% if futures_symbol_edit_error %}
-                <div class="alert alert-danger" role="alert">{{ futures_symbol_edit_error }}</div>
-                {% endif %}
-                <form method="post" action="/futures/symbols/{{ futures_symbol_edit_config.symbol }}/edit">
-                  <div class="row g-3 align-items-end">
-                    <div class="col-12">
-                      <h3 class="h6 mb-0">基础参数</h3>
-                    </div>
-                    <div class="col-md-3 col-xl-2">
-                      <label for="edit-futures-enabled" class="form-label">启用 <span class="text-secondary small">enabled</span></label>
-                      <select id="edit-futures-enabled" name="enabled" class="form-select" required>
-                        <option value="true" {% if futures_symbol_edit_config.enabled %}selected{% endif %}>true</option>
-                        <option value="false" {% if not futures_symbol_edit_config.enabled %}selected{% endif %}>false</option>
-                      </select>
-                    </div>
-                    <div class="col-md-3 col-xl-2">
-                      <label for="edit-futures-strategy" class="form-label">策略名 <span class="text-secondary small">strategy_name</span></label>
-                      <select id="edit-futures-strategy" name="strategy_name" class="form-select" required>
-                        {% for strategy in futures_allowed_strategies %}
-                        <option value="{{ strategy }}" {% if strategy == futures_symbol_edit_config.strategy_name %}selected{% endif %}>{{ strategy }}</option>
-                        {% endfor %}
-                      </select>
-                    </div>
-                    <div class="col-md-3 col-xl-2">
-                      <label for="edit-futures-leverage" class="form-label">杠杆 <span class="text-secondary small">leverage</span></label>
-                      <input id="edit-futures-leverage" name="leverage" type="number" class="form-control" min="0.0001" step="0.0001" value="{{ futures_symbol_edit_config.leverage }}" required>
-                    </div>
-                    <div class="col-md-3 col-xl-2">
-                      <label for="edit-futures-margin" class="form-label">保证金 <span class="text-secondary small">margin_amount</span></label>
-                      <input id="edit-futures-margin" name="margin_amount" type="number" class="form-control" min="0.0001" step="0.0001" value="{{ futures_symbol_edit_config.margin_amount }}" required>
-                    </div>
-                    <div class="col-md-3 col-xl-2">
-                      <label for="edit-futures-trend-timeframe" class="form-label">趋势周期 <span class="text-secondary small">trend_timeframe</span></label>
-                      <select id="edit-futures-trend-timeframe" name="trend_timeframe" class="form-select" required>
-                        {% for timeframe in futures_allowed_timeframes %}
-                        <option value="{{ timeframe }}" {% if timeframe == futures_symbol_edit_config.trend_timeframe %}selected{% endif %}>{{ timeframe }}</option>
-                        {% endfor %}
-                      </select>
-                    </div>
-                    <div class="col-md-3 col-xl-2">
-                      <label for="edit-futures-signal-timeframe" class="form-label">信号周期 <span class="text-secondary small">signal_timeframe</span></label>
-                      <select id="edit-futures-signal-timeframe" name="signal_timeframe" class="form-select" required>
-                        {% for timeframe in futures_allowed_timeframes %}
-                        <option value="{{ timeframe }}" {% if timeframe == futures_symbol_edit_config.signal_timeframe %}selected{% endif %}>{{ timeframe }}</option>
-                        {% endfor %}
-                      </select>
-                    </div>
-                    <div class="col-md-3 col-xl-2">
-                      <label for="edit-futures-session-filter" class="form-label">K线过滤 <span class="text-secondary small">market_session_filter</span></label>
-                      <select id="edit-futures-session-filter" name="market_session_filter" class="form-select" required>
-                        <option value="none" {% if futures_symbol_edit_config.market_session_filter == 'none' %}selected{% endif %}>不过滤，24小时</option>
-                        <option value="us_regular" {% if futures_symbol_edit_config.market_session_filter == 'us_regular' %}selected{% endif %}>美股常规交易时段</option>
-                      </select>
-                    </div>
-                    <div class="col-12 pt-3">
-                      <h3 class="h6 mb-1">策略参数</h3>
-                      <p class="text-secondary small mb-0">空值表示使用全局默认。</p>
-                    </div>
-                    {% for field in futures_symbol_strategy_fields %}
-                    <div class="col-md-4 col-xl-3">
-                      <label for="futures-edit-{{ field.name }}" class="form-label">{{ field.label }} <span class="text-secondary small">{{ field.name }}</span></label>
-                      <input id="futures-edit-{{ field.name }}" name="{{ field.name }}" type="{{ field.input_type }}" class="form-control" min="0" step="{{ field.step }}" value="{{ field.value }}" placeholder="使用全局默认">
-                      <div class="form-text">当前生效值：{{ field.effective_value }}（来自{{ field.source }}）</div>
-                    </div>
-                    {% endfor %}
-                    <div class="col-12 pt-3">
-                      <h3 class="h6 mb-1">风控/止盈止损参数</h3>
-                      <p class="text-secondary small mb-0">空值表示使用全局默认，硬限制不能超过全局。</p>
-                    </div>
-                    {% for field in futures_symbol_risk_fields %}
-                    <div class="col-md-4 col-xl-3">
-                      <label for="futures-edit-{{ field.name }}" class="form-label">{{ field.label }} <span class="text-secondary small">{{ field.name }}</span></label>
-                      <input id="futures-edit-{{ field.name }}" name="{{ field.name }}" type="{{ field.input_type }}" class="form-control" min="0" step="{{ field.step }}" value="{{ field.value }}" placeholder="使用全局默认">
-                      <div class="form-text">当前生效值：{{ field.effective_value }}（来自{{ field.source }}）</div>
-                    </div>
-                    {% endfor %}
-                    <div class="col-12">
-                      <div class="d-flex flex-wrap gap-2">
-                        <button type="submit" class="btn btn-primary">Save</button>
-                        <a class="btn btn-outline-secondary" href="/futures">Cancel</a>
-                      </div>
-                    </div>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-          {% endif %}
-
           <div class="col-12">
             <div class="card shadow-sm">
               <div class="card-body">
@@ -655,7 +560,7 @@
                         <td>
                           <div class="d-flex flex-wrap gap-2 justify-content-end">
                             <button type="button" class="btn btn-sm btn-outline-success futures-kline-open" data-symbol="{{ symbol_config.symbol }}">查看K线</button>
-                            <a class="btn btn-sm btn-outline-secondary" href="/futures/symbols/{{ symbol_config.symbol }}/edit">Edit</a>
+                            <a class="btn btn-sm btn-outline-secondary" href="/futures/symbols/{{ symbol_config.symbol }}/edit#futures-symbol-edit">Edit</a>
                             <form method="post" action="/futures/symbols/{{ symbol_config.symbol }}/toggle">
                               <button type="submit" class="btn btn-sm btn-outline-primary">{% if symbol_config.enabled %}Disable{% else %}Enable{% endif %}</button>
                             </form>
@@ -675,6 +580,107 @@
               </div>
             </div>
           </div>
+
+          {% if futures_symbol_edit_config %}
+          <div class="col-12" id="futures-symbol-edit">
+            <div class="card shadow-sm border-primary">
+              <div class="card-body">
+                <h2 class="h5 mb-3">编辑 Futures 标的：{{ futures_symbol_edit_config.symbol }}</h2>
+                {% if futures_symbol_edit_error %}
+                <div class="alert alert-danger" role="alert">{{ futures_symbol_edit_error }}</div>
+                {% endif %}
+                <form method="post" action="/futures/symbols/{{ futures_symbol_edit_config.symbol }}/edit">
+                  <div class="row g-3 align-items-end">
+                    <div class="col-12">
+                      <h3 class="h6 mb-0">基础参数</h3>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-enabled" class="form-label">是否启用 <span class="text-secondary small">enabled</span></label>
+                      <select id="edit-futures-enabled" name="enabled" class="form-select" required>
+                        <option value="true" {% if futures_symbol_edit_config.enabled %}selected{% endif %}>true</option>
+                        <option value="false" {% if not futures_symbol_edit_config.enabled %}selected{% endif %}>false</option>
+                      </select>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-strategy" class="form-label">策略 <span class="text-secondary small">strategy</span></label>
+                      <select id="edit-futures-strategy" name="strategy_name" class="form-select" required>
+                        {% for strategy in futures_allowed_strategies %}
+                        <option value="{{ strategy }}" {% if strategy == futures_symbol_edit_config.strategy_name %}selected{% endif %}>{{ strategy }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-leverage" class="form-label">杠杆 <span class="text-secondary small">leverage</span></label>
+                      <input id="edit-futures-leverage" name="leverage" type="number" class="form-control" min="0.0001" step="0.0001" value="{{ futures_symbol_edit_config.leverage }}" required>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-margin" class="form-label">保证金金额 <span class="text-secondary small">margin_amount</span></label>
+                      <input id="edit-futures-margin" name="margin_amount" type="number" class="form-control" min="0.0001" step="0.0001" value="{{ futures_symbol_edit_config.margin_amount }}" required>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-order" class="form-label">下单金额 <span class="text-secondary small">order_amount</span></label>
+                      <input id="edit-futures-order" class="form-control" value="" disabled>
+                      <div class="form-text">仅 Spot 使用</div>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-trend-timeframe" class="form-label">趋势周期 <span class="text-secondary small">trend_timeframe</span></label>
+                      <select id="edit-futures-trend-timeframe" name="trend_timeframe" class="form-select" required>
+                        {% for timeframe in futures_allowed_timeframes %}
+                        <option value="{{ timeframe }}" {% if timeframe == futures_symbol_edit_config.trend_timeframe %}selected{% endif %}>{{ timeframe }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-signal-timeframe" class="form-label">信号周期 <span class="text-secondary small">signal_timeframe</span></label>
+                      <select id="edit-futures-signal-timeframe" name="signal_timeframe" class="form-select" required>
+                        {% for timeframe in futures_allowed_timeframes %}
+                        <option value="{{ timeframe }}" {% if timeframe == futures_symbol_edit_config.signal_timeframe %}selected{% endif %}>{{ timeframe }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-3 col-xl-2">
+                      <label for="edit-futures-session-filter" class="form-label">市场时段过滤 <span class="text-secondary small">market_session_filter</span></label>
+                      <select id="edit-futures-session-filter" name="market_session_filter" class="form-select" required>
+                        <option value="none" {% if futures_symbol_edit_config.market_session_filter == 'none' %}selected{% endif %}>不过滤，24小时</option>
+                        <option value="us_regular" {% if futures_symbol_edit_config.market_session_filter == 'us_regular' %}selected{% endif %}>美股常规交易时段</option>
+                      </select>
+                    </div>
+
+                    <div class="col-12 pt-3">
+                      <h3 class="h6 mb-1">策略参数覆盖（高级）</h3>
+                      <p class="text-secondary small mb-0">空值表示使用全局默认。</p>
+                    </div>
+                    {% for field in futures_symbol_strategy_fields %}
+                    <div class="col-md-4 col-xl-3">
+                      <label for="futures-edit-{{ field.name }}" class="form-label">{{ field.label }} <span class="text-secondary small">{{ field.name }}</span></label>
+                      <input id="futures-edit-{{ field.name }}" name="{{ field.name }}" type="{{ field.input_type }}" class="form-control" min="0" step="{{ field.step }}" value="{{ field.value }}" placeholder="使用全局默认">
+                      <div class="form-text">当前生效值：{{ field.effective_value }}（来自{{ field.source }}）</div>
+                    </div>
+                    {% endfor %}
+
+                    <div class="col-12 pt-3">
+                      <h3 class="h6 mb-1">风控 / 止盈止损参数覆盖（高级）</h3>
+                      <p class="text-secondary small mb-0">空值表示使用全局默认，硬限制不能超过全局。</p>
+                    </div>
+                    {% for field in futures_symbol_risk_fields %}
+                    <div class="col-md-4 col-xl-3">
+                      <label for="futures-edit-{{ field.name }}" class="form-label">{{ field.label }} <span class="text-secondary small">{{ field.name }}</span></label>
+                      <input id="futures-edit-{{ field.name }}" name="{{ field.name }}" type="{{ field.input_type }}" class="form-control" min="0" step="{{ field.step }}" value="{{ field.value }}" placeholder="使用全局默认">
+                      <div class="form-text">当前生效值：{{ field.effective_value }}（来自{{ field.source }}）</div>
+                    </div>
+                    {% endfor %}
+                    <div class="col-12">
+                      <div class="d-flex flex-wrap gap-2">
+                        <button type="submit" class="btn btn-primary">保存</button>
+                        <a class="btn btn-outline-secondary" href="/futures">取消</a>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% endif %}
 
           <div id="futuresKlineCard" class="col-12 d-none">
             <div class="card shadow-sm border-primary">

@@ -71,7 +71,7 @@
                 <td>{{ symbol_config.paused_by_loss }}</td>
                 <td>
                   <div class="d-flex justify-content-end gap-2">
-                    <a class="btn btn-sm btn-outline-primary" href="/symbols/{{ symbol }}/edit">Edit</a>
+                    <a class="btn btn-sm btn-outline-primary" href="/symbols/{{ symbol }}/edit#spot-symbol-edit">Edit</a>
                     <form method="post" action="/symbols/{{ symbol }}/toggle">
                       {% if symbol_config.enabled %}
                       <button class="btn btn-sm btn-outline-secondary" type="submit">Disable</button>
@@ -97,5 +97,105 @@
       </div>
     </div>
   </div>
+
+  {% if spot_symbol_edit_config %}
+  <div class="col-12" id="spot-symbol-edit">
+    <div class="card shadow-sm border-primary">
+      <div class="card-body">
+        <h2 class="h5 mb-3">编辑 Spot 标的：{{ spot_symbol_edit_config.symbol }}</h2>
+        {% if error %}
+        <div class="alert alert-danger" role="alert">{{ error }}</div>
+        {% endif %}
+        <form method="post" action="/symbols/{{ spot_symbol_edit_config.symbol }}/edit">
+          <input type="hidden" name="paused_by_loss" value="{{ 'true' if spot_symbol_edit_config.paused_by_loss else 'false' }}">
+          <input type="hidden" name="max_loss_amount" value="{{ spot_symbol_edit_config.max_loss_amount }}">
+          <div class="row g-3 align-items-end">
+            <div class="col-12">
+              <h3 class="h6 mb-0">基础参数</h3>
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label class="form-label" for="spot-edit-enabled">是否启用 <span class="text-secondary small">enabled</span></label>
+              <select id="spot-edit-enabled" name="enabled" class="form-select" required>
+                <option value="true" {% if spot_symbol_edit_config.enabled %}selected{% endif %}>true</option>
+                <option value="false" {% if not spot_symbol_edit_config.enabled %}selected{% endif %}>false</option>
+              </select>
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label class="form-label" for="spot-edit-strategy">策略 <span class="text-secondary small">strategy</span></label>
+              <input id="spot-edit-strategy" class="form-control" value="{{ spot_symbol_edit_config.strategy_name }}" disabled>
+              <div class="form-text">仅 Futures 使用</div>
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label class="form-label" for="spot-edit-leverage">杠杆 <span class="text-secondary small">leverage</span></label>
+              <input id="spot-edit-leverage" class="form-control" value="" disabled>
+              <div class="form-text">仅 Futures 使用</div>
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label class="form-label" for="spot-edit-margin">保证金金额 <span class="text-secondary small">margin_amount</span></label>
+              <input id="spot-edit-margin" class="form-control" value="" disabled>
+              <div class="form-text">仅 Futures 使用</div>
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label class="form-label" for="spot-edit-order">下单金额 <span class="text-secondary small">order_amount</span></label>
+              <input id="spot-edit-order" name="order_amount" type="number" class="form-control" min="0.00000001" step="0.00000001" value="{{ spot_symbol_edit_config.order_amount }}" required>
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label class="form-label" for="spot-edit-trend">趋势周期 <span class="text-secondary small">trend_timeframe</span></label>
+              <select id="spot-edit-trend" name="trend_timeframe" class="form-select" required>
+                {% for timeframe in timeframes %}
+                <option value="{{ timeframe }}" {% if spot_symbol_edit_config.trend_timeframe == timeframe %}selected{% endif %}>{{ timeframe }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label class="form-label" for="spot-edit-signal">信号周期 <span class="text-secondary small">signal_timeframe</span></label>
+              <select id="spot-edit-signal" name="signal_timeframe" class="form-select" required>
+                {% for timeframe in timeframes %}
+                <option value="{{ timeframe }}" {% if spot_symbol_edit_config.signal_timeframe == timeframe %}selected{% endif %}>{{ timeframe }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3 col-xl-2">
+              <label class="form-label" for="spot-edit-session">市场时段过滤 <span class="text-secondary small">market_session_filter</span></label>
+              <input id="spot-edit-session" class="form-control" value="" disabled>
+              <div class="form-text">仅 Futures 使用</div>
+            </div>
+
+            <div class="col-12 pt-3">
+              <h3 class="h6 mb-1">策略参数覆盖（高级）</h3>
+              <p class="text-secondary small mb-0">空值表示使用全局默认。</p>
+            </div>
+            {% for field in spot_symbol_strategy_fields %}
+            <div class="col-md-4 col-xl-3">
+              <label for="spot-edit-{{ field.name }}" class="form-label">{{ field.label }} <span class="text-secondary small">{{ field.name }}</span></label>
+              <input id="spot-edit-{{ field.name }}" name="{{ field.name }}" type="{{ field.input_type }}" class="form-control" min="0" step="{{ field.step }}" value="{{ field.value }}" placeholder="使用全局默认">
+              <div class="form-text">当前生效值：{{ field.effective_value }}（来自{{ field.source }}）</div>
+            </div>
+            {% endfor %}
+
+            <div class="col-12 pt-3">
+              <h3 class="h6 mb-1">风控 / 止盈止损参数覆盖（高级）</h3>
+              <p class="text-secondary small mb-0">空值表示使用全局默认。</p>
+            </div>
+            {% for field in spot_symbol_risk_fields %}
+            <div class="col-md-4 col-xl-3">
+              <label for="spot-edit-{{ field.name }}" class="form-label">{{ field.label }} <span class="text-secondary small">{{ field.name }}</span></label>
+              <input id="spot-edit-{{ field.name }}" name="{{ field.name }}" type="{{ field.input_type }}" class="form-control" min="0" step="{{ field.step }}" value="{{ field.value }}" placeholder="使用全局默认">
+              <div class="form-text">当前生效值：{{ field.effective_value }}（来自{{ field.source }}）</div>
+            </div>
+            {% endfor %}
+
+            <div class="col-12">
+              <div class="d-flex flex-wrap gap-2">
+                <button type="submit" class="btn btn-primary">保存</button>
+                <a class="btn btn-outline-secondary" href="/symbols">取消</a>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endif %}

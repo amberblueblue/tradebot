@@ -313,18 +313,36 @@ def _coerce_optional_positive_int(value: Any, field_name: str, symbol: str) -> i
 
 
 SPOT_SYMBOL_STRATEGY_FIELDS = {
-    "ema_slope_lookback": "int",
-    "macd_decay_bars": "int",
+    "ema_fast": "int",
+    "ema_slow": "int",
+    "macd_fast": "int",
+    "macd_slow": "int",
+    "macd_signal": "int",
+    "rsi_period": "int",
+    "min_rsi": "float",
+    "max_rsi": "float",
     "rsi_overheat": "float",
-    "entry_cooldown_bars": "int",
     "max_hold_bars": "int",
     "min_expected_return": "float",
+    "ema_slope_lookback": "int",
+    "macd_decay_bars": "int",
+    "entry_cooldown_bars": "int",
 }
 SPOT_SYMBOL_RISK_FIELDS = {
     "stop_loss_pct": "float",
     "take_profit_pct": "float",
+    "partial1_sell_pct": "float",
+    "partial2_sell_pct": "float",
+    "big_candle_multiplier": "float",
+    "big_candle_body_lookback": "int",
+    "profit_giveback_ratio": "float",
+    "profit_protection_trigger_pct": "float",
     "max_single_order_usdt": "float",
     "max_loss_amount": "float",
+    "max_leverage": "float",
+    "max_margin_per_trade_usdt": "float",
+    "max_position_ratio": "float",
+    "max_funding_rate_abs": "float",
 }
 
 
@@ -494,7 +512,8 @@ def get_effective_spot_symbol_config(symbol: str, settings: dict[str, Any] | Non
         raise ValueError(f"Invalid symbols.yaml: symbols.{symbol} is not configured")
 
     symbol_config = _validate_symbol_config(symbol, raw_symbols[symbol])
-    global_strategy = dict(settings.get("strategy", {}))
+    global_strategy = dict(settings.get("feature_engine", {}))
+    global_strategy.update(settings.get("strategy", {}))
     global_risk = {
         "stop_loss_pct": float(settings.get("execution", {}).get("stop_loss_pct", 3.0)),
         "take_profit_pct": float(settings.get("execution", {}).get("take_profit_pct", 6.0)),
@@ -503,7 +522,9 @@ def get_effective_spot_symbol_config(symbol: str, settings: dict[str, Any] | Non
     }
     for key in ("partial1_sell_pct", "partial2_sell_pct", "big_candle_multiplier",
                 "big_candle_body_lookback", "profit_giveback_ratio",
-                "profit_protection_trigger_pct"):
+                "profit_protection_trigger_pct", "max_leverage",
+                "max_margin_per_trade_usdt", "max_position_ratio",
+                "max_funding_rate_abs"):
         if key in settings.get("risk", {}):
             global_risk[key] = settings["risk"][key]
 
