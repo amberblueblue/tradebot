@@ -22,6 +22,7 @@ from config.loader import (
     DEFAULT_SETTINGS_PATH,
     DEFAULT_SYMBOLS_PATH,
     VALID_SYMBOL_TIMEFRAMES,
+    get_effective_spot_symbol_config,
     load_execution_runtime,
     load_project_config,
 )
@@ -38,6 +39,7 @@ from futures_bot.config_loader import (
     ALLOWED_FUTURES_STRATEGIES,
     ALLOWED_FUTURES_TIMEFRAMES,
     DEFAULT_FUTURES_SETTINGS_PATH,
+    get_effective_futures_symbol_config,
     load_futures_config,
     load_yaml_mapping,
     load_futures_symbols_config,
@@ -184,6 +186,47 @@ SPOT_SETTING_LABELS = {
     "risk.profit_giveback_ratio": "利润回撤比例",
     "risk.profit_protection_trigger_pct": "利润保护触发百分比",
 }
+SPOT_SYMBOL_STRATEGY_FIELD_SPECS = (
+    ("ema_slope_lookback", "EMA 斜率回看", "number", "1"),
+    ("macd_decay_bars", "MACD 衰减根数", "number", "1"),
+    ("rsi_overheat", "RSI 过热阈值", "number", "0.0001"),
+    ("entry_cooldown_bars", "入场冷却根数", "number", "1"),
+    ("max_hold_bars", "最大持仓K线数", "number", "1"),
+    ("min_expected_return", "最低预期收益", "number", "0.0001"),
+)
+SPOT_SYMBOL_RISK_FIELD_SPECS = (
+    ("stop_loss_pct", "止损百分比", "number", "0.0001"),
+    ("take_profit_pct", "止盈百分比", "number", "0.0001"),
+    ("max_single_order_usdt", "单笔最大下单 USDT", "number", "0.0001"),
+    ("max_loss_amount", "最大亏损金额", "number", "0.0001"),
+)
+FUTURES_SYMBOL_STRATEGY_FIELD_SPECS = (
+    ("ema_fast", "快速 EMA", "number", "1"),
+    ("ema_slow", "慢速 EMA", "number", "1"),
+    ("macd_fast", "MACD 快线周期", "number", "1"),
+    ("macd_slow", "MACD 慢线周期", "number", "1"),
+    ("macd_signal", "MACD 信号线周期", "number", "1"),
+    ("rsi_period", "RSI 周期", "number", "1"),
+    ("min_rsi", "最小 RSI", "number", "0.0001"),
+    ("max_rsi", "最大 RSI", "number", "0.0001"),
+    ("rsi_overheat", "RSI 过热阈值", "number", "0.0001"),
+    ("max_hold_bars", "最大持仓K线数", "number", "1"),
+    ("min_expected_return", "最低预期收益", "number", "0.0001"),
+)
+FUTURES_SYMBOL_RISK_FIELD_SPECS = (
+    ("stop_loss_pct", "止损百分比", "number", "0.0001"),
+    ("partial1_sell_pct", "第一档止盈卖出比例", "number", "0.0001"),
+    ("partial2_sell_pct", "第二档止盈卖出比例", "number", "0.0001"),
+    ("big_candle_multiplier", "大K线倍数", "number", "0.0001"),
+    ("big_candle_body_lookback", "大K线实体回看", "number", "1"),
+    ("profit_giveback_ratio", "利润回撤比例", "number", "0.0001"),
+    ("profit_protection_trigger_pct", "利润保护触发百分比", "number", "0.0001"),
+    ("max_single_order_usdt", "单笔最大下单 USDT", "number", "0.0001"),
+    ("max_leverage", "最大杠杆", "number", "0.0001"),
+    ("max_margin_per_trade_usdt", "单笔最大保证金 USDT", "number", "0.0001"),
+    ("max_position_ratio", "最大仓位占比", "number", "0.0001"),
+    ("max_funding_rate_abs", "最大资金费率", "number", "0.000001"),
+)
 LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
 REAL_EXECUTE_ENV_VAR = "TRADEBOT_EXECUTE_REAL"
 FINAL_REAL_ORDER_ENV_VAR = "TRADEBOT_FINAL_REAL_ORDER"
@@ -740,6 +783,77 @@ def _parse_positive_int(form: dict[str, str], field_name: str) -> int:
     return value
 
 
+def _parse_optional_symbol_number(form: dict[str, str], field_name: str, *, integer: bool = False):
+    raw_value = form.get(field_name, "").strip()
+    if raw_value == "":
+        return None
+    try:
+        value = int(raw_value) if integer else float(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be a number greater than 0") from exc
+    if value <= 0:
+        raise ValueError(f"{field_name} must be greater than 0")
+    return value
+
+
+def _parse_optional_non_negative_symbol_number(form: dict[str, str], field_name: str):
+    raw_value = form.get(field_name, "").strip()
+    if raw_value == "":
+        return None
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be a number greater than or equal to 0") from exc
+    if value < 0:
+        raise ValueError(f"{field_name} must be greater than or equal to 0")
+    return value
+
+
+def _symbol_override_fields(
+    *,
+    specs: tuple[tuple[str, str, str, str], ...],
+    section: str,
+    override: dict[str, object],
+    effective: dict[str, object],
+) -> list[dict[str, object]]:
+    fields = []
+    for key, label, input_type, step in specs:
+        source = "本标的" if key in override else "全局"
+        fields.append(
+            {
+                "key": key,
+                "name": f"{section}.{key}",
+                "label": label,
+                "input_type": input_type,
+                "step": step,
+                "value": override.get(key, ""),
+                "effective_value": effective.get(key),
+                "source": source,
+            }
+        )
+    return fields
+
+
+def _parse_symbol_override_section(
+    form: dict[str, str],
+    *,
+    section: str,
+    specs: tuple[tuple[str, str, str, str], ...],
+    non_negative_keys: set[str] | None = None,
+) -> dict[str, object]:
+    non_negative_keys = non_negative_keys or set()
+    overrides: dict[str, object] = {}
+    for key, _, _, step in specs:
+        field_name = f"{section}.{key}"
+        if key in non_negative_keys:
+            parsed = _parse_optional_non_negative_symbol_number(form, field_name)
+        else:
+            parsed = _parse_optional_symbol_number(form, field_name, integer=step == "1")
+        if parsed is not None:
+            overrides[key] = parsed
+    return overrides
+
+
 def _get_path_value(payload: dict[str, object], dotted_path: str):
     current: object = payload
     for part in dotted_path.split("."):
@@ -923,7 +1037,7 @@ def _parse_timeframe(form: dict[str, str], field_name: str) -> str:
 
 
 def _symbol_config_from_form(form: dict[str, str]) -> dict:
-    return {
+    config = {
         "enabled": _parse_form_bool(form, "enabled"),
         "trend_timeframe": _parse_timeframe(form, "trend_timeframe"),
         "signal_timeframe": _parse_timeframe(form, "signal_timeframe"),
@@ -931,6 +1045,25 @@ def _symbol_config_from_form(form: dict[str, str]) -> dict:
         "max_loss_amount": _parse_positive_amount(form, "max_loss_amount"),
         "paused_by_loss": _parse_form_bool(form, "paused_by_loss"),
     }
+    strategy_overrides = _parse_symbol_override_section(
+        form,
+        section="strategy",
+        specs=SPOT_SYMBOL_STRATEGY_FIELD_SPECS,
+    )
+    risk_overrides = _parse_symbol_override_section(
+        form,
+        section="risk",
+        specs=SPOT_SYMBOL_RISK_FIELD_SPECS,
+    )
+    if strategy_overrides:
+        config["strategy"] = strategy_overrides
+    else:
+        config.pop("strategy", None)
+    if risk_overrides:
+        config["risk"] = risk_overrides
+    else:
+        config.pop("risk", None)
+    return config
 
 
 def _load_config_view() -> dict:
@@ -1003,6 +1136,24 @@ def _load_symbol_edit_context(
         if not isinstance(symbols, dict) or normalized_symbol not in symbols:
             raise ValueError(f"{normalized_symbol} is not configured")
         symbol_config = symbols[normalized_symbol]
+    else:
+        settings = load_project_config()
+
+    effective_symbol_config = get_effective_spot_symbol_config(
+        normalized_symbol,
+        {
+            **settings,
+            "symbols_config": {
+                **settings.get("symbols_config", {}),
+                "symbols": {
+                    **settings.get("symbols_config", {}).get("symbols", {}),
+                    normalized_symbol: symbol_config,
+                },
+            },
+        },
+    )
+    symbol_override = effective_symbol_config["symbol_override"]
+    effective_config = effective_symbol_config["effective_config"]
 
     return {
         "request": request,
@@ -1010,6 +1161,18 @@ def _load_symbol_edit_context(
         "symbol": normalized_symbol,
         "symbol_config": symbol_config,
         "timeframes": VALID_SYMBOL_TIMEFRAMES,
+        "spot_symbol_strategy_fields": _symbol_override_fields(
+            specs=SPOT_SYMBOL_STRATEGY_FIELD_SPECS,
+            section="strategy",
+            override=symbol_override["strategy"],
+            effective=effective_config["strategy"],
+        ),
+        "spot_symbol_risk_fields": _symbol_override_fields(
+            specs=SPOT_SYMBOL_RISK_FIELD_SPECS,
+            section="risk",
+            override=symbol_override["risk"],
+            effective=effective_config["risk"],
+        ),
         "error": error,
     }
 
@@ -1258,12 +1421,14 @@ def _futures_symbol_config_row(symbol_config) -> dict[str, object]:
 def _futures_symbol_config_mapping(symbol_config) -> dict[str, object]:
     return {
         "enabled": symbol_config.enabled,
-        "strategy": symbol_config.strategy,
+        "strategy_name": symbol_config.strategy,
         "leverage": symbol_config.leverage,
         "margin_amount": symbol_config.margin_amount,
         "trend_timeframe": symbol_config.trend_timeframe,
         "signal_timeframe": symbol_config.signal_timeframe,
         "market_session_filter": symbol_config.market_session_filter,
+        "strategy": dict(symbol_config.strategy_overrides or {}),
+        "risk": dict(symbol_config.risk_overrides or {}),
     }
 
 
@@ -1347,7 +1512,7 @@ def _parse_futures_symbol_number(value: str, field_name: str) -> tuple[float | N
 
 def _parse_futures_symbol_config_from_form(form: dict[str, str], risk_config) -> dict[str, object]:
     enabled = _parse_form_bool(form, "enabled")
-    strategy = form.get("strategy", "").strip()
+    strategy = form.get("strategy_name", form.get("strategy", "")).strip()
     if strategy not in ALLOWED_FUTURES_STRATEGIES:
         raise ValueError("strategy must be trend_long")
 
@@ -1374,15 +1539,32 @@ def _parse_futures_symbol_config_from_form(form: dict[str, str], risk_config) ->
             f"{risk_config.max_margin_per_trade_usdt}"
         )
 
-    return {
+    config = {
         "enabled": enabled,
-        "strategy": strategy,
+        "strategy_name": strategy,
         "leverage": leverage,
         "margin_amount": margin_amount,
         "trend_timeframe": trend_timeframe,
         "signal_timeframe": signal_timeframe,
         "market_session_filter": market_session_filter,
     }
+    strategy_overrides = _parse_symbol_override_section(
+        form,
+        section="strategy",
+        specs=FUTURES_SYMBOL_STRATEGY_FIELD_SPECS,
+        non_negative_keys={"min_expected_return"},
+    )
+    risk_overrides = _parse_symbol_override_section(
+        form,
+        section="risk",
+        specs=FUTURES_SYMBOL_RISK_FIELD_SPECS,
+        non_negative_keys={"max_funding_rate_abs"},
+    )
+    if strategy_overrides:
+        config["strategy"] = strategy_overrides
+    if risk_overrides:
+        config["risk"] = risk_overrides
+    return config
 
 
 def _parse_futures_risk_settings_from_form(form: dict[str, str]) -> dict[str, object]:
@@ -1502,6 +1684,23 @@ def _render_futures_symbol_edit_page(
     status_code: int = 200,
 ):
     context = _load_futures_view()
+    try:
+        futures_config = load_futures_config()
+        effective_symbol_config = get_effective_futures_symbol_config(symbol, futures_config)
+        symbol_override = {
+            "strategy": dict(symbol_config.get("strategy", effective_symbol_config["symbol_override"]["strategy"])),
+            "risk": dict(symbol_config.get("risk", effective_symbol_config["symbol_override"]["risk"])),
+        }
+        effective_config = effective_symbol_config["effective_config"]
+    except Exception:
+        symbol_override = {
+            "strategy": dict(symbol_config.get("strategy", {})),
+            "risk": dict(symbol_config.get("risk", {})),
+        }
+        effective_config = {"strategy": {}, "risk": {}}
+    strategy_name = symbol_config.get("strategy_name", symbol_config.get("strategy", "trend_long"))
+    if isinstance(strategy_name, dict):
+        strategy_name = "trend_long"
     context.update(
         {
             "request": request,
@@ -1511,9 +1710,22 @@ def _render_futures_symbol_edit_page(
             "futures_symbol_edit_config": {
                 "symbol": symbol,
                 **symbol_config,
+                "strategy_name": strategy_name,
             },
             "futures_symbol_edit_error": error,
             "futures_allowed_session_filters": sorted(ALLOWED_MARKET_SESSION_FILTERS),
+            "futures_symbol_strategy_fields": _symbol_override_fields(
+                specs=FUTURES_SYMBOL_STRATEGY_FIELD_SPECS,
+                section="strategy",
+                override=symbol_override["strategy"],
+                effective=effective_config["strategy"],
+            ),
+            "futures_symbol_risk_fields": _symbol_override_fields(
+                specs=FUTURES_SYMBOL_RISK_FIELD_SPECS,
+                section="risk",
+                override=symbol_override["risk"],
+                effective=effective_config["risk"],
+            ),
         }
     )
     return templates.TemplateResponse(
@@ -2192,12 +2404,22 @@ async def futures_symbol_edit_save(request: Request, symbol: str):
     form = await _read_form_data(request)
     submitted_config = {
         "enabled": form.get("enabled", "true").strip().lower() == "true",
-        "strategy": form.get("strategy", "trend_long"),
+        "strategy_name": form.get("strategy_name", form.get("strategy", "trend_long")),
         "leverage": form.get("leverage", ""),
         "margin_amount": form.get("margin_amount", ""),
         "trend_timeframe": form.get("trend_timeframe", "4h"),
         "signal_timeframe": form.get("signal_timeframe", "15m"),
         "market_session_filter": form.get("market_session_filter", "none"),
+        "strategy": {
+            key: form.get(f"strategy.{key}", "").strip()
+            for key, _, _, _ in FUTURES_SYMBOL_STRATEGY_FIELD_SPECS
+            if form.get(f"strategy.{key}", "").strip() != ""
+        },
+        "risk": {
+            key: form.get(f"risk.{key}", "").strip()
+            for key, _, _, _ in FUTURES_SYMBOL_RISK_FIELD_SPECS
+            if form.get(f"risk.{key}", "").strip() != ""
+        },
     }
 
     try:
@@ -2220,7 +2442,7 @@ async def futures_symbol_edit_save(request: Request, symbol: str):
             normalized_symbol,
             reason="frontend_edit",
             enabled=updated_config["enabled"],
-            strategy=updated_config["strategy"],
+            strategy=updated_config["strategy_name"],
             leverage=updated_config["leverage"],
             margin_amount=updated_config["margin_amount"],
             trend_timeframe=updated_config["trend_timeframe"],
@@ -2281,7 +2503,7 @@ async def futures_symbol_add(request: Request):
 
     updated_symbols[normalized_symbol] = {
         "enabled": enabled,
-        "strategy": strategy,
+        "strategy_name": strategy,
         "leverage": parsed_leverage,
         "margin_amount": parsed_margin,
         "trend_timeframe": trend_timeframe,
@@ -2650,6 +2872,10 @@ async def save_symbol_page(request: Request, symbol: str):
 
         updated_config = _symbol_config_from_form(form)
         symbols[normalized_symbol].update(updated_config)
+        if "strategy" not in updated_config:
+            symbols[normalized_symbol].pop("strategy", None)
+        if "risk" not in updated_config:
+            symbols[normalized_symbol].pop("risk", None)
         _save_symbols_and_settings(settings, symbols_config)
         _log_symbol_management_action(
             settings,
@@ -2671,6 +2897,16 @@ async def save_symbol_page(request: Request, symbol: str):
             "order_amount": form.get("order_amount", ""),
             "max_loss_amount": form.get("max_loss_amount", ""),
             "paused_by_loss": form.get("paused_by_loss", "false").strip().lower() == "true",
+            "strategy": {
+                key: form.get(f"strategy.{key}", "").strip()
+                for key, _, _, _ in SPOT_SYMBOL_STRATEGY_FIELD_SPECS
+                if form.get(f"strategy.{key}", "").strip() != ""
+            },
+            "risk": {
+                key: form.get(f"risk.{key}", "").strip()
+                for key, _, _, _ in SPOT_SYMBOL_RISK_FIELD_SPECS
+                if form.get(f"risk.{key}", "").strip() != ""
+            },
         }
         context = _load_symbol_edit_context(
             request,

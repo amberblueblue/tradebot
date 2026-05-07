@@ -21,6 +21,8 @@ class SymbolTradingConfig:
     order_amount: float
     max_loss_amount: float
     paused_by_loss: bool
+    strategy: dict[str, Any] | None = None
+    risk: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -288,6 +290,69 @@ def _coerce_positive_int(value: Any, field_name: str) -> int:
     return number
 
 
+def _coerce_optional_positive_float(value: Any, field_name: str, symbol: str) -> float | None:
+    if value is None:
+        return None
+    return _coerce_positive_float(value, field_name, symbol)
+
+
+def _coerce_optional_positive_int(value: Any, field_name: str, symbol: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid symbols.yaml: symbols.{symbol}.{field_name} must be an integer greater than 0")
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid symbols.yaml: symbols.{symbol}.{field_name} must be an integer greater than 0"
+        ) from exc
+    if number <= 0:
+        raise ValueError(f"Invalid symbols.yaml: symbols.{symbol}.{field_name} must be greater than 0")
+    return number
+
+
+SPOT_SYMBOL_STRATEGY_FIELDS = {
+    "ema_slope_lookback": "int",
+    "macd_decay_bars": "int",
+    "rsi_overheat": "float",
+    "entry_cooldown_bars": "int",
+    "max_hold_bars": "int",
+    "min_expected_return": "float",
+}
+SPOT_SYMBOL_RISK_FIELDS = {
+    "stop_loss_pct": "float",
+    "take_profit_pct": "float",
+    "max_single_order_usdt": "float",
+    "max_loss_amount": "float",
+}
+
+
+def _validate_optional_number_overrides(
+    *,
+    raw_mapping: Any,
+    allowed_fields: dict[str, str],
+    section_name: str,
+    symbol: str,
+) -> dict[str, int | float]:
+    if raw_mapping in (None, {}):
+        return {}
+    if not isinstance(raw_mapping, dict):
+        raise ValueError(f"Invalid symbols.yaml: symbols.{symbol}.{section_name} must be a mapping")
+    validated: dict[str, int | float] = {}
+    for key, value in raw_mapping.items():
+        if key not in allowed_fields:
+            raise ValueError(f"Invalid symbols.yaml: symbols.{symbol}.{section_name}.{key} is not supported")
+        field_name = f"{section_name}.{key}"
+        if allowed_fields[key] == "int":
+            parsed = _coerce_optional_positive_int(value, field_name, symbol)
+        else:
+            parsed = _coerce_optional_positive_float(value, field_name, symbol)
+        if parsed is not None:
+            validated[key] = parsed
+    return validated
+
+
 def _coerce_timeframe(value: Any, field_name: str, symbol: str) -> str:
     timeframe = str(value)
     if timeframe not in VALID_SYMBOL_TIMEFRAME_SET:
@@ -317,14 +382,32 @@ def _validate_symbol_config(symbol: str, raw_config: Any) -> SymbolTradingConfig
 
     merged_config = _default_symbol_config(symbol)
     merged_config.update(raw_config)
+    strategy_overrides = _validate_optional_number_overrides(
+        raw_mapping=merged_config.get("strategy"),
+        allowed_fields=SPOT_SYMBOL_STRATEGY_FIELDS,
+        section_name="strategy",
+        symbol=symbol,
+    )
+    risk_overrides = _validate_optional_number_overrides(
+        raw_mapping=merged_config.get("risk"),
+        allowed_fields=SPOT_SYMBOL_RISK_FIELDS,
+        section_name="risk",
+        symbol=symbol,
+    )
     return SymbolTradingConfig(
         symbol=symbol,
         enabled=_coerce_bool(merged_config.get("enabled"), "enabled", symbol),
         trend_timeframe=_coerce_timeframe(merged_config.get("trend_timeframe"), "trend_timeframe", symbol),
         signal_timeframe=_coerce_timeframe(merged_config.get("signal_timeframe"), "signal_timeframe", symbol),
         order_amount=_coerce_positive_float(merged_config.get("order_amount"), "order_amount", symbol),
-        max_loss_amount=_coerce_positive_float(merged_config.get("max_loss_amount"), "max_loss_amount", symbol),
+        max_loss_amount=_coerce_positive_float(
+            risk_overrides.get("max_loss_amount", merged_config.get("max_loss_amount")),
+            "max_loss_amount",
+            symbol,
+        ),
         paused_by_loss=_coerce_bool(merged_config.get("paused_by_loss"), "paused_by_loss", symbol),
+        strategy=strategy_overrides,
+        risk=risk_overrides,
     )
 
 
@@ -356,6 +439,10 @@ def load_symbols_config(symbols_path: Path | None = None) -> dict[str, Any]:
             "max_loss_amount": validated.max_loss_amount,
             "paused_by_loss": validated.paused_by_loss,
         }
+        if validated.strategy:
+            validated_symbols[validated.symbol]["strategy"] = dict(validated.strategy)
+        if validated.risk:
+            validated_symbols[validated.symbol]["risk"] = dict(validated.risk)
 
     normalized_config = dict(raw_config)
     normalized_config["symbols"] = validated_symbols
@@ -396,6 +483,57 @@ def get_symbol_trading_configs(symbols_config: dict[str, Any]) -> dict[str, Symb
     return {
         symbol: _validate_symbol_config(symbol, symbol_config)
         for symbol, symbol_config in symbols.items()
+    }
+
+
+def get_effective_spot_symbol_config(symbol: str, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+    settings = settings or load_project_config()
+    symbols_config = settings.get("symbols_config") or load_symbols_config()
+    raw_symbols = symbols_config.get("symbols", {})
+    if not isinstance(raw_symbols, dict) or symbol not in raw_symbols:
+        raise ValueError(f"Invalid symbols.yaml: symbols.{symbol} is not configured")
+
+    symbol_config = _validate_symbol_config(symbol, raw_symbols[symbol])
+    global_strategy = dict(settings.get("strategy", {}))
+    global_risk = {
+        "stop_loss_pct": float(settings.get("execution", {}).get("stop_loss_pct", 3.0)),
+        "take_profit_pct": float(settings.get("execution", {}).get("take_profit_pct", 6.0)),
+        "max_single_order_usdt": float(settings.get("risk", {}).get("max_single_order_usdt", 20.0)),
+        "max_loss_amount": float(raw_symbols[symbol].get("max_loss_amount", 20.0)),
+    }
+    for key in ("partial1_sell_pct", "partial2_sell_pct", "big_candle_multiplier",
+                "big_candle_body_lookback", "profit_giveback_ratio",
+                "profit_protection_trigger_pct"):
+        if key in settings.get("risk", {}):
+            global_risk[key] = settings["risk"][key]
+
+    symbol_override = {
+        "strategy": dict(symbol_config.strategy or {}),
+        "risk": dict(symbol_config.risk or {}),
+    }
+    effective_strategy = dict(global_strategy)
+    effective_strategy.update(symbol_override["strategy"])
+    effective_risk = dict(global_risk)
+    effective_risk.update(symbol_override["risk"])
+    effective_symbol = {
+        "enabled": symbol_config.enabled,
+        "trend_timeframe": symbol_config.trend_timeframe,
+        "signal_timeframe": symbol_config.signal_timeframe,
+        "order_amount": symbol_config.order_amount,
+        "max_loss_amount": float(effective_risk.get("max_loss_amount", symbol_config.max_loss_amount)),
+        "paused_by_loss": symbol_config.paused_by_loss,
+    }
+    return {
+        "global_config": {
+            "strategy": global_strategy,
+            "risk": global_risk,
+        },
+        "symbol_override": symbol_override,
+        "effective_config": {
+            "symbol": effective_symbol,
+            "strategy": effective_strategy,
+            "risk": effective_risk,
+        },
     }
 
 

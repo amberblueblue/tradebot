@@ -22,8 +22,11 @@
     <div class="card shadow-sm">
       <div class="card-body">
         <form class="row g-3" method="post" action="/symbols/{{ symbol }}/edit">
+          <div class="col-12">
+            <h2 class="h5 mb-0">基础参数</h2>
+          </div>
           <div class="col-md-6">
-            <label class="form-label" for="enabled">enabled</label>
+            <label class="form-label" for="enabled">启用 <span class="text-secondary small">enabled</span></label>
             <select class="form-select" id="enabled" name="enabled" required>
               <option value="true" {% if symbol_config.enabled %}selected{% endif %}>true</option>
               <option value="false" {% if not symbol_config.enabled %}selected{% endif %}>false</option>
@@ -31,7 +34,7 @@
           </div>
 
           <div class="col-md-6">
-            <label class="form-label" for="paused_by_loss">paused_by_loss</label>
+            <label class="form-label" for="paused_by_loss">亏损暂停 <span class="text-secondary small">paused_by_loss</span></label>
             <select class="form-select" id="paused_by_loss" name="paused_by_loss" required>
               <option value="false" {% if not symbol_config.paused_by_loss %}selected{% endif %}>false</option>
               <option value="true" {% if symbol_config.paused_by_loss %}selected{% endif %}>true</option>
@@ -39,7 +42,7 @@
           </div>
 
           <div class="col-md-6">
-            <label class="form-label" for="trend_timeframe">trend_timeframe</label>
+            <label class="form-label" for="trend_timeframe">趋势周期 <span class="text-secondary small">trend_timeframe</span></label>
             <select class="form-select" id="trend_timeframe" name="trend_timeframe" required>
               {% for timeframe in timeframes %}
               <option value="{{ timeframe }}" {% if symbol_config.trend_timeframe == timeframe %}selected{% endif %}>{{ timeframe }}</option>
@@ -48,7 +51,7 @@
           </div>
 
           <div class="col-md-6">
-            <label class="form-label" for="signal_timeframe">signal_timeframe</label>
+            <label class="form-label" for="signal_timeframe">信号周期 <span class="text-secondary small">signal_timeframe</span></label>
             <select class="form-select" id="signal_timeframe" name="signal_timeframe" required>
               {% for timeframe in timeframes %}
               <option value="{{ timeframe }}" {% if symbol_config.signal_timeframe == timeframe %}selected{% endif %}>{{ timeframe }}</option>
@@ -57,7 +60,7 @@
           </div>
 
           <div class="col-md-6">
-            <label class="form-label" for="order_amount">order_amount</label>
+            <label class="form-label" for="order_amount">下单金额 <span class="text-secondary small">order_amount</span></label>
             <input
               class="form-control"
               id="order_amount"
@@ -71,7 +74,7 @@
           </div>
 
           <div class="col-md-6">
-            <label class="form-label" for="max_loss_amount">max_loss_amount</label>
+            <label class="form-label" for="max_loss_amount">最大亏损金额 <span class="text-secondary small">max_loss_amount</span></label>
             <input
               class="form-control"
               id="max_loss_amount"
@@ -83,6 +86,48 @@
               required
             >
           </div>
+
+          <div class="col-12 pt-3">
+            <h2 class="h5 mb-1">策略参数</h2>
+            <p class="text-secondary small mb-0">空值表示使用全局默认。</p>
+          </div>
+          {% for field in spot_symbol_strategy_fields %}
+          <div class="col-md-6">
+            <label class="form-label" for="spot-{{ field.name }}">{{ field.label }} <span class="text-secondary small">{{ field.name }}</span></label>
+            <input
+              class="form-control"
+              id="spot-{{ field.name }}"
+              name="{{ field.name }}"
+              type="{{ field.input_type }}"
+              min="0.00000001"
+              step="{{ field.step }}"
+              value="{{ field.value }}"
+              placeholder="使用全局默认"
+            >
+            <div class="form-text">当前生效值：{{ field.effective_value }}（来自{{ field.source }}）</div>
+          </div>
+          {% endfor %}
+
+          <div class="col-12 pt-3">
+            <h2 class="h5 mb-1">风控/止盈止损参数</h2>
+            <p class="text-secondary small mb-0">空值表示使用全局默认。</p>
+          </div>
+          {% for field in spot_symbol_risk_fields %}
+          <div class="col-md-6">
+            <label class="form-label" for="spot-{{ field.name }}">{{ field.label }} <span class="text-secondary small">{{ field.name }}</span></label>
+            <input
+              class="form-control"
+              id="spot-{{ field.name }}"
+              name="{{ field.name }}"
+              type="{{ field.input_type }}"
+              min="0.00000001"
+              step="{{ field.step }}"
+              value="{{ field.value }}"
+              placeholder="使用全局默认"
+            >
+            <div class="form-text">当前生效值：{{ field.effective_value }}（来自{{ field.source }}）</div>
+          </div>
+          {% endfor %}
 
           <div class="col-12">
             <div class="d-flex flex-wrap gap-2">

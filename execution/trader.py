@@ -12,6 +12,7 @@ import strategy.strategy as strategy
 from config.loader import (
     ExecutionRuntimeConfig,
     SymbolTradingConfig,
+    get_effective_spot_symbol_config,
     load_execution_runtime,
     load_project_config,
     load_symbols_config,
@@ -162,7 +163,7 @@ class TraderEngine:
             runtime_symbol["strategy_state"],
             runtime_symbol["entry_price"],
             position_state=position_state,
-            config=self.strategy_config,
+            config=self._strategy_config_for_symbol(symbol),
         )
 
         self.runtime_store.set_symbol_state(
@@ -309,7 +310,10 @@ class TraderEngine:
             return False
 
         current_return = (execution_context.current_price - current_position.avg_price) / current_position.avg_price
-        if current_return <= -(self.execution_config.stop_loss_pct / 100):
+        risk_config = self._risk_config_for_symbol(symbol)
+        stop_loss_pct = float(risk_config.get("stop_loss_pct", self.execution_config.stop_loss_pct))
+        take_profit_pct = float(risk_config.get("take_profit_pct", self.execution_config.take_profit_pct))
+        if current_return <= -(stop_loss_pct / 100):
             self._log_event(
                 "risk_stop_loss_triggered",
                 symbol=symbol,
@@ -328,7 +332,7 @@ class TraderEngine:
             self._enforce_max_loss_pause(symbol, self._get_symbol_config(symbol))
             return symbol not in positions_by_symbol
 
-        if current_return >= self.execution_config.take_profit_pct / 100:
+        if current_return >= take_profit_pct / 100:
             self._log_event(
                 "risk_take_profit_triggered",
                 symbol=symbol,
@@ -399,7 +403,12 @@ class TraderEngine:
             realized_pnl=self._get_symbol_realized_pnl(symbol),
             current_position_count=len(positions_by_symbol),
             max_positions=self.execution_config.max_positions,
-            max_single_order_usdt=self.execution_config.max_single_order_usdt,
+            max_single_order_usdt=float(
+                self._risk_config_for_symbol(symbol).get(
+                    "max_single_order_usdt",
+                    self.execution_config.max_single_order_usdt,
+                )
+            ),
             bot_status=self.runtime_store.get_robot_status(),
             usdt_available_balance=self._get_usdt_available_balance_for_order(symbol),
         )
@@ -760,6 +769,8 @@ class TraderEngine:
                 order_amount=float(symbol_config["order_amount"]),
                 max_loss_amount=float(symbol_config["max_loss_amount"]),
                 paused_by_loss=bool(symbol_config["paused_by_loss"]),
+                strategy=dict(symbol_config.get("strategy", {})),
+                risk=dict(symbol_config.get("risk", {})),
             )
         self.symbol_configs = refreshed_configs
 
@@ -775,6 +786,75 @@ class TraderEngine:
             max_loss_amount=float("inf"),
             paused_by_loss=False,
         )
+
+    def _effective_config_for_symbol(self, symbol: str) -> dict[str, Any]:
+        global_strategy = {
+            key: value
+            for key, value in self.strategy_config.__dict__.items()
+            if key in {
+                "ema_slope_lookback",
+                "macd_decay_bars",
+                "rsi_overheat",
+                "entry_cooldown_bars",
+                "max_hold_bars",
+                "min_expected_return",
+            }
+        }
+        global_risk = {
+            key: value
+            for key, value in self.strategy_config.__dict__.items()
+            if key in {
+                "partial1_sell_pct",
+                "partial2_sell_pct",
+                "big_candle_multiplier",
+                "big_candle_body_lookback",
+                "profit_giveback_ratio",
+                "profit_protection_trigger_pct",
+            }
+        }
+        global_risk.update(
+            {
+                "stop_loss_pct": self.execution_config.stop_loss_pct,
+                "take_profit_pct": self.execution_config.take_profit_pct,
+                "max_single_order_usdt": self.execution_config.max_single_order_usdt,
+            }
+        )
+        return get_effective_spot_symbol_config(
+            symbol,
+            {
+                "strategy": global_strategy,
+                "risk": global_risk,
+                "execution": {
+                    "stop_loss_pct": self.execution_config.stop_loss_pct,
+                    "take_profit_pct": self.execution_config.take_profit_pct,
+                },
+                "symbols_config": {
+                    "symbols": {
+                        item_symbol: {
+                            "enabled": item_config.enabled,
+                            "trend_timeframe": item_config.trend_timeframe,
+                            "signal_timeframe": item_config.signal_timeframe,
+                            "order_amount": item_config.order_amount,
+                            "max_loss_amount": item_config.max_loss_amount,
+                            "paused_by_loss": item_config.paused_by_loss,
+                            "strategy": item_config.strategy or {},
+                            "risk": item_config.risk or {},
+                        }
+                        for item_symbol, item_config in self.symbol_configs.items()
+                    }
+                },
+            },
+        )
+
+    def _strategy_config_for_symbol(self, symbol: str) -> StrategyConfig:
+        effective = self._effective_config_for_symbol(symbol)["effective_config"]
+        merged = dict(effective.get("strategy", {}))
+        merged.update(effective.get("risk", {}))
+        return StrategyConfig.from_dict(merged)
+
+    def _risk_config_for_symbol(self, symbol: str) -> dict[str, Any]:
+        effective = self._effective_config_for_symbol(symbol)["effective_config"]
+        return dict(effective.get("risk", {}))
 
     def _tradable_symbols(self) -> tuple[str, ...]:
         return tuple(
@@ -828,6 +908,8 @@ class TraderEngine:
             order_amount=symbol_config.order_amount,
             max_loss_amount=symbol_config.max_loss_amount,
             paused_by_loss=True,
+            strategy=symbol_config.strategy,
+            risk=symbol_config.risk,
         )
         self.symbol_configs[symbol] = paused_config
         self.runtime_store.set_symbol_state(symbol, paused_by_loss=True, realized_pnl=realized_pnl)

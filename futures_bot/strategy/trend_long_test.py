@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from futures_bot.config_loader import load_futures_strategy_settings
+from futures_bot.config_loader import get_effective_futures_symbol_config
 from futures_bot.strategy.base import CLOSE, HOLD, LONG, StrategySignal
 from futures_bot.strategy.session_filter import filter_klines_by_session
 from futures_bot.strategy.trend_long import _ema, _klines_to_candles, _macd
@@ -27,7 +27,8 @@ class TrendLongTestStrategy:
         signal_timeframe: str,
         max_funding_rate_abs: float,
     ) -> StrategySignal:
-        settings = load_futures_strategy_settings(self.name)
+        effective_symbol_config = get_effective_futures_symbol_config(symbol)
+        settings = effective_symbol_config["effective_config"]["strategy"]
         market_session_filter = _market_session_filter_for_symbol(symbol)
         filtered_trend_klines = filter_klines_by_session(trend_klines, market_session_filter)
         filtered_signal_klines = filter_klines_by_session(signal_klines, market_session_filter)
@@ -45,6 +46,7 @@ class TrendLongTestStrategy:
             "max_funding_rate_abs": max_funding_rate_abs,
             "paper_test_only": True,
             "strategy_settings": settings,
+            "strategy_override": effective_symbol_config["symbol_override"]["strategy"],
         }
 
         if len(signal_candles) < 50:

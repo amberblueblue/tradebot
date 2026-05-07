@@ -68,6 +68,7 @@ def check_futures_pre_open_risk(
     liquidation_price=None,
     existing_position_notional=0,
     max_funding_rate_abs_override=None,
+    risk_config_override=None,
 ):
     """Dry-run pre-open risk skeleton; never places orders or changes exchange state."""
     normalized_symbol = str(symbol).upper()
@@ -77,7 +78,7 @@ def check_futures_pre_open_risk(
 
     try:
         config = load_futures_config()
-        risk_config = config.risk
+        risk_config = risk_config_override or config.risk
 
         margin_amount_value = _as_float(margin_amount, "margin_amount")
         leverage_value = _as_float(leverage, "leverage")

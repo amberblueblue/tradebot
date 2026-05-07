@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +95,8 @@ class FuturesSymbolConfig:
     trend_timeframe: str
     signal_timeframe: str
     market_session_filter: str = "none"
+    strategy_overrides: dict[str, int | float] | None = None
+    risk_overrides: dict[str, int | float] | None = None
 
 
 @dataclass(frozen=True)
@@ -281,6 +283,111 @@ def _positive_int_with_default(
     if value <= 0:
         raise ValueError(f"risk.{key} must be greater than 0 in {path}")
     return value
+
+
+def _coerce_symbol_positive_number(
+    value: Any,
+    field_name: str,
+    symbols_path: Path,
+    *,
+    allow_zero: bool = False,
+) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a number in {symbols_path}")
+    if allow_zero:
+        if value < 0:
+            raise ValueError(f"{field_name} must be greater than or equal to 0 in {symbols_path}")
+    elif value <= 0:
+        raise ValueError(f"{field_name} must be greater than 0 in {symbols_path}")
+    return float(value)
+
+
+def _coerce_symbol_positive_int(value: Any, field_name: str, symbols_path: Path) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer in {symbols_path}")
+    if value <= 0:
+        raise ValueError(f"{field_name} must be greater than 0 in {symbols_path}")
+    return value
+
+
+FUTURES_SYMBOL_STRATEGY_FIELDS = {
+    "ema_fast": "int",
+    "ema_slow": "int",
+    "macd_fast": "int",
+    "macd_slow": "int",
+    "macd_signal": "int",
+    "rsi_period": "int",
+    "min_rsi": "float",
+    "max_rsi": "float",
+    "rsi_overheat": "float",
+    "max_hold_bars": "int",
+    "min_expected_return": "non_negative_float",
+}
+FUTURES_SYMBOL_RISK_FIELDS = {
+    "stop_loss_pct": "float",
+    "partial1_sell_pct": "pct",
+    "partial2_sell_pct": "pct",
+    "big_candle_multiplier": "float",
+    "big_candle_body_lookback": "int",
+    "profit_giveback_ratio": "ratio",
+    "profit_protection_trigger_pct": "float",
+    "max_single_order_usdt": "float",
+    "max_leverage": "float",
+    "max_margin_per_trade_usdt": "float",
+    "max_position_ratio": "ratio",
+    "max_funding_rate_abs": "non_negative_float",
+}
+FUTURES_HARD_LIMIT_FIELDS = {
+    "max_single_order_usdt",
+    "max_leverage",
+    "max_margin_per_trade_usdt",
+    "max_position_ratio",
+    "max_funding_rate_abs",
+}
+
+
+def _validate_futures_symbol_overrides(
+    *,
+    raw_mapping: Any,
+    allowed_fields: dict[str, str],
+    section_name: str,
+    field_prefix: str,
+    symbols_path: Path,
+    global_risk: FuturesRiskConfig | None = None,
+) -> dict[str, int | float]:
+    if raw_mapping in (None, {}):
+        return {}
+    if not isinstance(raw_mapping, dict):
+        raise ValueError(f"{field_prefix}.{section_name} must be a mapping in {symbols_path}")
+
+    validated: dict[str, int | float] = {}
+    for key, value in raw_mapping.items():
+        if key not in allowed_fields:
+            raise ValueError(f"{field_prefix}.{section_name}.{key} is not supported in {symbols_path}")
+        field_name = f"{field_prefix}.{section_name}.{key}"
+        value_kind = allowed_fields[key]
+        if value_kind == "int":
+            parsed: int | float = _coerce_symbol_positive_int(value, field_name, symbols_path)
+        else:
+            parsed = _coerce_symbol_positive_number(
+                value,
+                field_name,
+                symbols_path,
+                allow_zero=value_kind == "non_negative_float",
+            )
+            if value_kind == "pct" and parsed > 100:
+                raise ValueError(f"{field_name} must be less than or equal to 100 in {symbols_path}")
+            if value_kind == "ratio" and parsed > 1:
+                raise ValueError(f"{field_name} must be less than or equal to 1 in {symbols_path}")
+        if global_risk is not None and key in FUTURES_HARD_LIMIT_FIELDS:
+            global_limit = float(getattr(global_risk, key))
+            if float(parsed) > global_limit:
+                raise ValueError(
+                    f"{field_name} must be less than or equal to global risk.{key} "
+                    f"({global_limit}) in {symbols_path}"
+                )
+        validated[key] = parsed
+    return validated
 
 
 def _bounded_positive_number_with_default(
@@ -512,15 +619,20 @@ def _load_symbol_configs(
 
 def _symbol_config_to_mapping(symbol_config: FuturesSymbolConfig | dict[str, Any]) -> dict[str, Any]:
     if isinstance(symbol_config, FuturesSymbolConfig):
-        return {
+        mapping = {
             "enabled": symbol_config.enabled,
-            "strategy": symbol_config.strategy,
+            "strategy_name": symbol_config.strategy,
             "leverage": symbol_config.leverage,
             "margin_amount": symbol_config.margin_amount,
             "trend_timeframe": symbol_config.trend_timeframe,
             "signal_timeframe": symbol_config.signal_timeframe,
             "market_session_filter": symbol_config.market_session_filter,
         }
+        if symbol_config.strategy_overrides:
+            mapping["strategy"] = dict(symbol_config.strategy_overrides)
+        if symbol_config.risk_overrides:
+            mapping["risk"] = dict(symbol_config.risk_overrides)
+        return mapping
     if isinstance(symbol_config, dict):
         return dict(symbol_config)
     raise ValueError("futures symbol config must be a mapping")
@@ -543,10 +655,16 @@ def _validate_symbol_configs(
         raw_mapping = _symbol_config_to_mapping(raw_symbol_config)
         field_prefix = f"symbols.{symbol}"
         enabled = _require_boolean(raw_mapping, "enabled", symbols_path)
-        strategy = _require_string(raw_mapping, "strategy", symbols_path)
+        raw_strategy_value = raw_mapping.get("strategy")
+        raw_strategy_overrides = raw_strategy_value if isinstance(raw_strategy_value, dict) else None
+        strategy_field = "strategy_name" if "strategy_name" in raw_mapping else "strategy"
+        if raw_strategy_overrides is not None and strategy_field == "strategy":
+            strategy = "trend_long"
+        else:
+            strategy = _require_string(raw_mapping, strategy_field, symbols_path)
         if strategy not in ALLOWED_FUTURES_STRATEGIES:
             raise ValueError(
-                f"{field_prefix}.strategy must be one of {sorted(ALLOWED_FUTURES_STRATEGIES)} "
+                f"{field_prefix}.{strategy_field} must be one of {sorted(ALLOWED_FUTURES_STRATEGIES)} "
                 f"in {symbols_path}"
             )
 
@@ -589,6 +707,26 @@ def _validate_symbol_configs(
                 f"{sorted(ALLOWED_MARKET_SESSION_FILTERS)} in {symbols_path}"
             )
 
+        strategy_overrides = _validate_futures_symbol_overrides(
+            raw_mapping=raw_strategy_overrides,
+            allowed_fields=FUTURES_SYMBOL_STRATEGY_FIELDS,
+            section_name="strategy",
+            field_prefix=field_prefix,
+            symbols_path=symbols_path,
+        )
+        risk_overrides = _validate_futures_symbol_overrides(
+            raw_mapping=raw_mapping.get("risk"),
+            allowed_fields=FUTURES_SYMBOL_RISK_FIELDS,
+            section_name="risk",
+            field_prefix=field_prefix,
+            symbols_path=symbols_path,
+            global_risk=risk_config,
+        )
+        partial1 = float(risk_overrides.get("partial1_sell_pct", risk_config.partial1_sell_pct))
+        partial2 = float(risk_overrides.get("partial2_sell_pct", risk_config.partial2_sell_pct))
+        if partial1 + partial2 > 100:
+            raise ValueError(f"{field_prefix}.risk partial sell percentages must total <= 100 in {symbols_path}")
+
         loaded_symbols[symbol] = FuturesSymbolConfig(
             symbol=symbol,
             enabled=enabled,
@@ -598,6 +736,8 @@ def _validate_symbol_configs(
             trend_timeframe=trend_timeframe,
             signal_timeframe=signal_timeframe,
             market_session_filter=market_session_filter,
+            strategy_overrides=strategy_overrides,
+            risk_overrides=risk_overrides,
         )
     return loaded_symbols
 
@@ -623,7 +763,7 @@ def dump_futures_symbols_yaml(symbols: dict[str, FuturesSymbolConfig]) -> str:
             [
                 f"  {symbol}:",
                 f"    enabled: {_format_yaml_scalar(symbol_config.enabled)}",
-                f"    strategy: {_format_yaml_scalar(symbol_config.strategy)}",
+                f"    strategy_name: {_format_yaml_scalar(symbol_config.strategy)}",
                 f"    leverage: {_format_yaml_scalar(symbol_config.leverage)}",
                 f"    margin_amount: {_format_yaml_scalar(symbol_config.margin_amount)}",
                 f"    trend_timeframe: {_format_yaml_scalar(symbol_config.trend_timeframe)}",
@@ -631,7 +771,78 @@ def dump_futures_symbols_yaml(symbols: dict[str, FuturesSymbolConfig]) -> str:
                 f"    market_session_filter: {_format_yaml_scalar(symbol_config.market_session_filter)}",
             ]
         )
+        if symbol_config.strategy_overrides:
+            lines.append("    strategy:")
+            for key, value in symbol_config.strategy_overrides.items():
+                lines.append(f"      {key}: {_format_yaml_scalar(value)}")
+        if symbol_config.risk_overrides:
+            lines.append("    risk:")
+            for key, value in symbol_config.risk_overrides.items():
+                lines.append(f"      {key}: {_format_yaml_scalar(value)}")
     return "\n".join(lines) + "\n"
+
+
+def _risk_config_to_dict(risk: FuturesRiskConfig) -> dict[str, int | float]:
+    return {
+        "max_leverage": risk.max_leverage,
+        "max_margin_per_trade_usdt": risk.max_margin_per_trade_usdt,
+        "max_single_order_usdt": risk.max_single_order_usdt,
+        "max_position_ratio": risk.max_position_ratio,
+        "min_liquidation_distance_pct": risk.min_liquidation_distance_pct,
+        "max_funding_rate_abs": risk.max_funding_rate_abs,
+        "paper_test_max_funding_rate_abs": risk.paper_test_max_funding_rate_abs,
+        "max_consecutive_losing_trades": risk.max_consecutive_losing_trades,
+        "stop_loss_pct": risk.stop_loss_pct,
+        "partial1_sell_pct": risk.partial1_sell_pct,
+        "partial2_sell_pct": risk.partial2_sell_pct,
+        "big_candle_multiplier": risk.big_candle_multiplier,
+        "big_candle_body_lookback": risk.big_candle_body_lookback,
+        "profit_giveback_ratio": risk.profit_giveback_ratio,
+        "profit_protection_trigger_pct": risk.profit_protection_trigger_pct,
+    }
+
+
+def get_effective_futures_symbol_config(
+    symbol: str,
+    config: FuturesRuntimeConfig | None = None,
+) -> dict[str, Any]:
+    config = config or load_futures_config()
+    normalized_symbol = symbol.strip().upper()
+    symbol_config = config.symbols.get(normalized_symbol)
+    if symbol_config is None:
+        raise ValueError(f"symbols.{normalized_symbol} is not configured")
+
+    global_strategy = load_futures_strategy_settings(symbol_config.strategy, config.settings_path)
+    global_risk = _risk_config_to_dict(config.risk)
+    strategy_override = dict(symbol_config.strategy_overrides or {})
+    risk_override = dict(symbol_config.risk_overrides or {})
+
+    effective_strategy = dict(global_strategy)
+    effective_strategy.update(strategy_override)
+    effective_risk = dict(global_risk)
+    for key, value in risk_override.items():
+        if key in FUTURES_HARD_LIMIT_FIELDS:
+            effective_risk[key] = min(float(value), float(global_risk[key]))
+        else:
+            effective_risk[key] = value
+
+    effective_risk_config = replace(config.risk, **effective_risk)
+    return {
+        "global_config": {
+            "strategy": global_strategy,
+            "risk": global_risk,
+        },
+        "symbol_override": {
+            "strategy": strategy_override,
+            "risk": risk_override,
+        },
+        "effective_config": {
+            "symbol": _symbol_config_to_mapping(symbol_config),
+            "strategy": effective_strategy,
+            "risk": effective_risk,
+            "risk_config": effective_risk_config,
+        },
+    }
 
 
 def save_futures_symbols_config(

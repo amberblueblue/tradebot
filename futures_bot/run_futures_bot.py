@@ -12,7 +12,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.secrets import load_futures_binance_readonly_credentials  # noqa: E402
-from futures_bot.config_loader import load_futures_config  # noqa: E402
+from futures_bot.config_loader import get_effective_futures_symbol_config, load_futures_config  # noqa: E402
 from futures_bot.exchange.binance_futures_client import BinanceFuturesClient  # noqa: E402
 from futures_bot.execution.futures_paper_broker import FuturesPaperBroker  # noqa: E402
 from futures_bot.risk.futures_risk import check_futures_pre_open_risk  # noqa: E402
@@ -172,13 +172,14 @@ def _load_account_equity(client: BinanceFuturesClient) -> tuple[float, str]:
     return FALLBACK_ACCOUNT_EQUITY, "fallback_missing_usdt_equity"
 
 
-def _funding_rate_limit_for_strategy(config, strategy_name: str) -> tuple[float, str]:
+def _funding_rate_limit_for_strategy(config, strategy_name: str, risk_config=None) -> tuple[float, str]:
+    risk = risk_config or config.risk
     if config.app.mode == "paper" and strategy_name == "trend_long_test":
         return (
-            config.risk.paper_test_max_funding_rate_abs,
+            risk.paper_test_max_funding_rate_abs,
             "paper_test_max_funding_rate_abs",
         )
-    return config.risk.max_funding_rate_abs, "max_funding_rate_abs"
+    return risk.max_funding_rate_abs, "max_funding_rate_abs"
 
 
 def _paper_only_strategy_violations(config) -> list[str]:
@@ -266,6 +267,8 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
     for symbol in config.enabled_symbols:
         symbol_config = config.symbols[symbol]
         try:
+            effective_symbol_config = get_effective_futures_symbol_config(symbol, config)
+            effective_risk_config = effective_symbol_config["effective_config"]["risk_config"]
             trend_klines = client.get_klines(symbol, symbol_config.trend_timeframe, limit=300)
             signal_klines = client.get_klines(symbol, symbol_config.signal_timeframe, limit=300)
             mark_payload = client.get_mark_price(symbol)
@@ -307,6 +310,7 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
             max_funding_rate_abs, funding_rate_limit_source = _funding_rate_limit_for_strategy(
                 config,
                 symbol_config.strategy,
+                effective_risk_config,
             )
             signal = strategy.generate_signal(
                 symbol=symbol,
@@ -333,6 +337,7 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
             )
             record["funding_rate_limit_used"] = max_funding_rate_abs
             record["funding_rate_limit_source"] = funding_rate_limit_source
+            record["symbol_overrides"] = effective_symbol_config["symbol_override"]
             record["app_mode"] = config.app.mode
             record["paper_only"] = paper_only
             loop_state["signals"][symbol] = record
@@ -396,6 +401,7 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                     funding_rate=funding_rate,
                     account_equity=account_equity,
                     max_funding_rate_abs_override=max_funding_rate_abs,
+                    risk_config_override=effective_risk_config,
                 )
                 record["risk"] = {
                     "ok": risk_result.ok,
@@ -462,11 +468,11 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                     print(f"[futures_strategy] {symbol} partial1 skipped: already done")
                     results.append(record)
                     continue
-                partial_position = broker.close_partial(symbol, config.risk.partial1_sell_pct, mark_price)
+                partial_position = broker.close_partial(symbol, effective_risk_config.partial1_sell_pct, mark_price)
                 partial_position.partial1_done = True
                 broker.save_state()
                 record["paper_action"] = "partial_closed"
-                record["sell_pct"] = config.risk.partial1_sell_pct
+                record["sell_pct"] = effective_risk_config.partial1_sell_pct
                 record["position"] = partial_position.to_dict()
                 if broker.get_closed_trades():
                     record_realized_pnl(
@@ -489,11 +495,11 @@ def run_paper_strategy_cycle(config) -> list[dict[str, Any]]:
                     print(f"[futures_strategy] {symbol} partial2 skipped: already done")
                     results.append(record)
                     continue
-                partial_position = broker.close_partial(symbol, config.risk.partial2_sell_pct, mark_price)
+                partial_position = broker.close_partial(symbol, effective_risk_config.partial2_sell_pct, mark_price)
                 partial_position.partial2_done = True
                 broker.save_state()
                 record["paper_action"] = "partial_closed"
-                record["sell_pct"] = config.risk.partial2_sell_pct
+                record["sell_pct"] = effective_risk_config.partial2_sell_pct
                 record["position"] = partial_position.to_dict()
                 if broker.get_closed_trades():
                     record_realized_pnl(

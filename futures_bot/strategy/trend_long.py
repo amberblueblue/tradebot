@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from futures_bot.config_loader import load_futures_config, load_futures_strategy_settings
+from futures_bot.config_loader import get_effective_futures_symbol_config, load_futures_config
 from futures_bot.execution.futures_paper_broker import FuturesPaperBroker
 from futures_bot.strategy.base import (
     CLOSE_FULL,
@@ -31,9 +31,11 @@ class TrendLongStrategy:
         signal_timeframe: str,
         max_funding_rate_abs: float,
     ) -> StrategySignal:
-        settings = load_futures_strategy_settings(self.name)
         config = load_futures_config()
-        risk = config.risk
+        effective_symbol_config = get_effective_futures_symbol_config(symbol, config)
+        effective_config = effective_symbol_config["effective_config"]
+        settings = effective_config["strategy"]
+        risk = effective_config["risk_config"]
         market_session_filter = _market_session_filter_for_symbol(symbol)
         filtered_trend_klines = filter_klines_by_session(trend_klines, market_session_filter)
         filtered_signal_klines = filter_klines_by_session(signal_klines, market_session_filter)
@@ -51,6 +53,7 @@ class TrendLongStrategy:
             "trend_filtered_out_bars": max(len(trend_klines) - len(filtered_trend_klines), 0),
             "max_funding_rate_abs": max_funding_rate_abs,
             "strategy_settings": settings,
+            "strategy_override": effective_symbol_config["symbol_override"]["strategy"],
             "risk_settings": {
                 "stop_loss_pct": risk.stop_loss_pct,
                 "partial1_sell_pct": risk.partial1_sell_pct,
@@ -60,6 +63,7 @@ class TrendLongStrategy:
                 "profit_giveback_ratio": risk.profit_giveback_ratio,
                 "profit_protection_trigger_pct": risk.profit_protection_trigger_pct,
             },
+            "risk_override": effective_symbol_config["symbol_override"]["risk"],
             "bearish_divergence": False,
             "exit_rule_triggered": None,
             "current_return": None,

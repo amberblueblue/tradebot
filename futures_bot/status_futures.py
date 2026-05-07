@@ -10,7 +10,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.secrets import load_futures_binance_readonly_credentials  # noqa: E402
-from futures_bot.config_loader import load_futures_config  # noqa: E402
+from futures_bot.config_loader import get_effective_futures_symbol_config, load_futures_config  # noqa: E402
 from futures_bot.exchange.binance_futures_client import BinanceFuturesClient  # noqa: E402
 from futures_bot.exchange.futures_rules import parse_futures_symbol_rules  # noqa: E402
 from futures_bot.execution.futures_paper_broker import FuturesPaperBroker  # noqa: E402
@@ -134,13 +134,14 @@ def _risk_thresholds_payload() -> dict[str, object]:
     }
 
 
-def _funding_rate_limit_for_strategy(config, strategy_name: str) -> tuple[float, str]:
+def _funding_rate_limit_for_strategy(config, strategy_name: str, risk_config=None) -> tuple[float, str]:
+    risk = risk_config or config.risk
     if config.app.mode == "paper" and strategy_name == "trend_long_test":
         return (
-            config.risk.paper_test_max_funding_rate_abs,
+            risk.paper_test_max_funding_rate_abs,
             "paper_test_max_funding_rate_abs",
         )
-    return config.risk.max_funding_rate_abs, "max_funding_rate_abs"
+    return risk.max_funding_rate_abs, "max_funding_rate_abs"
 
 
 def _is_missing_key_payload(payload: Any) -> bool:
@@ -304,9 +305,12 @@ def build_strategy_signal_payload(symbol: str) -> dict[str, object]:
 
     strategy = get_strategy(symbol_config.strategy)
     paper_only = bool(getattr(strategy, "paper_only", False))
+    effective_symbol_config = get_effective_futures_symbol_config(symbol, config)
+    effective_risk_config = effective_symbol_config["effective_config"]["risk_config"]
     max_funding_rate_abs, funding_rate_limit_source = _funding_rate_limit_for_strategy(
         config,
         symbol_config.strategy,
+        effective_risk_config,
     )
     if paper_only and config.app.mode != "paper":
         return {
@@ -390,6 +394,7 @@ def build_strategy_signal_payload(symbol: str) -> dict[str, object]:
             "funding_rate_limit_used": max_funding_rate_abs,
             "funding_rate_limit_source": funding_rate_limit_source,
             "paper_only": paper_only,
+            "symbol_overrides": effective_symbol_config["symbol_override"],
         }
     )
     payload: dict[str, object] = {
