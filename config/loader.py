@@ -578,8 +578,11 @@ def load_backtest_runtime(
     symbols_config = settings.get("symbols_config", {})
     symbol_files = symbols_config.get("symbol_files", {})
 
-    symbol_list = get_symbol_names(symbols_config) or tuple(market.get("default_symbols", []))
-    selected_symbol = symbol or market.get("default_symbol") or (symbol_list[0] if symbol_list else "")
+    symbol_list = get_symbol_names(symbols_config)
+    default_symbol = market.get("default_symbol")
+    selected_symbol = symbol or (
+        default_symbol if default_symbol in symbol_list else (symbol_list[0] if symbol_list else "")
+    )
     symbol_data = symbol_files.get(selected_symbol, {}).get("backtest", {})
 
     entry_timeframe = str(market.get("timeframe", {}).get("entry", "1h"))
@@ -614,17 +617,7 @@ def load_execution_runtime(settings: dict[str, Any] | None = None) -> ExecutionR
     risk = settings.get("risk", {})
     symbols_config = settings.get("symbols_config", {})
     symbol_list = get_symbol_names(symbols_config)
-    configured_enabled_symbols = (
-        tuple(execution.get("enabled_symbols") or ())
-        if "enabled_symbols" in execution
-        else get_enabled_symbol_names(symbols_config)
-    )
-    enabled_symbol_names = get_enabled_symbol_names(symbols_config)
-    enabled_symbols = tuple(
-        symbol
-        for symbol in configured_enabled_symbols
-        if symbol in symbol_list and symbol in enabled_symbol_names
-    )
+    enabled_symbols = get_enabled_symbol_names(symbols_config)
 
     return ExecutionRuntimeConfig(
         mode=str(settings.get("app", {}).get("mode", "backtest")),

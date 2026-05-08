@@ -7,8 +7,8 @@ from dataclasses import replace
 from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 
-from config.loader import SymbolTradingConfig
-from config.loader import load_execution_runtime, load_project_config
+from config.loader import DEFAULT_SYMBOLS_PATH, SymbolTradingConfig
+from config.loader import get_effective_spot_symbol_config, load_execution_runtime, load_project_config
 from exchange.binance_client import BinanceClient
 from exchange.rules import parse_symbol_rules
 from execution.account_risk import (
@@ -235,6 +235,80 @@ def _local_min_notional_reject_payload(symbol: str, side: str, amount: float) ->
         "min_notional": DEFAULT_MIN_NOTIONAL_USDT,
         "exchange_test_order": None,
     }
+
+
+def _spot_symbol_status(settings: dict, execution_config) -> dict[str, dict]:
+    symbols = settings.get("symbols_config", {}).get("symbols", {})
+    if not isinstance(symbols, dict):
+        symbols = {}
+    rows: dict[str, dict] = {}
+    for symbol, symbol_config in symbols.items():
+        effective = get_effective_spot_symbol_config(symbol, settings)
+        rows[symbol] = {
+            "enabled": bool(symbol_config.get("enabled", True)),
+            "paused_by_loss": bool(symbol_config.get("paused_by_loss", False)),
+            "trend_timeframe": symbol_config.get("trend_timeframe"),
+            "signal_timeframe": symbol_config.get("signal_timeframe"),
+            "order_amount": symbol_config.get("order_amount"),
+            "max_loss_amount": symbol_config.get("max_loss_amount"),
+            "strategy_override": effective["symbol_override"]["strategy"],
+            "risk_override": effective["symbol_override"]["risk"],
+            "effective_config": effective["effective_config"],
+        }
+    return rows
+
+
+def _runtime_payload_filtered_to_configured_symbols(payload: dict, configured_symbols: set[str]) -> dict:
+    filtered_payload = dict(payload)
+    runtime_symbols = filtered_payload.get("symbols")
+    if isinstance(runtime_symbols, dict):
+        filtered_payload["runtime_symbols"] = {
+            symbol: value
+            for symbol, value in runtime_symbols.items()
+            if symbol in configured_symbols
+        }
+    last_sync = filtered_payload.get("last_sync")
+    if isinstance(last_sync, dict):
+        filtered_last_sync = dict(last_sync)
+        positions = filtered_last_sync.get("positions")
+        if isinstance(positions, list):
+            filtered_last_sync["positions"] = [
+                position
+                for position in positions
+                if isinstance(position, dict) and position.get("symbol") in configured_symbols
+            ]
+        open_orders = filtered_last_sync.get("open_orders")
+        if isinstance(open_orders, list):
+            filtered_last_sync["open_orders"] = [
+                order
+                for order in open_orders
+                if isinstance(order, dict) and order.get("symbol") in configured_symbols
+            ]
+        filtered_last_sync["enabled_symbols"] = [
+            symbol
+            for symbol in filtered_last_sync.get("enabled_symbols", [])
+            if symbol in configured_symbols
+        ]
+        filtered_payload["last_sync"] = filtered_last_sync
+    return filtered_payload
+
+
+def _status_payload(settings: dict, execution_config, runtime_payload: dict | None) -> dict:
+    symbols = _spot_symbol_status(settings, execution_config)
+    payload = _runtime_payload_filtered_to_configured_symbols(runtime_payload or {}, set(symbols))
+    payload.update(
+        {
+            "symbols_source": str(DEFAULT_SYMBOLS_PATH),
+            "symbols": symbols,
+            "symbol_list": list(execution_config.symbol_list),
+            "enabled_symbols": list(execution_config.enabled_symbols),
+            "legacy_settings_symbols_ignored": {
+                "market.default_symbols_present": "default_symbols" in settings.get("market", {}),
+                "execution.enabled_symbols_present": "enabled_symbols" in settings.get("execution", {}),
+            },
+        }
+    )
+    return payload
 
 
 def _exchange_test_order(symbol: str, side: str, amount: float) -> dict:
@@ -647,11 +721,13 @@ def main() -> None:
     settings = load_project_config()
     execution_config = load_execution_runtime(settings)
     status_path = Path(execution_config.status_file)
-    if not status_path.exists():
-        print(f"Status file not found: {status_path}")
-        return
+    runtime_payload = None
+    if status_path.exists():
+        runtime_payload = json.loads(status_path.read_text(encoding="utf-8"))
 
-    payload = json.loads(status_path.read_text(encoding="utf-8"))
+    payload = _status_payload(settings, execution_config, runtime_payload)
+    if runtime_payload is None:
+        payload["runtime_status_warning"] = f"Status file not found: {status_path}"
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 

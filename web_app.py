@@ -715,9 +715,7 @@ def _sync_settings_enabled_symbols(settings: dict, symbols_config: dict) -> None
 
 
 def _save_symbols_and_settings(settings: dict, symbols_config: dict) -> None:
-    _sync_settings_enabled_symbols(settings, symbols_config)
     _write_symbols_config(symbols_config)
-    _write_settings_config(settings)
 
 
 def _log_symbol_management_action(settings: dict, *, symbol: str, action: str, reason: str, **extra) -> None:
