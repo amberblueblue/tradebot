@@ -1,0 +1,175 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+from futures_bot.config_loader import load_yaml_mapping
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CONFIG_DIR = PROJECT_ROOT / "config"
+DEFAULT_ONCHAIN_SYMBOLS_PATH = CONFIG_DIR / "onchain_symbols.yaml"
+
+
+@dataclass(frozen=True)
+class OnchainSymbolConfig:
+    symbol: str
+    enabled: bool
+    signal_source: str
+    source_symbol: str
+    chain_name: str
+    chain_id: str
+    token_symbol: str
+    token_name: str
+    token_address: str
+    token_decimals: int
+    quote_token_symbol: str
+    quote_token_address: str
+    quote_token_decimals: int
+    max_trade_usdt: float
+    max_slippage_pct: float
+    max_gas_usdt: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def _require_mapping(value: Any, field_name: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be a mapping")
+    return value
+
+
+def _require_string(raw: dict[str, Any], key: str, symbol: str) -> str:
+    value = raw.get(key)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"symbols.{symbol}.{key} must be a non-empty string")
+    return value
+
+
+def _require_bool(raw: dict[str, Any], key: str, symbol: str) -> bool:
+    value = raw.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"symbols.{symbol}.{key} must be boolean")
+    return value
+
+
+def _require_positive_int(raw: dict[str, Any], key: str, symbol: str) -> int:
+    value = raw.get(key)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"symbols.{symbol}.{key} must be an integer greater than 0")
+    if value <= 0:
+        raise ValueError(f"symbols.{symbol}.{key} must be greater than 0")
+    return value
+
+
+def _require_positive_number(raw: dict[str, Any], key: str, symbol: str) -> float:
+    value = raw.get(key)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f"symbols.{symbol}.{key} must be a number greater than 0")
+    if value <= 0:
+        raise ValueError(f"symbols.{symbol}.{key} must be greater than 0")
+    return float(value)
+
+
+def _require_non_negative_number(raw: dict[str, Any], key: str, symbol: str) -> float:
+    value = raw.get(key)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f"symbols.{symbol}.{key} must be a number greater than or equal to 0")
+    if value < 0:
+        raise ValueError(f"symbols.{symbol}.{key} must be greater than or equal to 0")
+    return float(value)
+
+
+def _validate_upper(value: str, field_name: str, symbol: str) -> str:
+    if value != value.upper():
+        raise ValueError(f"symbols.{symbol}.{field_name} must be uppercase")
+    return value
+
+
+def _validate_address(value: str, field_name: str, symbol: str) -> str:
+    if not value.startswith("0x") or len(value) != 42:
+        raise ValueError(f"symbols.{symbol}.{field_name} must be a 0x-prefixed 42-character address")
+    hex_part = value[2:]
+    if any(char not in "0123456789abcdefABCDEF" for char in hex_part):
+        raise ValueError(f"symbols.{symbol}.{field_name} must be a hex address")
+    return value
+
+
+def _validate_symbol_config(symbol: str, raw_config: Any) -> OnchainSymbolConfig:
+    if not isinstance(symbol, str) or not symbol:
+        raise ValueError("symbols keys must be non-empty strings")
+    normalized_symbol = _validate_upper(symbol, "symbol", symbol)
+    raw = _require_mapping(raw_config, f"symbols.{symbol}")
+
+    source_symbol = _validate_upper(
+        _require_string(raw, "source_symbol", normalized_symbol),
+        "source_symbol",
+        normalized_symbol,
+    )
+
+    return OnchainSymbolConfig(
+        symbol=normalized_symbol,
+        enabled=_require_bool(raw, "enabled", normalized_symbol),
+        signal_source=_require_string(raw, "signal_source", normalized_symbol),
+        source_symbol=source_symbol,
+        chain_name=_require_string(raw, "chain_name", normalized_symbol),
+        chain_id=_require_string(raw, "chain_id", normalized_symbol),
+        token_symbol=_require_string(raw, "token_symbol", normalized_symbol),
+        token_name=_require_string(raw, "token_name", normalized_symbol),
+        token_address=_validate_address(
+            _require_string(raw, "token_address", normalized_symbol),
+            "token_address",
+            normalized_symbol,
+        ),
+        token_decimals=_require_positive_int(raw, "token_decimals", normalized_symbol),
+        quote_token_symbol=_require_string(raw, "quote_token_symbol", normalized_symbol),
+        quote_token_address=_validate_address(
+            _require_string(raw, "quote_token_address", normalized_symbol),
+            "quote_token_address",
+            normalized_symbol,
+        ),
+        quote_token_decimals=_require_positive_int(raw, "quote_token_decimals", normalized_symbol),
+        max_trade_usdt=_require_positive_number(raw, "max_trade_usdt", normalized_symbol),
+        max_slippage_pct=_require_non_negative_number(raw, "max_slippage_pct", normalized_symbol),
+        max_gas_usdt=_require_non_negative_number(raw, "max_gas_usdt", normalized_symbol),
+    )
+
+
+def load_onchain_symbols_config(
+    symbols_path: Path | None = None,
+) -> dict[str, OnchainSymbolConfig]:
+    path = symbols_path or DEFAULT_ONCHAIN_SYMBOLS_PATH
+    raw_config = load_yaml_mapping(path)
+    raw_symbols = raw_config.get("symbols")
+    if raw_symbols is None:
+        raise ValueError(f"Missing top-level symbols in {path}")
+    if not isinstance(raw_symbols, dict):
+        raise ValueError(f"symbols must be a mapping in {path}")
+
+    loaded: dict[str, OnchainSymbolConfig] = {}
+    for symbol, raw_symbol_config in raw_symbols.items():
+        symbol_config = _validate_symbol_config(str(symbol), raw_symbol_config)
+        loaded[symbol_config.symbol] = symbol_config
+    return loaded
+
+
+def onchain_symbols_payload(
+    symbols_path: Path | None = None,
+) -> dict[str, Any]:
+    symbols = load_onchain_symbols_config(symbols_path)
+    enabled_symbols = [
+        symbol
+        for symbol, symbol_config in symbols.items()
+        if symbol_config.enabled
+    ]
+    return {
+        "symbols_count": len(symbols),
+        "enabled_symbols": enabled_symbols,
+        "symbols": {
+            symbol: symbol_config.to_dict()
+            for symbol, symbol_config in symbols.items()
+        },
+    }
+

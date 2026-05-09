@@ -1,0 +1,17 @@
+symbols:
+  GOOGLUSDT:
+    enabled: false
+    signal_source: futures
+    source_symbol: GOOGLUSDT
+    chain_name: ethereum
+    chain_id: "1"
+    token_symbol: GOOGL
+    token_name: Google Tokenized Stock
+    token_address: "0x0000000000000000000000000000000000000000"
+    token_decimals: 18
+    quote_token_symbol: USDC
+    quote_token_address: "0x0000000000000000000000000000000000000000"
+    quote_token_decimals: 6
+    max_trade_usdt: 20
+    max_slippage_pct: 1.0
+    max_gas_usdt: 5
