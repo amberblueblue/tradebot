@@ -155,6 +155,67 @@ def load_onchain_symbols_config(
     return loaded
 
 
+def _format_yaml_scalar(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    return f'"{value}"'
+
+
+def dump_onchain_symbols_yaml(symbols: dict[str, OnchainSymbolConfig]) -> str:
+    if not symbols:
+        return "symbols: {}\n"
+
+    lines = ["symbols:"]
+    for symbol in sorted(symbols):
+        symbol_config = symbols[symbol]
+        lines.extend(
+            [
+                f"  {symbol}:",
+                f"    enabled: {_format_yaml_scalar(symbol_config.enabled)}",
+                f"    signal_source: {_format_yaml_scalar(symbol_config.signal_source)}",
+                f"    source_symbol: {_format_yaml_scalar(symbol_config.source_symbol)}",
+                f"    chain_name: {_format_yaml_scalar(symbol_config.chain_name)}",
+                f"    chain_id: {_format_yaml_scalar(symbol_config.chain_id)}",
+                f"    token_symbol: {_format_yaml_scalar(symbol_config.token_symbol)}",
+                f"    token_name: {_format_yaml_scalar(symbol_config.token_name)}",
+                f"    token_address: {_format_yaml_scalar(symbol_config.token_address)}",
+                f"    token_decimals: {_format_yaml_scalar(symbol_config.token_decimals)}",
+                f"    quote_token_symbol: {_format_yaml_scalar(symbol_config.quote_token_symbol)}",
+                f"    quote_token_address: {_format_yaml_scalar(symbol_config.quote_token_address)}",
+                f"    quote_token_decimals: {_format_yaml_scalar(symbol_config.quote_token_decimals)}",
+                f"    max_trade_usdt: {_format_yaml_scalar(symbol_config.max_trade_usdt)}",
+                f"    max_slippage_pct: {_format_yaml_scalar(symbol_config.max_slippage_pct)}",
+                f"    max_gas_usdt: {_format_yaml_scalar(symbol_config.max_gas_usdt)}",
+            ]
+        )
+    return "\n".join(lines) + "\n"
+
+
+def save_onchain_symbols_config(
+    symbols: dict[str, OnchainSymbolConfig | dict[str, Any]],
+    symbols_path: Path | None = None,
+) -> dict[str, Any]:
+    path = symbols_path or DEFAULT_ONCHAIN_SYMBOLS_PATH
+    validated: dict[str, OnchainSymbolConfig] = {}
+    for symbol, symbol_config in symbols.items():
+        if isinstance(symbol_config, OnchainSymbolConfig):
+            raw_config = symbol_config.to_dict()
+        else:
+            raw_config = symbol_config
+        validated_config = _validate_symbol_config(symbol, raw_config)
+        validated[validated_config.symbol] = validated_config
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dump_onchain_symbols_yaml(validated), encoding="utf-8")
+    return {
+        "ok": True,
+        "symbols_count": len(validated),
+        "path": str(path),
+    }
+
+
 def onchain_symbols_payload(
     symbols_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -172,4 +233,3 @@ def onchain_symbols_payload(
             for symbol, symbol_config in symbols.items()
         },
     }
-

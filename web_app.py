@@ -53,6 +53,10 @@ from futures_bot.strategy.session_filter import (
     kline_open_time_local,
     kline_open_time_utc,
 )
+from onchain_bot.config_loader import (
+    load_onchain_symbols_config,
+    save_onchain_symbols_config,
+)
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
 from runtime.safety import (
@@ -2282,6 +2286,155 @@ def _runtime_store():
     return execution_config, store, logger
 
 
+def _onchain_form_defaults() -> dict[str, object]:
+    return {
+        "symbol": "",
+        "enabled": False,
+        "signal_source": "futures",
+        "source_symbol": "",
+        "chain_name": "ethereum",
+        "chain_id": "1",
+        "token_name": "",
+        "token_symbol": "",
+        "token_address": "",
+        "token_decimals": 18,
+        "quote_token_symbol": "USDC",
+        "quote_token_address": "",
+        "quote_token_decimals": 6,
+        "max_trade_usdt": 20,
+        "max_slippage_pct": 1.0,
+        "max_gas_usdt": 5,
+    }
+
+
+def _onchain_symbol_rows() -> tuple[list[dict[str, object]], str | None]:
+    try:
+        symbols = load_onchain_symbols_config()
+    except Exception as exc:
+        return [], str(exc)
+    return [
+        symbol_config.to_dict()
+        for symbol_config in symbols.values()
+    ], None
+
+
+def _onchain_view(
+    *,
+    message: str | None = None,
+    error: str | None = None,
+    edit_config: dict[str, object] | None = None,
+    edit_error: str | None = None,
+) -> dict[str, object]:
+    symbols, config_error = _onchain_symbol_rows()
+    return {
+        "symbols": symbols,
+        "symbols_count": len(symbols),
+        "config_error": config_error,
+        "message": message,
+        "error": error,
+        "edit_config": edit_config,
+        "edit_error": edit_error,
+        "form_defaults": _onchain_form_defaults(),
+    }
+
+
+def _onchain_redirect(
+    *,
+    message: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    params = {}
+    if message:
+        params["message"] = message
+    if error:
+        params["error"] = error
+    suffix = f"?{urlencode(params)}" if params else ""
+    return RedirectResponse(url=f"/onchain{suffix}", status_code=303)
+
+
+def _parse_onchain_bool(form: dict[str, str], key: str) -> bool:
+    return form.get(key, "false").strip().lower() == "true"
+
+
+def _parse_onchain_positive_int(form: dict[str, str], key: str) -> int:
+    value = form.get(key, "").strip()
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{key} must be an integer greater than 0") from exc
+    if parsed <= 0:
+        raise ValueError(f"{key} must be greater than 0")
+    return parsed
+
+
+def _parse_onchain_number(
+    form: dict[str, str],
+    key: str,
+    *,
+    allow_zero: bool = False,
+) -> float:
+    value = form.get(key, "").strip()
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ValueError(f"{key} must be a number") from exc
+    if allow_zero:
+        if parsed < 0:
+            raise ValueError(f"{key} must be greater than or equal to 0")
+    elif parsed <= 0:
+        raise ValueError(f"{key} must be greater than 0")
+    return parsed
+
+
+def _parse_onchain_address(form: dict[str, str], key: str) -> str:
+    value = form.get(key, "").strip()
+    if not value.startswith("0x"):
+        raise ValueError(f"{key} must start with 0x")
+    return value
+
+
+def _onchain_config_from_form(form: dict[str, str]) -> dict[str, object]:
+    symbol = form.get("symbol", "").strip().upper()
+    if not SYMBOL_PATTERN.fullmatch(symbol):
+        raise ValueError("信号标的必须大写并以 USDT 结尾")
+    token_symbol = form.get("token_symbol", "").strip().upper()
+    quote_token_symbol = form.get("quote_token_symbol", "").strip().upper()
+    return {
+        "enabled": _parse_onchain_bool(form, "enabled"),
+        "signal_source": "futures",
+        "source_symbol": symbol,
+        "chain_name": form.get("chain_name", "").strip(),
+        "chain_id": form.get("chain_id", "").strip(),
+        "token_name": form.get("token_name", "").strip(),
+        "token_symbol": token_symbol,
+        "token_address": _parse_onchain_address(form, "token_address"),
+        "token_decimals": _parse_onchain_positive_int(form, "token_decimals"),
+        "quote_token_symbol": quote_token_symbol,
+        "quote_token_address": _parse_onchain_address(form, "quote_token_address"),
+        "quote_token_decimals": _parse_onchain_positive_int(form, "quote_token_decimals"),
+        "max_trade_usdt": _parse_onchain_number(form, "max_trade_usdt"),
+        "max_slippage_pct": _parse_onchain_number(form, "max_slippage_pct", allow_zero=True),
+        "max_gas_usdt": _parse_onchain_number(form, "max_gas_usdt", allow_zero=True),
+    }
+
+
+def _load_onchain_symbol_mappings() -> dict[str, dict[str, object]]:
+    return {
+        symbol: symbol_config.to_dict()
+        for symbol, symbol_config in load_onchain_symbols_config().items()
+    }
+
+
+def _submitted_onchain_config(form: dict[str, str]) -> dict[str, object]:
+    defaults = _onchain_form_defaults()
+    submitted = dict(defaults)
+    for key in defaults:
+        if key in form:
+            submitted[key] = form.get(key, "")
+    submitted["enabled"] = _parse_onchain_bool(form, "enabled")
+    return submitted
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     context = _dashboard_context()
@@ -2299,6 +2452,121 @@ def health_page(request: Request):
         }
     )
     return templates.TemplateResponse(request, "health.html", context)
+
+
+@app.get("/onchain", response_class=HTMLResponse)
+def onchain_page(request: Request):
+    context = _onchain_view(
+        message=request.query_params.get("message"),
+        error=request.query_params.get("error"),
+    )
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+        }
+    )
+    return templates.TemplateResponse(request, "onchain.html", context)
+
+
+@app.post("/onchain/symbols/add")
+async def onchain_symbol_add(request: Request):
+    form = await _read_form_data(request)
+    try:
+        symbol = form.get("symbol", "").strip().upper()
+        updated_symbols = _load_onchain_symbol_mappings()
+        if symbol in updated_symbols:
+            return _onchain_redirect(error=f"{symbol} already exists")
+        updated_symbols[symbol] = _onchain_config_from_form(form)
+        save_onchain_symbols_config(updated_symbols)
+    except Exception as exc:
+        return _onchain_redirect(error=str(exc))
+    return _onchain_redirect(message=f"{symbol} added")
+
+
+@app.get("/onchain/symbols/{symbol}/edit", response_class=HTMLResponse)
+def onchain_symbol_edit_page(request: Request, symbol: str):
+    normalized_symbol = symbol.strip().upper()
+    try:
+        symbols = _load_onchain_symbol_mappings()
+        if normalized_symbol not in symbols:
+            raise ValueError(f"标的不存在：{normalized_symbol}")
+        edit_config = dict(symbols[normalized_symbol])
+    except Exception as exc:
+        context = _onchain_view(error=str(exc))
+        context.update(
+            {
+                "request": request,
+                "project_name": "TraderBot Local Console",
+            }
+        )
+        return templates.TemplateResponse(request, "onchain.html", context, status_code=404)
+
+    context = _onchain_view(edit_config=edit_config)
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+        }
+    )
+    return templates.TemplateResponse(request, "onchain.html", context)
+
+
+@app.post("/onchain/symbols/{symbol}/edit", response_class=HTMLResponse)
+async def onchain_symbol_edit_save(request: Request, symbol: str):
+    normalized_symbol = symbol.strip().upper()
+    form = await _read_form_data(request)
+    submitted_config = _submitted_onchain_config(form)
+    try:
+        updated_symbols = _load_onchain_symbol_mappings()
+        if normalized_symbol not in updated_symbols:
+            raise ValueError(f"标的不存在：{normalized_symbol}")
+        new_symbol = form.get("symbol", "").strip().upper()
+        if new_symbol != normalized_symbol and new_symbol in updated_symbols:
+            raise ValueError(f"{new_symbol} already exists")
+        parsed_config = _onchain_config_from_form(form)
+        updated_symbols.pop(normalized_symbol)
+        updated_symbols[new_symbol] = parsed_config
+        save_onchain_symbols_config(updated_symbols)
+    except Exception as exc:
+        context = _onchain_view(edit_config=submitted_config, edit_error=str(exc))
+        context.update(
+            {
+                "request": request,
+                "project_name": "TraderBot Local Console",
+            }
+        )
+        return templates.TemplateResponse(request, "onchain.html", context, status_code=400)
+    return _onchain_redirect(message=f"{new_symbol} saved")
+
+
+@app.post("/onchain/symbols/{symbol}/toggle")
+def onchain_symbol_toggle(symbol: str):
+    normalized_symbol = symbol.strip().upper()
+    try:
+        updated_symbols = _load_onchain_symbol_mappings()
+        if normalized_symbol not in updated_symbols:
+            return _onchain_redirect(error=f"{normalized_symbol} not found")
+        updated_symbols[normalized_symbol]["enabled"] = not bool(updated_symbols[normalized_symbol]["enabled"])
+        save_onchain_symbols_config(updated_symbols)
+        state = "enabled" if updated_symbols[normalized_symbol]["enabled"] else "disabled"
+    except Exception as exc:
+        return _onchain_redirect(error=str(exc))
+    return _onchain_redirect(message=f"{normalized_symbol} {state}")
+
+
+@app.post("/onchain/symbols/{symbol}/delete")
+def onchain_symbol_delete(symbol: str):
+    normalized_symbol = symbol.strip().upper()
+    try:
+        updated_symbols = _load_onchain_symbol_mappings()
+        if normalized_symbol not in updated_symbols:
+            return _onchain_redirect(error=f"{normalized_symbol} not found")
+        updated_symbols.pop(normalized_symbol)
+        save_onchain_symbols_config(updated_symbols)
+    except Exception as exc:
+        return _onchain_redirect(error=str(exc))
+    return _onchain_redirect(message=f"{normalized_symbol} deleted")
 
 
 @app.get("/futures", response_class=HTMLResponse)

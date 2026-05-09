@@ -1,0 +1,207 @@
+{% extends "layout.html" %}
+
+{% block title %}Onchain | TraderBot Console{% endblock %}
+
+{% macro mapping_form(config, action, title, submit_label, error=None) -%}
+<div class="card shadow-sm {% if error %}border-danger{% endif %}">
+  <div class="card-body">
+    <h2 class="h5 mb-3">{{ title }}</h2>
+    {% if error %}
+    <div class="alert alert-danger" role="alert">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="{{ action }}">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-4 col-xl-3">
+          <label class="form-label" for="{{ title }}-symbol">信号标的 <span class="text-secondary small">symbol</span></label>
+          <input id="{{ title }}-symbol" name="symbol" class="form-control" value="{{ config.symbol }}" placeholder="GOOGLUSDT" pattern="[A-Z0-9]+USDT" required>
+        </div>
+        <div class="col-md-4 col-xl-3">
+          <label class="form-label" for="{{ title }}-chain-name">链名称 <span class="text-secondary small">chain_name</span></label>
+          <input id="{{ title }}-chain-name" name="chain_name" class="form-control" value="{{ config.chain_name }}" placeholder="ethereum" required>
+        </div>
+        <div class="col-md-4 col-xl-2">
+          <label class="form-label" for="{{ title }}-chain-id">链ID <span class="text-secondary small">chain_id</span></label>
+          <input id="{{ title }}-chain-id" name="chain_id" class="form-control" value="{{ config.chain_id }}" placeholder="1" required>
+        </div>
+        <div class="col-md-4 col-xl-2">
+          <label class="form-label" for="{{ title }}-enabled">是否启用 <span class="text-secondary small">enabled</span></label>
+          <select id="{{ title }}-enabled" name="enabled" class="form-select" required>
+            <option value="false" {% if not config.enabled %}selected{% endif %}>false</option>
+            <option value="true" {% if config.enabled %}selected{% endif %}>true</option>
+          </select>
+        </div>
+
+        <div class="col-md-4 col-xl-3">
+          <label class="form-label" for="{{ title }}-token-name">代币名称 <span class="text-secondary small">token_name</span></label>
+          <input id="{{ title }}-token-name" name="token_name" class="form-control" value="{{ config.token_name }}" placeholder="Google Tokenized Stock" required>
+        </div>
+        <div class="col-md-4 col-xl-2">
+          <label class="form-label" for="{{ title }}-token-symbol">代币符号 <span class="text-secondary small">token_symbol</span></label>
+          <input id="{{ title }}-token-symbol" name="token_symbol" class="form-control" value="{{ config.token_symbol }}" placeholder="GOOGL" required>
+        </div>
+        <div class="col-md-8 col-xl-5">
+          <label class="form-label" for="{{ title }}-token-address">代币合约地址 <span class="text-secondary small">token_address</span></label>
+          <input
+            id="{{ title }}-token-address"
+            name="token_address"
+            class="form-control"
+            value="{{ config.token_address }}"
+            placeholder="0x0000000000000000000000000000000000000000"
+            pattern="^0x[a-fA-F0-9]{40}$"
+            title="必须以 0x 开头，并包含 40 位十六进制字符"
+            required
+          >
+        </div>
+        <div class="col-md-4 col-xl-2">
+          <label class="form-label" for="{{ title }}-token-decimals">代币精度 <span class="text-secondary small">token_decimals</span></label>
+          <input id="{{ title }}-token-decimals" name="token_decimals" type="number" min="1" step="1" class="form-control" value="{{ config.token_decimals }}" required>
+        </div>
+
+        <div class="col-md-4 col-xl-2">
+          <label class="form-label" for="{{ title }}-quote-symbol">报价币符号 <span class="text-secondary small">quote_token_symbol</span></label>
+          <input id="{{ title }}-quote-symbol" name="quote_token_symbol" class="form-control" value="{{ config.quote_token_symbol }}" placeholder="USDC" required>
+        </div>
+        <div class="col-md-8 col-xl-5">
+          <label class="form-label" for="{{ title }}-quote-address">报价币合约地址 <span class="text-secondary small">quote_token_address</span></label>
+          <input
+            id="{{ title }}-quote-address"
+            name="quote_token_address"
+            class="form-control"
+            value="{{ config.quote_token_address }}"
+            placeholder="0x0000000000000000000000000000000000000000"
+            pattern="^0x[a-fA-F0-9]{40}$"
+            title="必须以 0x 开头，并包含 40 位十六进制字符"
+            required
+          >
+        </div>
+        <div class="col-md-4 col-xl-2">
+          <label class="form-label" for="{{ title }}-quote-decimals">报价币精度 <span class="text-secondary small">quote_token_decimals</span></label>
+          <input id="{{ title }}-quote-decimals" name="quote_token_decimals" type="number" min="1" step="1" class="form-control" value="{{ config.quote_token_decimals }}" required>
+        </div>
+
+        <div class="col-md-4 col-xl-3">
+          <label class="form-label" for="{{ title }}-max-trade">单笔最大交易金额 <span class="text-secondary small">max_trade_usdt</span></label>
+          <input id="{{ title }}-max-trade" name="max_trade_usdt" type="number" min="0.0001" step="0.0001" class="form-control" value="{{ config.max_trade_usdt }}" required>
+        </div>
+        <div class="col-md-4 col-xl-3">
+          <label class="form-label" for="{{ title }}-slippage">最大滑点 <span class="text-secondary small">max_slippage_pct</span></label>
+          <input id="{{ title }}-slippage" name="max_slippage_pct" type="number" min="0" step="0.0001" class="form-control" value="{{ config.max_slippage_pct }}" required>
+        </div>
+        <div class="col-md-4 col-xl-3">
+          <label class="form-label" for="{{ title }}-gas">最大 Gas 成本 <span class="text-secondary small">max_gas_usdt</span></label>
+          <input id="{{ title }}-gas" name="max_gas_usdt" type="number" min="0" step="0.0001" class="form-control" value="{{ config.max_gas_usdt }}" required>
+        </div>
+
+        <div class="col-12">
+          <button class="btn btn-primary" type="submit">{{ submit_label }}</button>
+          {% if action != "/onchain/symbols/add" %}
+          <a class="btn btn-outline-secondary ms-2" href="/onchain">取消</a>
+          {% endif %}
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{%- endmacro %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-12">
+    <div class="hero-panel p-4 rounded-4">
+      <p class="text-uppercase small mb-2 text-secondary">Onchain</p>
+      <h1 class="display-6 mb-2">链上映射管理</h1>
+      <p class="text-secondary mb-0">管理 Binance Futures 信号标的与链上 token contract address 的映射。当前阶段只读写配置，不连接 OKX，不签名，不交易。</p>
+    </div>
+  </div>
+
+  {% if message %}
+  <div class="col-12">
+    <div class="alert alert-success mb-0">{{ message }}</div>
+  </div>
+  {% endif %}
+  {% if error %}
+  <div class="col-12">
+    <div class="alert alert-danger mb-0">{{ error }}</div>
+  </div>
+  {% endif %}
+  {% if config_error %}
+  <div class="col-12">
+    <div class="alert alert-danger mb-0">配置读取失败：{{ config_error }}</div>
+  </div>
+  {% endif %}
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">映射列表</h2>
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead>
+              <tr>
+                <th>信号标的</th>
+                <th>链名称</th>
+                <th>代币符号</th>
+                <th>代币合约地址</th>
+                <th>报价币</th>
+                <th>单笔最大交易金额</th>
+                <th>最大滑点</th>
+                <th>是否启用</th>
+                <th class="text-end">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for symbol in symbols %}
+              <tr>
+                <td class="fw-semibold">{{ symbol.symbol }}</td>
+                <td>{{ symbol.chain_name }}</td>
+                <td>{{ symbol.token_symbol }}</td>
+                <td><code>{{ symbol.token_address }}</code></td>
+                <td>{{ symbol.quote_token_symbol }}</td>
+                <td>{{ symbol.max_trade_usdt }}</td>
+                <td>{{ symbol.max_slippage_pct }}%</td>
+                <td>
+                  {% if symbol.enabled %}
+                  <span class="badge text-bg-success">true</span>
+                  {% else %}
+                  <span class="badge text-bg-secondary">false</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="d-flex justify-content-end gap-2">
+                    <a class="btn btn-sm btn-outline-secondary" href="/onchain/symbols/{{ symbol.symbol }}/edit#onchain-edit">Edit</a>
+                    <form method="post" action="/onchain/symbols/{{ symbol.symbol }}/toggle">
+                      {% if symbol.enabled %}
+                      <button class="btn btn-sm btn-outline-secondary" type="submit">Disable</button>
+                      {% else %}
+                      <button class="btn btn-sm btn-outline-success" type="submit">Enable</button>
+                      {% endif %}
+                    </form>
+                    <form method="post" action="/onchain/symbols/{{ symbol.symbol }}/delete" onsubmit="return confirm('Delete {{ symbol.symbol }}?');">
+                      <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="9" class="text-secondary">暂无映射</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    {{ mapping_form(form_defaults, "/onchain/symbols/add", "新增映射", "Add Mapping") }}
+  </div>
+
+  {% if edit_config %}
+  <div class="col-12" id="onchain-edit">
+    {{ mapping_form(edit_config, "/onchain/symbols/" ~ edit_config.symbol ~ "/edit", "编辑映射：" ~ edit_config.symbol, "保存", edit_error) }}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
