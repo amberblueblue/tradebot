@@ -150,7 +150,9 @@
                 <th>合约信号</th>
                 <th>信号原因</th>
                 <th>信号时间</th>
-                <th>报价状态</th>
+                <th>最近报价</th>
+                <th>报价时间</th>
+                <th>报价错误</th>
                 <th>是否具备执行条件</th>
                 <th class="text-end">操作</th>
               </tr>
@@ -187,7 +189,18 @@
                 </td>
                 <td>{{ symbol.futures_signal_reason or symbol.futures_signal.error or "n/a" }}</td>
                 <td>{{ symbol.futures_signal_time or "n/a" }}</td>
-                <td>{{ symbol.quote_status }}</td>
+                <td>
+                  {% if symbol.quote_status == "ok" %}
+                  <span class="badge text-bg-success">成功</span>
+                  {% elif symbol.quote_status == "error" %}
+                  <span class="badge text-bg-danger">失败</span>
+                  <div class="text-secondary small">{{ symbol.cached_quote_amount_usdt }}</div>
+                  {% else %}
+                  <span class="badge text-bg-secondary">未测试</span>
+                  {% endif %}
+                </td>
+                <td>{{ symbol.cached_quote_time or "未测试" }}</td>
+                <td>{{ symbol.cached_quote_error or "无" }}</td>
                 <td>
                   {% if symbol.executable %}
                   <span class="badge text-bg-success">true</span>
@@ -215,7 +228,7 @@
               </tr>
               {% else %}
               <tr>
-                <td colspan="15" class="text-secondary">暂无映射</td>
+                <td colspan="17" class="text-secondary">暂无映射</td>
               </tr>
               {% endfor %}
             </tbody>

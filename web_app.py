@@ -59,6 +59,7 @@ from onchain_bot.config_loader import (
     save_onchain_symbols_config,
 )
 from onchain_bot.executable_check import check_onchain_executable
+from onchain_bot.quote_cache import get_cached_quote, update_quote_cache
 from onchain_bot.signal_reader import read_signal_for_mapping
 from onchain_bot.status_onchain import build_quote_payload
 from observability.event_logger import LogRouter, StructuredLogger
@@ -2320,9 +2321,11 @@ def _onchain_symbol_rows() -> tuple[list[dict[str, object]], str | None]:
     for symbol_config in symbols.values():
         row = symbol_config.to_dict()
         futures_signal = read_signal_for_mapping(symbol_config)
+        cached_quote = get_cached_quote(symbol_config.symbol)
         executable_check = check_onchain_executable(
             mapping=symbol_config,
             futures_signal=futures_signal,
+            quote_result=cached_quote,
         )
         row.update(
             {
@@ -2330,7 +2333,11 @@ def _onchain_symbol_rows() -> tuple[list[dict[str, object]], str | None]:
                 "futures_signal_action": futures_signal.get("action", "error"),
                 "futures_signal_reason": futures_signal.get("reason"),
                 "futures_signal_time": futures_signal.get("updated_at"),
-                "quote_status": "not_tested",
+                "cached_quote": cached_quote,
+                "quote_status": "not_tested" if cached_quote is None else "ok" if cached_quote.get("ok") else "error",
+                "cached_quote_time": cached_quote.get("quoted_at") if cached_quote else None,
+                "cached_quote_error": cached_quote.get("error") if cached_quote else None,
+                "cached_quote_amount_usdt": cached_quote.get("amount_usdt") if cached_quote else None,
                 "executable": executable_check["executable"],
                 "executable_reasons": executable_check["reasons"],
             }
@@ -2356,6 +2363,9 @@ def _onchain_view(
         for symbol in symbols:
             if symbol.get("symbol") == quote_symbol:
                 symbol["quote_status"] = quote_status
+                symbol["cached_quote_time"] = quote_result.get("quoted_at") or symbol.get("cached_quote_time")
+                symbol["cached_quote_error"] = quote_result.get("error") or quote_result.get("message")
+                symbol["cached_quote_amount_usdt"] = quote_result.get("amount_usdt")
                 executable_check = check_onchain_executable(
                     mapping=SimpleNamespace(**symbol),
                     futures_signal=symbol.get("futures_signal"),
@@ -2650,6 +2660,9 @@ async def onchain_quote_submit(request: Request, symbol: str):
     try:
         normalized_symbol = _ensure_onchain_symbol(symbol)
         quote_result = build_quote_payload(normalized_symbol, amount_usdt)
+        cached_quote = update_quote_cache(normalized_symbol, quote_result)
+        quote_result = dict(quote_result)
+        quote_result["quoted_at"] = cached_quote.get("quoted_at")
     except Exception as exc:
         quote_error = str(exc)
         status_code = 400

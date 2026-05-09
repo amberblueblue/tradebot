@@ -11,8 +11,9 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from onchain_bot.config_loader import load_onchain_symbols_config, onchain_symbols_payload  # noqa: E402
-from onchain_bot.executable_check import check_onchain_executable  # noqa: E402
+from onchain_bot.executable_check import check_onchain_executable, quote_is_stale  # noqa: E402
 from onchain_bot.okx_dex_client import OkxDexQuoteClient  # noqa: E402
+from onchain_bot.quote_cache import get_cached_quote, load_quote_cache  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
 
 
@@ -35,6 +36,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--readiness",
         action="store_true",
         help="Show onchain mapping readiness with cached Futures signals.",
+    )
+    parser.add_argument(
+        "--quote-cache",
+        action="store_true",
+        help="Show cached onchain quote results.",
     )
     parser.add_argument(
         "--amount-usdt",
@@ -125,9 +131,13 @@ def build_readiness_payload() -> dict[str, Any]:
     items = []
     for symbol, symbol_config in symbols.items():
         futures_signal = read_signal_for_mapping(symbol_config)
+        cached_quote = get_cached_quote(symbol)
+        cached_quote_error = cached_quote.get("error") if cached_quote else None
+        cached_quote_stale = quote_is_stale(cached_quote)
         executable_check = check_onchain_executable(
             mapping=symbol_config,
             futures_signal=futures_signal,
+            quote_result=cached_quote,
         )
         items.append(
             {
@@ -139,7 +149,12 @@ def build_readiness_payload() -> dict[str, Any]:
                 "token_address": symbol_config.token_address,
                 "quote_token_symbol": symbol_config.quote_token_symbol,
                 "quote_token_address": symbol_config.quote_token_address,
-                "quote_status": "not_tested",
+                "quote_status": "not_tested" if cached_quote is None else "ok" if cached_quote.get("ok") else "error",
+                "cached_quote_ok": cached_quote.get("ok") if cached_quote else None,
+                "cached_quote_time": cached_quote.get("quoted_at") if cached_quote else None,
+                "cached_quote_error": cached_quote_error,
+                "cached_quote_amount_usdt": cached_quote.get("amount_usdt") if cached_quote else None,
+                "quote_stale": cached_quote_stale,
                 "futures_signal": futures_signal,
                 "executable": executable_check["executable"],
                 "reasons": executable_check["reasons"],
@@ -153,9 +168,18 @@ def build_readiness_payload() -> dict[str, Any]:
 
 def main() -> int:
     args = parse_args(sys.argv[1:])
-    selected_modes = sum(bool(mode) for mode in (args.symbols, args.quote, args.readiness))
+    selected_modes = sum(bool(mode) for mode in (args.symbols, args.quote, args.readiness, args.quote_cache))
     if selected_modes == 0:
-        print(json.dumps({"error": "missing_mode", "message": "use --symbols, --quote, or --readiness"}, indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "error": "missing_mode",
+                    "message": "use --symbols, --quote, --readiness, or --quote-cache",
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return 1
     if selected_modes > 1:
         print(json.dumps({"error": "invalid_mode", "message": "use only one mode"}, indent=2, sort_keys=True))
@@ -169,6 +193,8 @@ def main() -> int:
             payload = onchain_symbols_payload()
         elif args.readiness:
             payload = build_readiness_payload()
+        elif args.quote_cache:
+            payload = load_quote_cache()
         else:
             payload = build_quote_payload(args.quote, args.amount_usdt)
     except Exception as exc:
