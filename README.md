@@ -470,3 +470,34 @@ bash scripts/clear_prod_spot_test_state.sh
 ```
 
 脚本会先备份生产 `data/` 和 `runtime/` 中的 Spot 运行态到 `backups/spot_state_cleanup_YYYYMMDD_HHMMSS/`，再清理 Spot paper positions、测试 position、Spot runtime state 和 Spot paper trade state 中残留的测试仓位；不会修改配置、日志、`.env` 或 Futures paper state。
+
+## Onchain Bot Quote-Only
+
+`onchain_bot/` 当前只做链上映射配置和 OKX DEX quote-only 查询。它不会 approve、swap、签名、广播交易，也不会读取私钥或助记词。
+
+配置文件：
+
+```text
+config/onchain_symbols.yaml
+```
+
+查看映射：
+
+```bash
+python3 onchain_bot/status_onchain.py --symbols
+```
+
+查询 OKX DEX 报价：
+
+```bash
+python3 onchain_bot/status_onchain.py --quote GOOGLUSDT --amount-usdt 10
+```
+
+quote-only 查询只从环境变量读取 OKX Web3 API 信息：
+
+- `OKX_WEB3_API_KEY`
+- `OKX_WEB3_SECRET_KEY`
+- `OKX_WEB3_PASSPHRASE`
+- `OKX_WEB3_PROJECT_ID`
+
+缺少 API 信息时会输出清晰 JSON 错误，不会崩溃，也不会产生任何链上交易。
