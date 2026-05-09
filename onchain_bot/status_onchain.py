@@ -11,7 +11,9 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from onchain_bot.config_loader import load_onchain_symbols_config, onchain_symbols_payload  # noqa: E402
+from onchain_bot.executable_check import check_onchain_executable  # noqa: E402
 from onchain_bot.okx_dex_client import OkxDexQuoteClient  # noqa: E402
+from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
 
 
 SUPPORTED_QUOTE_TOKENS = {"USDC", "USDT"}
@@ -28,6 +30,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--quote",
         metavar="SYMBOL",
         help="Run an OKX DEX quote-only query for a mapped symbol.",
+    )
+    parser.add_argument(
+        "--readiness",
+        action="store_true",
+        help="Show onchain mapping readiness with cached Futures signals.",
     )
     parser.add_argument(
         "--amount-usdt",
@@ -113,12 +120,44 @@ def build_quote_payload(symbol: str, amount_usdt: str) -> dict[str, Any]:
     }
 
 
+def build_readiness_payload() -> dict[str, Any]:
+    symbols = load_onchain_symbols_config()
+    items = []
+    for symbol, symbol_config in symbols.items():
+        futures_signal = read_signal_for_mapping(symbol_config)
+        executable_check = check_onchain_executable(
+            mapping=symbol_config,
+            futures_signal=futures_signal,
+        )
+        items.append(
+            {
+                "symbol": symbol,
+                "enabled": symbol_config.enabled,
+                "source_symbol": symbol_config.source_symbol,
+                "signal_source": symbol_config.signal_source,
+                "token_symbol": symbol_config.token_symbol,
+                "token_address": symbol_config.token_address,
+                "quote_token_symbol": symbol_config.quote_token_symbol,
+                "quote_token_address": symbol_config.quote_token_address,
+                "quote_status": "not_tested",
+                "futures_signal": futures_signal,
+                "executable": executable_check["executable"],
+                "reasons": executable_check["reasons"],
+            }
+        )
+    return {
+        "symbols_count": len(symbols),
+        "items": items,
+    }
+
+
 def main() -> int:
     args = parse_args(sys.argv[1:])
-    if not args.symbols and not args.quote:
-        print(json.dumps({"error": "missing_mode", "message": "use --symbols or --quote"}, indent=2, sort_keys=True))
+    selected_modes = sum(bool(mode) for mode in (args.symbols, args.quote, args.readiness))
+    if selected_modes == 0:
+        print(json.dumps({"error": "missing_mode", "message": "use --symbols, --quote, or --readiness"}, indent=2, sort_keys=True))
         return 1
-    if args.symbols and args.quote:
+    if selected_modes > 1:
         print(json.dumps({"error": "invalid_mode", "message": "use only one mode"}, indent=2, sort_keys=True))
         return 1
     if args.quote and args.amount_usdt is None:
@@ -128,6 +167,8 @@ def main() -> int:
     try:
         if args.symbols:
             payload = onchain_symbols_payload()
+        elif args.readiness:
+            payload = build_readiness_payload()
         else:
             payload = build_quote_payload(args.quote, args.amount_usdt)
     except Exception as exc:

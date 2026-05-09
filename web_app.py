@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from pathlib import Path
 from collections import deque
+from types import SimpleNamespace
 from urllib.parse import parse_qs, quote, urlencode
 
 import uvicorn
@@ -57,6 +58,8 @@ from onchain_bot.config_loader import (
     load_onchain_symbols_config,
     save_onchain_symbols_config,
 )
+from onchain_bot.executable_check import check_onchain_executable
+from onchain_bot.signal_reader import read_signal_for_mapping
 from onchain_bot.status_onchain import build_quote_payload
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
@@ -2313,10 +2316,27 @@ def _onchain_symbol_rows() -> tuple[list[dict[str, object]], str | None]:
         symbols = load_onchain_symbols_config()
     except Exception as exc:
         return [], str(exc)
-    return [
-        symbol_config.to_dict()
-        for symbol_config in symbols.values()
-    ], None
+    rows = []
+    for symbol_config in symbols.values():
+        row = symbol_config.to_dict()
+        futures_signal = read_signal_for_mapping(symbol_config)
+        executable_check = check_onchain_executable(
+            mapping=symbol_config,
+            futures_signal=futures_signal,
+        )
+        row.update(
+            {
+                "futures_signal": futures_signal,
+                "futures_signal_action": futures_signal.get("action", "error"),
+                "futures_signal_reason": futures_signal.get("reason"),
+                "futures_signal_time": futures_signal.get("updated_at"),
+                "quote_status": "not_tested",
+                "executable": executable_check["executable"],
+                "executable_reasons": executable_check["reasons"],
+            }
+        )
+        rows.append(row)
+    return rows, None
 
 
 def _onchain_view(
@@ -2331,6 +2351,19 @@ def _onchain_view(
     quote_error: str | None = None,
 ) -> dict[str, object]:
     symbols, config_error = _onchain_symbol_rows()
+    if quote_symbol and quote_result:
+        quote_status = "ok" if quote_result.get("ok") else "error"
+        for symbol in symbols:
+            if symbol.get("symbol") == quote_symbol:
+                symbol["quote_status"] = quote_status
+                executable_check = check_onchain_executable(
+                    mapping=SimpleNamespace(**symbol),
+                    futures_signal=symbol.get("futures_signal"),
+                    quote_result=quote_result,
+                )
+                symbol["executable"] = executable_check["executable"]
+                symbol["executable_reasons"] = executable_check["reasons"]
+                break
     return {
         "symbols": symbols,
         "symbols_count": len(symbols),
