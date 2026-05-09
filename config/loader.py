@@ -324,6 +324,7 @@ SPOT_SYMBOL_STRATEGY_FIELDS = {
     "rsi_overheat": "float",
     "max_hold_bars": "int",
     "min_expected_return": "float",
+    "time_stop_profit_exempt_pct": "float",
     "ema_slope_lookback": "int",
     "macd_decay_bars": "int",
     "entry_cooldown_bars": "int",

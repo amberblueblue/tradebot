@@ -244,6 +244,32 @@ def detect_profit_giveback(
     )
 
 
+def _timeframe_seconds(timeframe: str) -> int:
+    unit = timeframe[-1:]
+    try:
+        value = int(timeframe[:-1])
+    except ValueError:
+        return 60 * 60
+    if unit == "m":
+        return value * 60
+    if unit == "h":
+        return value * 60 * 60
+    if unit == "d":
+        return value * 24 * 60 * 60
+    return value * 60 * 60
+
+
+def _trend_holding_bars(position_state: PositionState, context: MarketContext) -> int | None:
+    signal_holding_bars = position_state.holding_bars(context.current_bar_index)
+    if signal_holding_bars is None:
+        return None
+    elapsed_seconds = max(signal_holding_bars, 0) * _timeframe_seconds(context.signal_timeframe)
+    trend_seconds = _timeframe_seconds(context.trend_timeframe)
+    if trend_seconds <= 0:
+        return max(signal_holding_bars, 0)
+    return elapsed_seconds // trend_seconds
+
+
 def should_force_exit(
     position_state: PositionState,
     context: MarketContext,
@@ -255,12 +281,12 @@ def should_force_exit(
 
     latest_close = _latest(_series(context.df_1h, "close"))
     current_return = position_state.current_return(latest_close) if latest_close is not None else None
-    holding_bars = position_state.holding_bars(context.current_bar_index)
+    holding_bars = _trend_holding_bars(position_state, context)
     if (
         holding_bars is not None
         and holding_bars > config.max_hold_bars
         and current_return is not None
-        and current_return < config.min_expected_return / 100
+        and current_return < config.time_stop_profit_exempt_pct / 100
     ):
         return _exit_decision(
             FULL_EXIT,

@@ -228,6 +228,8 @@ class TraderEngine:
             df_4h=df_4h,
             current_bar_index=current_bar_index,
             cooldown_remaining=cooldown_remaining,
+            signal_timeframe=entry_interval,
+            trend_timeframe=trend_interval,
         )
         return ExecutionContext(
             symbol=symbol,
@@ -798,6 +800,7 @@ class TraderEngine:
                 "entry_cooldown_bars",
                 "max_hold_bars",
                 "min_expected_return",
+                "time_stop_profit_exempt_pct",
             }
         }
         global_risk = {

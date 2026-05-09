@@ -24,7 +24,9 @@
       required
     >
     {% endif %}
-    <div class="form-text">{{ field.path }}</div>
+    <div class="form-text">
+      {{ field.path }}{% if field.help %} · {{ field.help }}{% endif %}
+    </div>
   </div>
   {% endfor %}
 </div>

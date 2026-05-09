@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from futures_bot.config_loader import get_effective_futures_symbol_config, load_futures_config
@@ -69,6 +70,10 @@ class TrendLongStrategy:
             "current_return": None,
             "max_unrealized_return": None,
             "holding_bars": None,
+            "holding_bars_basis": "trend_timeframe",
+            "holding_bars_timeframe": trend_timeframe,
+            "time_stop_profit_exempt_pct": float(settings.get("time_stop_profit_exempt_pct", 20.0)),
+            "time_stop_exempted": False,
             "partial1_done": False,
             "partial2_done": False,
         }
@@ -92,14 +97,29 @@ class TrendLongStrategy:
         trend = _trend_snapshot(trend_candles, settings)
         signal = _signal_snapshot(signal_candles, settings)
         bearish_divergence = _detect_bearish_divergence(signal_candles, settings)
-        position = _paper_position_for_symbol(symbol)
+        broker = FuturesPaperBroker()
+        position = _paper_position_for_symbol(symbol, broker)
         current_bar_index = len(signal_candles) - 1
         if position is not None:
+            position.mark_price = mark_price
             position.current_return = _current_return_pct(position.entry_price, mark_price, position.side)
             position.max_unrealized_return = max(position.max_unrealized_return, position.current_return)
-            if position.entry_bar_index is not None:
-                position.holding_bars = max(current_bar_index - position.entry_bar_index, 0)
-            FuturesPaperBroker().update_position_metrics(symbol, current_bar_index=current_bar_index)
+            position.holding_bars = _trend_holding_bars(
+                position=position,
+                trend_klines=filtered_trend_klines,
+                current_signal_bar_index=current_bar_index,
+                signal_timeframe=signal_timeframe,
+                trend_timeframe=trend_timeframe,
+            )
+            broker.update_position_metrics(symbol)
+            position.holding_bars = _trend_holding_bars(
+                position=position,
+                trend_klines=filtered_trend_klines,
+                current_signal_bar_index=current_bar_index,
+                signal_timeframe=signal_timeframe,
+                trend_timeframe=trend_timeframe,
+            )
+            broker.save_state()
             metadata.update(
                 {
                     "current_return": position.current_return,
@@ -221,9 +241,9 @@ def _market_session_filter_for_symbol(symbol: str) -> str:
     return symbol_config.market_session_filter
 
 
-def _paper_position_for_symbol(symbol: str):
+def _paper_position_for_symbol(symbol: str, broker: FuturesPaperBroker | None = None):
     try:
-        broker = FuturesPaperBroker()
+        broker = broker or FuturesPaperBroker()
     except Exception:
         return None
     normalized = symbol.upper()
@@ -236,6 +256,62 @@ def _current_return_pct(entry_price: float, mark_price: float, side: str) -> flo
     if side.upper() == "SHORT":
         return ((entry_price - mark_price) / entry_price) * 100
     return ((mark_price - entry_price) / entry_price) * 100
+
+
+def _timeframe_seconds(timeframe: str) -> int:
+    unit = timeframe[-1:]
+    try:
+        value = int(timeframe[:-1])
+    except ValueError:
+        return 60
+    if unit == "m":
+        return value * 60
+    if unit == "h":
+        return value * 60 * 60
+    if unit == "d":
+        return value * 24 * 60 * 60
+    return value * 60
+
+
+def _kline_open_time_ms(kline: Any) -> int | None:
+    if not isinstance(kline, (list, tuple)) or not kline:
+        return None
+    try:
+        return int(kline[0])
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_entry_time_ms(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        normalized = value.replace("Z", "+00:00")
+        return int(datetime.fromisoformat(normalized).timestamp() * 1000)
+    except ValueError:
+        return None
+
+
+def _trend_holding_bars(
+    *,
+    position,
+    trend_klines: list[Any],
+    current_signal_bar_index: int,
+    signal_timeframe: str,
+    trend_timeframe: str,
+) -> int:
+    entry_time_ms = _parse_entry_time_ms(getattr(position, "entry_time", None))
+    latest_trend_open_ms = _kline_open_time_ms(trend_klines[-1]) if trend_klines else None
+    if entry_time_ms is not None and latest_trend_open_ms is not None:
+        elapsed_ms = max(latest_trend_open_ms - entry_time_ms, 0)
+        return elapsed_ms // (_timeframe_seconds(trend_timeframe) * 1000)
+
+    entry_bar_index = getattr(position, "entry_bar_index", None)
+    if entry_bar_index is None:
+        return 0
+    signal_elapsed = max(current_signal_bar_index - int(entry_bar_index), 0)
+    elapsed_seconds = signal_elapsed * _timeframe_seconds(signal_timeframe)
+    return elapsed_seconds // _timeframe_seconds(trend_timeframe)
 
 
 def _exit_signal(
@@ -294,9 +370,14 @@ def _exit_signal(
 
     if (
         holding_bars > int(settings["max_hold_bars"])
-        and current_return < float(settings["min_expected_return"])
     ):
-        return exit_signal(CLOSE_FULL, "FUTURES_TIME_STOP_EXIT")
+        time_stop_profit_exempt_pct = float(settings.get("time_stop_profit_exempt_pct", 20.0))
+        metadata["time_stop_profit_exempt_pct"] = time_stop_profit_exempt_pct
+        if current_return < time_stop_profit_exempt_pct:
+            metadata["time_stop_exempted"] = False
+            metadata["time_stop_detail"] = "holding_bars based on trend_timeframe"
+            return exit_signal(CLOSE_FULL, "FUTURES_TIME_STOP_EXIT")
+        metadata["time_stop_exempted"] = True
 
     close_triggered = (
         signal["close"] < signal["ema44"]

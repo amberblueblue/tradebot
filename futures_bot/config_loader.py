@@ -36,6 +36,7 @@ DEFAULT_FUTURES_STRATEGY_SETTINGS: dict[str, dict[str, int | float]] = {
         "rsi_overheat": 75,
         "max_hold_bars": 30,
         "min_expected_return": 0.0,
+        "time_stop_profit_exempt_pct": 20.0,
     },
     "trend_long_test": {
         "ema_fast": 44,
@@ -232,7 +233,7 @@ def load_futures_strategy_settings(
         value = configured.get(key, default_value)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             continue
-        if key == "min_expected_return":
+        if key in {"min_expected_return", "time_stop_profit_exempt_pct"}:
             result[key] = float(value)
             continue
         if value <= 0:
@@ -322,6 +323,7 @@ FUTURES_SYMBOL_STRATEGY_FIELDS = {
     "rsi_overheat": "float",
     "max_hold_bars": "int",
     "min_expected_return": "non_negative_float",
+    "time_stop_profit_exempt_pct": "non_negative_float",
     "ema_slope_lookback": "int",
     "macd_decay_bars": "int",
     "entry_cooldown_bars": "int",

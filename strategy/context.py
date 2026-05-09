@@ -11,6 +11,8 @@ class MarketContext:
     df_4h: pd.DataFrame
     current_bar_index: int
     cooldown_remaining: int = 0
+    signal_timeframe: str = "1h"
+    trend_timeframe: str = "4h"
 
     @property
     def latest_1h(self) -> pd.Series:

@@ -109,8 +109,21 @@ FUTURES_STRATEGY_SETTING_FIELDS = (
     ("strategy.trend_long.min_rsi", "trend_long 最小 RSI", "number", "0.0001", ""),
     ("strategy.trend_long.max_rsi", "trend_long 最大 RSI", "number", "0.0001", ""),
     ("strategy.trend_long.rsi_overheat", "RSI过热阈值", "number", "0.0001", ""),
-    ("strategy.trend_long.max_hold_bars", "最大持仓K线数", "number", "1", ""),
+    (
+        "strategy.trend_long.max_hold_bars",
+        "最大持仓趋势K线数",
+        "number",
+        "1",
+        "该值按 trend_timeframe 计算，不按 signal_timeframe 计算。例如 trend_timeframe=4h 且 max_hold_bars=60，约等于最长持仓10天。",
+    ),
     ("strategy.trend_long.min_expected_return", "最低预期收益", "number", "0.0001", ""),
+    (
+        "strategy.trend_long.time_stop_profit_exempt_pct",
+        "时间止损盈利豁免百分比",
+        "number",
+        "0.0001",
+        "如果持仓超过最大持仓趋势K线数，但盈利超过该阈值，则不按时间止损卖出，继续由技术止盈和利润回吐规则管理。",
+    ),
     ("strategy.trend_long_test.ema_fast", "trend_long_test 快速 EMA", "number", "1", ""),
     ("strategy.trend_long_test.macd_fast", "trend_long_test MACD 快线周期", "number", "1", ""),
     ("strategy.trend_long_test.macd_slow", "trend_long_test MACD 慢线周期", "number", "1", ""),
@@ -174,8 +187,9 @@ SPOT_SETTING_LABELS = {
     "strategy.macd_decay_bars": "MACD 衰减根数",
     "strategy.rsi_overheat": "RSI 过热阈值",
     "strategy.entry_cooldown_bars": "入场冷却根数",
-    "strategy.max_hold_bars": "最大持有根数",
+    "strategy.max_hold_bars": "最大持仓趋势K线数",
     "strategy.min_expected_return": "最小预期收益",
+    "strategy.time_stop_profit_exempt_pct": "时间止损盈利豁免百分比",
     "risk.max_single_order_usdt": "单笔最大下单 USDT",
     "risk.max_consecutive_losing_trades": "连续亏损限制",
     "risk.stop_loss_pct": "止损百分比",
@@ -196,8 +210,9 @@ SYMBOL_STRATEGY_FIELD_SPECS = (
     ("min_rsi", "最小 RSI", "number", "0.0001"),
     ("max_rsi", "最大 RSI", "number", "0.0001"),
     ("rsi_overheat", "RSI 过热阈值", "number", "0.0001"),
-    ("max_hold_bars", "最大持仓K线数", "number", "1"),
+    ("max_hold_bars", "最大持仓趋势K线数", "number", "1"),
     ("min_expected_return", "最低预期收益", "number", "0.0001"),
+    ("time_stop_profit_exempt_pct", "时间止损盈利豁免百分比", "number", "0.0001"),
     ("ema_slope_lookback", "EMA 斜率回看", "number", "1"),
     ("macd_decay_bars", "MACD 衰减K线数", "number", "1"),
     ("entry_cooldown_bars", "开仓冷却K线数", "number", "1"),
@@ -222,6 +237,16 @@ SPOT_SYMBOL_STRATEGY_FIELD_SPECS = SYMBOL_STRATEGY_FIELD_SPECS
 SPOT_SYMBOL_RISK_FIELD_SPECS = SYMBOL_RISK_FIELD_SPECS
 FUTURES_SYMBOL_STRATEGY_FIELD_SPECS = SYMBOL_STRATEGY_FIELD_SPECS
 FUTURES_SYMBOL_RISK_FIELD_SPECS = SYMBOL_RISK_FIELD_SPECS
+FIELD_HELP_TEXT = {
+    "strategy.max_hold_bars": (
+        "该值按 trend_timeframe 计算，不按 signal_timeframe 计算。"
+        "例如 trend_timeframe=4h 且 max_hold_bars=60，约等于最长持仓10天。"
+    ),
+    "strategy.time_stop_profit_exempt_pct": (
+        "如果持仓超过最大持仓趋势K线数，但盈利超过该阈值，则不按时间止损卖出，"
+        "继续由技术止盈和利润回吐规则管理。"
+    ),
+}
 LIVE_CONFIRM_ENV_VAR = "TRADEBOT_CONFIRM_LIVE"
 REAL_EXECUTE_ENV_VAR = "TRADEBOT_EXECUTE_REAL"
 FINAL_REAL_ORDER_ENV_VAR = "TRADEBOT_FINAL_REAL_ORDER"
@@ -822,6 +847,7 @@ def _symbol_override_fields(
                 "value": override.get(key, ""),
                 "effective_value": effective.get(key),
                 "source": source,
+                "help": FIELD_HELP_TEXT.get(f"{section}.{key}", ""),
             }
         )
     return fields
@@ -887,6 +913,7 @@ def _flatten_editable_settings(payload: dict[str, object], prefix: str = "") -> 
                     "value_type": value_type,
                     "input_type": "number" if value_type == "number" else "text",
                     "step": "1" if isinstance(value, int) and not isinstance(value, bool) else "0.0001",
+                    "help": FIELD_HELP_TEXT.get(dotted_path, ""),
                 }
             )
             continue
@@ -899,6 +926,7 @@ def _flatten_editable_settings(payload: dict[str, object], prefix: str = "") -> 
                     "value_type": "list",
                     "input_type": "text",
                     "step": "1",
+                    "help": FIELD_HELP_TEXT.get(dotted_path, ""),
                 }
             )
     return fields
@@ -1583,7 +1611,7 @@ def _parse_futures_symbol_config_from_form(form: dict[str, str], risk_config) ->
         form,
         section="strategy",
         specs=FUTURES_SYMBOL_STRATEGY_FIELD_SPECS,
-        non_negative_keys={"min_expected_return"},
+        non_negative_keys={"min_expected_return", "time_stop_profit_exempt_pct"},
     )
     risk_overrides = _parse_symbol_override_section(
         form,
@@ -1658,7 +1686,12 @@ def _coerce_futures_setting_value(path: str, raw_value: str):
         return number
     if path.startswith("strategy."):
         number = float(value)
-        if path == "strategy.trend_long.min_expected_return":
+        if path in {
+            "strategy.trend_long.min_expected_return",
+            "strategy.trend_long.time_stop_profit_exempt_pct",
+        }:
+            if number < 0:
+                raise ValueError(f"{path} must be greater than or equal to 0")
             return number
         if number <= 0:
             raise ValueError(f"{path} must be greater than 0")

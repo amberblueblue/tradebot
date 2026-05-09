@@ -104,7 +104,10 @@
               value="{{ field.value }}"
               placeholder="使用全局默认"
             >
-            <div class="form-text">当前生效值：{{ field.effective_value }}（来自{{ field.source }}）</div>
+            <div class="form-text">
+              当前生效值：{{ field.effective_value }}（来自{{ field.source }}）
+              {% if field.help %}<br>{{ field.help }}{% endif %}
+            </div>
           </div>
           {% endfor %}
 
@@ -125,7 +128,10 @@
               value="{{ field.value }}"
               placeholder="使用全局默认"
             >
-            <div class="form-text">当前生效值：{{ field.effective_value }}（来自{{ field.source }}）</div>
+            <div class="form-text">
+              当前生效值：{{ field.effective_value }}（来自{{ field.source }}）
+              {% if field.help %}<br>{{ field.help }}{% endif %}
+            </div>
           </div>
           {% endfor %}
 

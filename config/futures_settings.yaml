@@ -34,6 +34,7 @@ strategy:
     rsi_overheat: 75
     max_hold_bars: 30
     min_expected_return: 0.0
+    time_stop_profit_exempt_pct: 20.0
   trend_long_test:
     ema_fast: 44
     macd_fast: 12

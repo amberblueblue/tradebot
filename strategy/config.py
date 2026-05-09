@@ -15,6 +15,7 @@ class StrategyConfig:
     partial2_sell_pct: float = 50.0
     max_hold_bars: int = 72
     min_expected_return: float = 5.0
+    time_stop_profit_exempt_pct: float = 20.0
     big_candle_multiplier: float = 1.5
     big_candle_body_lookback: int = 20
     profit_giveback_ratio: float = 0.5

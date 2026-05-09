@@ -61,6 +61,7 @@ strategy:
   entry_cooldown_bars: 8
   max_hold_bars: 72
   min_expected_return: 5.0
+  time_stop_profit_exempt_pct: 20.0
 risk:
   max_single_order_usdt: 20
   max_consecutive_losing_trades: 4
