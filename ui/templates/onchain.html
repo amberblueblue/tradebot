@@ -250,7 +250,7 @@
 
   {% if quote_symbol %}
   <div class="col-12" id="onchain-quote">
-    <div class="card shadow-sm {% if quote_error or (quote_result and not quote_result.ok) %}border-warning{% endif %}">
+    <div class="card shadow-sm {% if quote_result and quote_result.ok %}border-success{% elif quote_error or (quote_result and not quote_result.ok) %}border-danger{% endif %}">
       <div class="card-body">
         <h2 class="h5 mb-3">测试报价：{{ quote_symbol }}</h2>
         <form class="row g-3 align-items-end" method="post" action="/onchain/quote/{{ quote_symbol }}">
@@ -269,10 +269,15 @@
         {% endif %}
 
         {% if quote_result %}
+        {% set parsed = quote_result.parsed_quote or {} %}
         <div class="row g-3 mt-3">
           <div class="col-md-3">
             <div class="text-secondary small">是否成功</div>
-            <div class="fw-semibold">{{ quote_result.ok }}</div>
+            {% if quote_result.ok %}
+            <div class="fw-semibold text-success">成功</div>
+            {% else %}
+            <div class="fw-semibold text-danger">失败</div>
+            {% endif %}
           </div>
           <div class="col-md-3">
             <div class="text-secondary small">信号标的</div>
@@ -285,6 +290,42 @@
           <div class="col-md-3">
             <div class="text-secondary small">测试金额</div>
             <div class="fw-semibold">{{ quote_result.amount_usdt }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">支付金额</div>
+            <div class="fw-semibold">{{ parsed.from_amount_display or "n/a" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">预计获得</div>
+            <div class="fw-semibold">{{ parsed.to_amount_display or "n/a" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">隐含成交价格</div>
+            <div class="fw-semibold">{{ parsed.implied_price or "n/a" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">最大滑点</div>
+            <div class="fw-semibold">{{ parsed.max_slippage_pct or "n/a" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">预估 Gas</div>
+            <div class="fw-semibold">{{ parsed.estimated_gas_usdt or "n/a" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">价格冲击</div>
+            <div class="fw-semibold">{{ parsed.price_impact_pct or "n/a" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">报价时间</div>
+            <div class="fw-semibold">{{ quote_result.quoted_at or "n/a" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">请求耗时</div>
+            <div class="fw-semibold">{% if parsed.latency_ms is not none %}{{ parsed.latency_ms }} ms{% else %}n/a{% endif %}</div>
+          </div>
+          <div class="col-12">
+            <div class="text-secondary small">路由</div>
+            <div class="fw-semibold">{{ parsed.route or "n/a" }}</div>
           </div>
           <div class="col-md-3">
             <div class="text-secondary small">买入代币</div>

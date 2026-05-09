@@ -13,6 +13,7 @@ if __package__ in {None, ""}:
 from onchain_bot.config_loader import load_onchain_symbols_config, onchain_symbols_payload  # noqa: E402
 from onchain_bot.executable_check import check_onchain_executable, quote_is_stale  # noqa: E402
 from onchain_bot.okx_dex_client import OkxDexQuoteClient  # noqa: E402
+from onchain_bot.quote_parser import parse_okx_quote  # noqa: E402
 from onchain_bot.quote_cache import get_cached_quote, load_quote_cache  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
 
@@ -107,6 +108,16 @@ def build_quote_payload(symbol: str, amount_usdt: str) -> dict[str, Any]:
         to_token_address=symbol_config.token_address,
         amount=from_token_amount,
     )
+    parsed_quote = parse_okx_quote(
+        raw_quote=quote_result.get("quote"),
+        amount_usdt=amount_value,
+        quote_token_symbol=symbol_config.quote_token_symbol,
+        quote_token_decimals=symbol_config.quote_token_decimals,
+        token_symbol=symbol_config.token_symbol,
+        token_decimals=symbol_config.token_decimals,
+        max_slippage_pct=symbol_config.max_slippage_pct,
+        latency_ms=quote_result.get("latency_ms"),
+    )
     return {
         "ok": bool(quote_result.get("ok")),
         "symbol": normalized_symbol,
@@ -118,8 +129,16 @@ def build_quote_payload(symbol: str, amount_usdt: str) -> dict[str, Any]:
         "amount_usdt": amount_value,
         "from_token_amount": str(from_token_amount),
         "quote": quote_result.get("quote"),
+        "parsed_quote": parsed_quote,
         "endpoint": quote_result.get("endpoint"),
         "status_code": quote_result.get("status_code"),
+        "http_status": quote_result.get("http_status"),
+        "request_url": quote_result.get("request_url"),
+        "request_headers_present": quote_result.get("request_headers_present"),
+        "timestamp": quote_result.get("timestamp"),
+        "response_body": quote_result.get("response_body"),
+        "diagnostics": quote_result.get("diagnostics"),
+        "latency_ms": quote_result.get("latency_ms"),
         "error": quote_result.get("error"),
         "message": quote_result.get("message"),
         "quote_only": True,

@@ -74,6 +74,8 @@ def update_quote_cache(
         "token_symbol": result.get("token_symbol"),
         "quote_token_symbol": result.get("quote_token_symbol"),
         "quote": result.get("quote"),
+        "parsed_quote": result.get("parsed_quote"),
+        "latency_ms": result.get("latency_ms"),
         "error": _quote_error(result),
     }
     save_result = save_quote_cache(cache, cache_path)
