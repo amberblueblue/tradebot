@@ -169,6 +169,7 @@
                 <td>
                   <div class="d-flex justify-content-end gap-2">
                     <a class="btn btn-sm btn-outline-secondary" href="/onchain/symbols/{{ symbol.symbol }}/edit#onchain-edit">Edit</a>
+                    <a class="btn btn-sm btn-outline-primary" href="/onchain/quote/{{ symbol.symbol }}#onchain-quote">测试报价</a>
                     <form method="post" action="/onchain/symbols/{{ symbol.symbol }}/toggle">
                       {% if symbol.enabled %}
                       <button class="btn btn-sm btn-outline-secondary" type="submit">Disable</button>
@@ -201,6 +202,77 @@
   {% if edit_config %}
   <div class="col-12" id="onchain-edit">
     {{ mapping_form(edit_config, "/onchain/symbols/" ~ edit_config.symbol ~ "/edit", "编辑映射：" ~ edit_config.symbol, "保存", edit_error) }}
+  </div>
+  {% endif %}
+
+  {% if quote_symbol %}
+  <div class="col-12" id="onchain-quote">
+    <div class="card shadow-sm {% if quote_error or (quote_result and not quote_result.ok) %}border-warning{% endif %}">
+      <div class="card-body">
+        <h2 class="h5 mb-3">测试报价：{{ quote_symbol }}</h2>
+        <form class="row g-3 align-items-end" method="post" action="/onchain/quote/{{ quote_symbol }}">
+          <div class="col-md-4 col-xl-3">
+            <label class="form-label" for="quote-amount">测试金额 <span class="text-secondary small">amount-usdt</span></label>
+            <input id="quote-amount" name="amount_usdt" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ quote_amount_usdt or '10' }}" required>
+          </div>
+          <div class="col-md-8 col-xl-6">
+            <button class="btn btn-primary" type="submit">查询</button>
+            <a class="btn btn-outline-secondary ms-2" href="/onchain">返回</a>
+          </div>
+        </form>
+
+        {% if quote_error %}
+        <div class="alert alert-danger mt-3 mb-0">错误信息：{{ quote_error }}</div>
+        {% endif %}
+
+        {% if quote_result %}
+        <div class="row g-3 mt-3">
+          <div class="col-md-3">
+            <div class="text-secondary small">是否成功</div>
+            <div class="fw-semibold">{{ quote_result.ok }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">信号标的</div>
+            <div class="fw-semibold">{{ quote_result.symbol }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">链ID</div>
+            <div class="fw-semibold">{{ quote_result.chain_id }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">测试金额</div>
+            <div class="fw-semibold">{{ quote_result.amount_usdt }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">买入代币</div>
+            <div class="fw-semibold">{{ quote_result.token_symbol }}</div>
+          </div>
+          <div class="col-md-9">
+            <div class="text-secondary small">买入代币合约地址</div>
+            <code>{{ quote_result.token_address }}</code>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">支付代币</div>
+            <div class="fw-semibold">{{ quote_result.quote_token_symbol }}</div>
+          </div>
+          <div class="col-md-9">
+            <div class="text-secondary small">支付代币合约地址</div>
+            <code>{{ quote_result.quote_token_address }}</code>
+          </div>
+          <div class="col-12">
+            <div class="text-secondary small">错误信息</div>
+            <div class="{% if quote_result.error %}text-danger{% else %}text-secondary{% endif %}">
+              {{ quote_result.error or "无" }}{% if quote_result.message %} · {{ quote_result.message }}{% endif %}
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="text-secondary small mb-2">原始报价</div>
+            <pre class="bg-light border rounded p-3 mb-0 overflow-auto"><code>{{ quote_result_json }}</code></pre>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
   </div>
   {% endif %}
 </div>

@@ -57,6 +57,7 @@ from onchain_bot.config_loader import (
     load_onchain_symbols_config,
     save_onchain_symbols_config,
 )
+from onchain_bot.status_onchain import build_quote_payload
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
 from runtime.safety import (
@@ -2324,6 +2325,10 @@ def _onchain_view(
     error: str | None = None,
     edit_config: dict[str, object] | None = None,
     edit_error: str | None = None,
+    quote_symbol: str | None = None,
+    quote_amount_usdt: str = "10",
+    quote_result: dict[str, object] | None = None,
+    quote_error: str | None = None,
 ) -> dict[str, object]:
     symbols, config_error = _onchain_symbol_rows()
     return {
@@ -2335,6 +2340,11 @@ def _onchain_view(
         "edit_config": edit_config,
         "edit_error": edit_error,
         "form_defaults": _onchain_form_defaults(),
+        "quote_symbol": quote_symbol,
+        "quote_amount_usdt": quote_amount_usdt,
+        "quote_result": quote_result,
+        "quote_result_json": json.dumps(quote_result, indent=2, ensure_ascii=False) if quote_result else "",
+        "quote_error": quote_error,
     }
 
 
@@ -2433,6 +2443,14 @@ def _submitted_onchain_config(form: dict[str, str]) -> dict[str, object]:
             submitted[key] = form.get(key, "")
     submitted["enabled"] = _parse_onchain_bool(form, "enabled")
     return submitted
+
+
+def _ensure_onchain_symbol(symbol: str) -> str:
+    normalized_symbol = symbol.strip().upper()
+    symbols = _load_onchain_symbol_mappings()
+    if normalized_symbol not in symbols:
+        raise ValueError(f"标的不存在：{normalized_symbol}")
+    return normalized_symbol
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -2567,6 +2585,54 @@ def onchain_symbol_delete(symbol: str):
     except Exception as exc:
         return _onchain_redirect(error=str(exc))
     return _onchain_redirect(message=f"{normalized_symbol} deleted")
+
+
+@app.get("/onchain/quote/{symbol}", response_class=HTMLResponse)
+def onchain_quote_page(request: Request, symbol: str):
+    try:
+        normalized_symbol = _ensure_onchain_symbol(symbol)
+        context = _onchain_view(quote_symbol=normalized_symbol, quote_amount_usdt="10")
+        status_code = 200
+    except Exception as exc:
+        normalized_symbol = symbol.strip().upper()
+        context = _onchain_view(quote_symbol=normalized_symbol, quote_error=str(exc))
+        status_code = 404
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+        }
+    )
+    return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
+
+
+@app.post("/onchain/quote/{symbol}", response_class=HTMLResponse)
+async def onchain_quote_submit(request: Request, symbol: str):
+    normalized_symbol = symbol.strip().upper()
+    form = await _read_form_data(request)
+    amount_usdt = form.get("amount_usdt", "10").strip() or "10"
+    quote_result = None
+    quote_error = None
+    status_code = 200
+    try:
+        normalized_symbol = _ensure_onchain_symbol(symbol)
+        quote_result = build_quote_payload(normalized_symbol, amount_usdt)
+    except Exception as exc:
+        quote_error = str(exc)
+        status_code = 400
+    context = _onchain_view(
+        quote_symbol=normalized_symbol,
+        quote_amount_usdt=amount_usdt,
+        quote_result=quote_result,
+        quote_error=quote_error,
+    )
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+        }
+    )
+    return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
 
 
 @app.get("/futures", response_class=HTMLResponse)
