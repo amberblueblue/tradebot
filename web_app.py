@@ -59,6 +59,8 @@ from onchain_bot.config_loader import (
     save_onchain_symbols_config,
 )
 from onchain_bot.executable_check import check_onchain_executable
+from onchain_bot.paper_pnl import update_paper_positions_with_latest_quotes
+from onchain_bot.paper_state import get_closed_trades, get_positions
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache
 from onchain_bot.signal_reader import read_signal_for_mapping
 from onchain_bot.status_onchain import build_quote_payload
@@ -2346,6 +2348,58 @@ def _onchain_symbol_rows() -> tuple[list[dict[str, object]], str | None]:
     return rows, None
 
 
+def _minutes_since(timestamp: object) -> float | None:
+    if not isinstance(timestamp, str) or not timestamp:
+        return None
+    try:
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    minutes = (datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds() / 60
+    return round(max(minutes, 0.0), 2)
+
+
+def _onchain_paper_rows() -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    try:
+        mappings = load_onchain_symbols_config()
+    except Exception:
+        mappings = {}
+
+    positions = []
+    for position in get_positions():
+        row = dict(position)
+        mapping = mappings.get(str(row.get("symbol", "")).upper())
+        row["chain_name"] = row.get("chain_name") or (mapping.chain_name if mapping else None)
+        row["latest_quote_price"] = row.get("latest_quote_price") or row.get("last_quote_price")
+        row["holding_minutes"] = _minutes_since(row.get("entry_time"))
+        positions.append(row)
+
+    closed_trades = []
+    for trade in reversed(get_closed_trades()):
+        row = dict(trade)
+        row["holding_minutes"] = _minutes_since(row.get("entry_time"))
+        exit_time = row.get("exit_time")
+        if isinstance(exit_time, str):
+            entry_time = row.get("entry_time")
+            try:
+                entry_dt = datetime.fromisoformat(str(entry_time).replace("Z", "+00:00"))
+                exit_dt = datetime.fromisoformat(exit_time.replace("Z", "+00:00"))
+                if entry_dt.tzinfo is None:
+                    entry_dt = entry_dt.replace(tzinfo=timezone.utc)
+                if exit_dt.tzinfo is None:
+                    exit_dt = exit_dt.replace(tzinfo=timezone.utc)
+                row["holding_minutes"] = round(
+                    max((exit_dt.astimezone(timezone.utc) - entry_dt.astimezone(timezone.utc)).total_seconds(), 0.0) / 60,
+                    2,
+                )
+            except (TypeError, ValueError):
+                pass
+        closed_trades.append(row)
+    return positions, closed_trades
+
+
 def _onchain_view(
     *,
     message: str | None = None,
@@ -2358,6 +2412,7 @@ def _onchain_view(
     quote_error: str | None = None,
 ) -> dict[str, object]:
     symbols, config_error = _onchain_symbol_rows()
+    paper_positions, paper_closed_trades = _onchain_paper_rows()
     if quote_symbol and quote_result:
         quote_status = "ok" if quote_result.get("ok") else "error"
         for symbol in symbols:
@@ -2377,6 +2432,8 @@ def _onchain_view(
     return {
         "symbols": symbols,
         "symbols_count": len(symbols),
+        "paper_positions": paper_positions,
+        "paper_closed_trades": paper_closed_trades,
         "config_error": config_error,
         "message": message,
         "error": error,
@@ -2628,6 +2685,14 @@ def onchain_symbol_delete(symbol: str):
     except Exception as exc:
         return _onchain_redirect(error=str(exc))
     return _onchain_redirect(message=f"{normalized_symbol} deleted")
+
+
+@app.post("/onchain/paper/refresh")
+def onchain_paper_refresh():
+    result = update_paper_positions_with_latest_quotes()
+    if not result.get("ok"):
+        return _onchain_redirect(error=f"Paper 状态刷新失败：{result.get('message') or result.get('error')}")
+    return _onchain_redirect(message=f"Paper 状态已刷新，更新 {len(result.get('updated_symbols', []))} 个持仓")
 
 
 @app.get("/onchain/quote/{symbol}", response_class=HTMLResponse)

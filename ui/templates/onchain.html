@@ -239,6 +239,111 @@
   </div>
 
   <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h2 class="h5 mb-0">Onchain Paper Positions</h2>
+          <form method="post" action="/onchain/paper/refresh">
+            <button class="btn btn-sm btn-outline-primary" type="submit">刷新 Paper 状态</button>
+          </form>
+        </div>
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead>
+              <tr>
+                <th>信号标的</th>
+                <th>代币</th>
+                <th>买入金额</th>
+                <th>买入数量</th>
+                <th>买入价格</th>
+                <th>最新价格</th>
+                <th>未实现盈亏</th>
+                <th>未实现盈亏 %</th>
+                <th>开仓时间</th>
+                <th>持仓分钟数</th>
+                <th>链名称</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for position in paper_positions %}
+              <tr>
+                <td class="fw-semibold">{{ position.symbol }}</td>
+                <td>{{ position.token_symbol }}</td>
+                <td>{{ position.entry_quote_amount }}</td>
+                <td>{{ position.entry_token_amount }}</td>
+                <td>{{ position.entry_price }}</td>
+                <td>{{ position.latest_quote_price or "n/a" }}</td>
+                <td class="{% if position.unrealized_pnl and position.unrealized_pnl > 0 %}text-success{% elif position.unrealized_pnl and position.unrealized_pnl < 0 %}text-danger{% endif %}">
+                  {{ position.unrealized_pnl }}
+                </td>
+                <td class="{% if position.unrealized_pnl_pct and position.unrealized_pnl_pct > 0 %}text-success{% elif position.unrealized_pnl_pct and position.unrealized_pnl_pct < 0 %}text-danger{% endif %}">
+                  {{ position.unrealized_pnl_pct }}
+                </td>
+                <td>{{ position.entry_time }}</td>
+                <td>{{ position.holding_minutes or "n/a" }}</td>
+                <td>{{ position.chain_name or "n/a" }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="11" class="text-secondary">暂无持仓</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Onchain Paper Trade History</h2>
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead>
+              <tr>
+                <th>信号标的</th>
+                <th>开仓价格</th>
+                <th>平仓价格</th>
+                <th>已实现盈亏</th>
+                <th>已实现盈亏 %</th>
+                <th>持仓分钟数</th>
+                <th>开仓时间</th>
+                <th>平仓时间</th>
+                <th>平仓原因</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for trade in paper_closed_trades %}
+              <tr>
+                <td class="fw-semibold">{{ trade.symbol }}</td>
+                <td>{{ trade.entry_price }}</td>
+                <td>{{ trade.exit_price }}</td>
+                <td class="{% if trade.realized_pnl and trade.realized_pnl > 0 %}text-success{% elif trade.realized_pnl and trade.realized_pnl < 0 %}text-danger{% endif %}">
+                  {{ trade.realized_pnl }}
+                </td>
+                <td class="{% if trade.realized_pnl_pct and trade.realized_pnl_pct > 0 %}text-success{% elif trade.realized_pnl_pct and trade.realized_pnl_pct < 0 %}text-danger{% endif %}">
+                  {{ trade.realized_pnl_pct }}
+                </td>
+                <td>{{ trade.holding_minutes or "n/a" }}</td>
+                <td>{{ trade.entry_time }}</td>
+                <td>{{ trade.exit_time }}</td>
+                <td>{{ trade.close_reason or "n/a" }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="9" class="text-secondary">暂无历史交易</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
     {{ mapping_form(form_defaults, "/onchain/symbols/add", "新增映射", "Add Mapping") }}
   </div>
 

@@ -1,73 +1,15 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_PAPER_STATE_PATH = PROJECT_ROOT / "runtime" / "onchain_paper_state.json"
+from onchain_bot.paper_state import load_paper_state, save_paper_state
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _empty_state() -> dict[str, Any]:
-    return {
-        "positions": {},
-        "closed_trades": [],
-    }
-
-
-def load_paper_state(state_path: Path | None = None) -> dict[str, Any]:
-    path = state_path or DEFAULT_PAPER_STATE_PATH
-    if not path.exists():
-        return _empty_state()
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return _empty_state()
-    if not isinstance(payload, dict):
-        return _empty_state()
-    positions = payload.get("positions")
-    closed_trades = payload.get("closed_trades")
-    if not isinstance(positions, dict):
-        positions = {}
-    if not isinstance(closed_trades, list):
-        closed_trades = []
-    return {
-        "positions": positions,
-        "closed_trades": closed_trades,
-    }
-
-
-def save_paper_state(
-    state: dict[str, Any],
-    state_path: Path | None = None,
-) -> dict[str, Any]:
-    path = state_path or DEFAULT_PAPER_STATE_PATH
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False),
-            encoding="utf-8",
-        )
-    except OSError as exc:
-        return {
-            "ok": False,
-            "error": "onchain_paper_state_write_failed",
-            "message": str(exc),
-            "path": str(path),
-        }
-    return {
-        "ok": True,
-        "path": str(path),
-        "positions_count": len(state.get("positions", {})),
-        "closed_trades_count": len(state.get("closed_trades", [])),
-    }
 
 
 def _decimal_from_text(value: Any) -> Decimal | None:
@@ -147,6 +89,7 @@ def open_paper_position(
     position = {
         "symbol": normalized_symbol,
         "source_symbol": getattr(mapping, "source_symbol", normalized_symbol),
+        "chain_name": getattr(mapping, "chain_name", None),
         "chain_id": getattr(mapping, "chain_id", None),
         "token_symbol": getattr(mapping, "token_symbol", None),
         "token_address": getattr(mapping, "token_address", None),
@@ -175,6 +118,7 @@ def close_paper_position(
     symbol: str,
     sell_quote_result: dict[str, Any],
     *,
+    close_reason: str = "futures_signal_close",
     state_path: Path | None = None,
 ) -> dict[str, Any]:
     normalized_symbol = symbol.strip().upper()
@@ -213,6 +157,7 @@ def close_paper_position(
         "exit_time": _now_iso(),
         "realized_pnl": realized_pnl,
         "realized_pnl_pct": realized_pnl_pct,
+        "close_reason": close_reason,
         "sell_quote_mode": "estimated_from_buy_quote",
     }
     positions.pop(normalized_symbol)
