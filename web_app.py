@@ -62,6 +62,7 @@ from onchain_bot.executable_check import check_onchain_executable
 from onchain_bot.paper_pnl import update_paper_positions_with_latest_quotes
 from onchain_bot.paper_state import get_closed_trades, get_positions
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache
+from onchain_bot.run_onchain_paper_once import run_once as run_onchain_paper_once
 from onchain_bot.signal_reader import read_signal_for_mapping
 from onchain_bot.status_onchain import build_quote_payload
 from observability.event_logger import LogRouter, StructuredLogger
@@ -2410,6 +2411,7 @@ def _onchain_view(
     quote_amount_usdt: str = "10",
     quote_result: dict[str, object] | None = None,
     quote_error: str | None = None,
+    paper_run_result: dict[str, object] | None = None,
 ) -> dict[str, object]:
     symbols, config_error = _onchain_symbol_rows()
     paper_positions, paper_closed_trades = _onchain_paper_rows()
@@ -2445,6 +2447,7 @@ def _onchain_view(
         "quote_result": quote_result,
         "quote_result_json": json.dumps(quote_result, indent=2, ensure_ascii=False) if quote_result else "",
         "quote_error": quote_error,
+        "paper_run_result": paper_run_result,
     }
 
 
@@ -2693,6 +2696,37 @@ def onchain_paper_refresh():
     if not result.get("ok"):
         return _onchain_redirect(error=f"Paper 状态刷新失败：{result.get('message') or result.get('error')}")
     return _onchain_redirect(message=f"Paper 状态已刷新，更新 {len(result.get('updated_symbols', []))} 个持仓")
+
+
+@app.post("/onchain/paper/run-once", response_class=HTMLResponse)
+def onchain_paper_run_once(request: Request):
+    status_code = 200
+    try:
+        paper_run_result = run_onchain_paper_once()
+        message = "Onchain Paper 已运行一次"
+        error = None
+    except Exception as exc:
+        paper_run_result = {
+            "actions": [],
+            "positions_count": 0,
+            "closed_trades_count": 0,
+            "errors": [{"error": str(exc)}],
+        }
+        message = None
+        error = f"Onchain Paper 运行失败：{exc}"
+        status_code = 400
+    context = _onchain_view(
+        message=message,
+        error=error,
+        paper_run_result=paper_run_result,
+    )
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+        }
+    )
+    return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
 
 
 @app.get("/onchain/quote/{symbol}", response_class=HTMLResponse)
