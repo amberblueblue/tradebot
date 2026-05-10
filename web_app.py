@@ -63,6 +63,7 @@ from onchain_bot.config_loader import (
 )
 from onchain_bot.executable_check import check_onchain_executable
 from onchain_bot.live_preview import build_live_swap_preview
+from onchain_bot.live_trade_log import load_live_trades
 from onchain_bot.loop_state import load_loop_state
 from onchain_bot.manual_trade_log import add_manual_trade, load_manual_trades, refresh_manual_trade_statuses
 from onchain_bot.paper_pnl import update_paper_positions_with_latest_quotes
@@ -73,7 +74,12 @@ from onchain_bot.live_executor import execute_live_swap, prepare_unsigned_live_t
 from onchain_bot.run_onchain_live_once import run_onchain_live_once
 from onchain_bot.run_onchain_paper_once import run_once as run_onchain_paper_once
 from onchain_bot.signal_reader import read_signal_for_mapping
-from onchain_bot.status_onchain import build_health_payload, build_manual_live_health_payload, build_quote_payload
+from onchain_bot.status_onchain import (
+    build_health_payload,
+    build_manual_live_health_payload,
+    build_quote_payload,
+    refresh_live_trades_payload,
+)
 from onchain_bot.wallet_guard import check_wallet_environment
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
@@ -2541,6 +2547,7 @@ def _onchain_view(
         "onchain_loop_state": load_loop_state(),
         "onchain_paper_summary": load_paper_summary(),
         "manual_trades": load_manual_trades().get("trades", []),
+        "live_trades": load_live_trades().get("trades", []),
         "onchain_session_warning": session_warning,
         "onchain_safety": safety_status_payload(account_equity=None),
         "onchain_settings": load_onchain_settings_config().to_dict(),
@@ -2886,6 +2893,14 @@ def onchain_manual_trade_refresh():
     if not result.get("ok"):
         return _onchain_redirect(error=f"交易状态刷新失败：{result.get('message') or result.get('write_error')}")
     return _onchain_redirect(message=f"交易状态已刷新，更新 {result.get('updated_count', 0)} 笔")
+
+
+@app.post("/onchain/live-trades/refresh")
+def onchain_live_trade_refresh():
+    result = refresh_live_trades_payload()
+    if not result.get("ok"):
+        return _onchain_redirect(error=f"Live Trade 状态刷新失败：{result.get('errors')}")
+    return _onchain_redirect(message=f"Live Trade 状态已刷新，更新 {result.get('updated_count', 0)} 笔")
 
 
 @app.get("/onchain/quote/{symbol}", response_class=HTMLResponse)

@@ -8,7 +8,7 @@ from typing import Any
 from onchain_bot.config_loader import load_onchain_settings_config, load_onchain_symbols_config
 from onchain_bot.executable_check import check_onchain_executable
 from onchain_bot.live_guard import assert_onchain_live_allowed
-from onchain_bot.live_trade_log import append_live_trade
+from onchain_bot.live_trade_log import append_live_trade, write_live_audit
 from onchain_bot.live_transaction_builder import build_unsigned_transactions
 from onchain_bot.okx_dex_client import OkxDexQuoteClient
 from onchain_bot.paper_state import load_paper_state
@@ -112,6 +112,21 @@ def prepare_live_swap(symbol: str, direction: str, amount: str | int | float | D
         f"auto_{normalized_direction}",
         amount_usdt=_guard_amount(normalized_direction, amount_text, quote_result),
     )
+    write_live_audit(
+        "preflight_checks",
+        {
+            "symbol": normalized_symbol,
+            "direction": normalized_direction,
+            "live_guard": {"allowed": guard.get("allowed"), "reason": guard.get("reason")},
+            "risk": {"ok": risk.get("ok"), "reason": risk.get("reason"), "failures": risk.get("failures")},
+            "trade_limits": {
+                "ok": trade_limits.get("ok"),
+                "reason": trade_limits.get("reason"),
+                "failures": trade_limits.get("failures"),
+            },
+            "session_allowed": session.get("session_allowed"),
+        },
+    )
 
     failures: list[str] = []
     warnings: list[str] = []
@@ -147,6 +162,26 @@ def prepare_live_swap(symbol: str, direction: str, amount: str | int | float | D
         )
         if not tx_preview.get("ok"):
             failures.append(str(tx_preview.get("error") or "tx_preview_failed"))
+            write_live_audit(
+                "tx_prepare_failed",
+                {
+                    "symbol": normalized_symbol,
+                    "direction": normalized_direction,
+                    "error": tx_preview.get("error"),
+                    "message": tx_preview.get("message"),
+                },
+            )
+        else:
+            write_live_audit(
+                "tx_prepared",
+                {
+                    "symbol": normalized_symbol,
+                    "direction": normalized_direction,
+                    "has_tx_preview": True,
+                    "from_token_symbol": from_token_symbol,
+                    "to_token_symbol": to_token_symbol,
+                },
+            )
     else:
         print(
             f"[ONCHAIN_TX_PREVIEW] skipped symbol={normalized_symbol} "
@@ -233,6 +268,14 @@ def execute_live_swap(symbol: str, direction: str, amount: str | int | float | D
     settings = load_onchain_settings_config()
     unsigned = prepare_unsigned_live_transactions(symbol, direction, amount)
     if unsigned.get("failures"):
+        write_live_audit(
+            "preflight_failed",
+            {
+                "symbol": unsigned.get("symbol"),
+                "direction": unsigned.get("direction"),
+                "failures": unsigned.get("failures"),
+            },
+        )
         return {
             **unsigned,
             "ok": False,
@@ -240,6 +283,7 @@ def execute_live_swap(symbol: str, direction: str, amount: str | int | float | D
             "tx_hash": None,
         }
     if not settings.live_wallet_signing_enabled:
+        write_live_audit("signing_blocked", {"symbol": unsigned.get("symbol"), "reason": "wallet_signing_not_enabled"})
         return {
             **unsigned,
             "ok": False,
@@ -247,6 +291,7 @@ def execute_live_swap(symbol: str, direction: str, amount: str | int | float | D
             "tx_hash": None,
         }
     if not settings.live_broadcast_enabled:
+        write_live_audit("broadcast_blocked", {"symbol": unsigned.get("symbol"), "reason": "broadcast_not_enabled"})
         return {
             **unsigned,
             "ok": False,
@@ -255,6 +300,7 @@ def execute_live_swap(symbol: str, direction: str, amount: str | int | float | D
         }
     swap_transaction = unsigned.get("swap_transaction")
     if not isinstance(swap_transaction, dict):
+        write_live_audit("tx_prepare_failed", {"symbol": unsigned.get("symbol"), "reason": "swap_tx_data_missing"})
         return {
             **unsigned,
             "ok": False,
@@ -267,6 +313,15 @@ def execute_live_swap(symbol: str, direction: str, amount: str | int | float | D
         action=f"execute_{direction}",
     )
     if not signed.get("ok"):
+        write_live_audit(
+            "tx_sign_failed",
+            {
+                "symbol": unsigned.get("symbol"),
+                "direction": unsigned.get("direction"),
+                "reason": signed.get("reason"),
+                "message": signed.get("message"),
+            },
+        )
         return {
             **unsigned,
             "ok": False,
@@ -274,11 +329,28 @@ def execute_live_swap(symbol: str, direction: str, amount: str | int | float | D
             "sign_result": {key: value for key, value in signed.items() if key != "signed_tx"},
             "tx_hash": None,
         }
+    write_live_audit(
+        "tx_signed",
+        {
+            "symbol": unsigned.get("symbol"),
+            "direction": unsigned.get("direction"),
+            "tx_hash_preview": signed.get("tx_hash_preview"),
+        },
+    )
     broadcast = broadcast_live_transaction(
         signed.get("signed_tx"),
         chain_id=swap_transaction.get("chain_id"),
     )
     if not broadcast.get("ok"):
+        write_live_audit(
+            "tx_broadcast_failed",
+            {
+                "symbol": unsigned.get("symbol"),
+                "direction": unsigned.get("direction"),
+                "reason": broadcast.get("reason"),
+                "message": broadcast.get("message"),
+            },
+        )
         return {
             **unsigned,
             "ok": False,
@@ -287,14 +359,23 @@ def execute_live_swap(symbol: str, direction: str, amount: str | int | float | D
             "tx_hash": None,
         }
     tx_hash = broadcast.get("tx_hash")
+    write_live_audit(
+        "tx_broadcast_success",
+        {
+            "symbol": unsigned.get("symbol"),
+            "direction": unsigned.get("direction"),
+            "tx_hash": tx_hash,
+        },
+    )
     append_live_trade(
         {
             "symbol": unsigned.get("symbol"),
             "direction": unsigned.get("direction"),
+            "chain_id": swap_transaction.get("chain_id"),
             "amount": unsigned.get("amount"),
             "tx_hash": tx_hash,
-            "status": "submitted",
-            "quote": unsigned.get("tx_preview"),
+            "status": "pending",
+            "quote": unsigned.get("quote"),
             "parsed_quote": unsigned.get("parsed_quote"),
             "risk_result": unsigned.get("risk_result"),
         }

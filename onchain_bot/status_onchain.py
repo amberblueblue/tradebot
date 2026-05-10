@@ -14,6 +14,8 @@ if __package__ in {None, ""}:
 from onchain_bot.config_loader import load_onchain_settings_config, load_onchain_symbols_config, onchain_symbols_payload  # noqa: E402
 from onchain_bot.executable_check import check_onchain_executable, quote_is_stale  # noqa: E402
 from onchain_bot.live_guard import assert_onchain_live_allowed  # noqa: E402
+from onchain_bot.live_trade_log import load_live_trades, update_live_trade_status  # noqa: E402
+from onchain_bot.live_tx_status import get_live_tx_status  # noqa: E402
 from onchain_bot.loop_state import load_loop_state  # noqa: E402
 from onchain_bot.manual_trade_log import DEFAULT_MANUAL_TRADES_PATH, load_manual_trades  # noqa: E402
 from onchain_bot.okx_dex_client import OkxDexQuoteClient  # noqa: E402
@@ -65,6 +67,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--manual-trades",
         action="store_true",
         help="Show manually recorded onchain trades.",
+    )
+    parser.add_argument(
+        "--live-trades",
+        action="store_true",
+        help="Show live onchain trades submitted by the guarded live executor.",
+    )
+    parser.add_argument(
+        "--refresh-live-trades",
+        action="store_true",
+        help="Refresh pending live onchain trades from RPC transaction receipts.",
     )
     parser.add_argument(
         "--manual-live-health",
@@ -546,6 +558,50 @@ def build_manual_live_health_payload() -> dict[str, Any]:
     }
 
 
+def refresh_live_trades_payload() -> dict[str, Any]:
+    payload = load_live_trades()
+    trades = [trade for trade in payload.get("trades", []) if isinstance(trade, dict)]
+    items: list[dict[str, Any]] = []
+    updated_count = 0
+    errors: list[dict[str, Any]] = []
+    for trade in trades:
+        status = str(trade.get("status") or "").lower()
+        if status not in {"pending", "submitted"}:
+            continue
+        chain_id = str(trade.get("chain_id") or "")
+        tx_hash = str(trade.get("tx_hash") or "")
+        tx_status = get_live_tx_status(chain_id, tx_hash)
+        item = {
+            "symbol": trade.get("symbol"),
+            "chain_id": chain_id,
+            "tx_hash": tx_hash,
+            "previous_status": status,
+            "tx_status": tx_status,
+        }
+        if tx_status.get("ok"):
+            new_status = str(tx_status.get("status") or "pending")
+            update_result = update_live_trade_status(tx_hash, new_status, tx_status)
+            updated_count += int(update_result.get("updated_count") or 0)
+            item["updated_status"] = new_status
+        else:
+            errors.append(
+                {
+                    "tx_hash": tx_hash,
+                    "reason": tx_status.get("reason"),
+                    "error": tx_status.get("error"),
+                }
+            )
+        items.append(item)
+    return {
+        "ok": not errors,
+        "updated_count": updated_count,
+        "checked_count": len(items),
+        "items": items,
+        "errors": errors,
+        "trades": load_live_trades().get("trades", []),
+    }
+
+
 def main() -> int:
     args = parse_args(sys.argv[1:])
     selected_modes = sum(
@@ -558,6 +614,8 @@ def main() -> int:
             args.quote_cache,
             args.health,
             args.manual_trades,
+            args.live_trades,
+            args.refresh_live_trades,
             args.manual_live_health,
             args.live_guard,
             args.loop_status,
@@ -574,7 +632,8 @@ def main() -> int:
                     "error": "missing_mode",
                     "message": (
                         "use --symbols, --quote, --live-preview, --readiness, --quote-cache, "
-                        "--health, --manual-trades, --manual-live-health, --live-guard, "
+                        "--health, --manual-trades, --live-trades, --refresh-live-trades, "
+                        "--manual-live-health, --live-guard, "
                         "--loop-status, --paper-summary, --wallet-guard, --unsigned-tx, or --tx-status"
                     ),
                 },
@@ -639,6 +698,10 @@ def main() -> int:
             payload = build_health_payload()
         elif args.manual_trades:
             payload = load_manual_trades()
+        elif args.live_trades:
+            payload = load_live_trades()
+        elif args.refresh_live_trades:
+            payload = refresh_live_trades_payload()
         elif args.manual_live_health:
             payload = build_manual_live_health_payload()
         elif args.live_guard:
