@@ -11,6 +11,11 @@ live:
   auto_live_enabled: false
   default_order_amount_usdt: 20
   require_manual_confirm_env: true
+  wallet_signing_enabled: false
+  broadcast_enabled: false
+  require_wallet_env: true
+  max_live_order_usdt: 20
+  max_live_trades_per_day: 3
 
 safety:
   allow_live_trading: false

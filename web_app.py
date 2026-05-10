@@ -69,10 +69,12 @@ from onchain_bot.paper_pnl import update_paper_positions_with_latest_quotes
 from onchain_bot.paper_state import get_closed_trades, get_positions, load_paper_state
 from onchain_bot.paper_summary import load_paper_summary
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache
+from onchain_bot.live_executor import prepare_unsigned_live_transactions
 from onchain_bot.run_onchain_live_once import run_onchain_live_once
 from onchain_bot.run_onchain_paper_once import run_once as run_onchain_paper_once
 from onchain_bot.signal_reader import read_signal_for_mapping
 from onchain_bot.status_onchain import build_health_payload, build_manual_live_health_payload, build_quote_payload
+from onchain_bot.wallet_guard import check_wallet_environment
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
 from runtime.safety import (
@@ -2485,6 +2487,11 @@ def _onchain_view(
     paper_run_result: dict[str, object] | None = None,
     auto_live_result: dict[str, object] | None = None,
     live_settings_error: str | None = None,
+    unsigned_tx_symbol: str | None = None,
+    unsigned_tx_direction: str = "buy",
+    unsigned_tx_amount: str = "20",
+    unsigned_tx_result: dict[str, object] | None = None,
+    unsigned_tx_error: str | None = None,
 ) -> dict[str, object]:
     symbols, config_error = _onchain_symbol_rows()
     paper_positions, paper_closed_trades = _onchain_paper_rows()
@@ -2535,6 +2542,7 @@ def _onchain_view(
         "onchain_session_warning": session_warning,
         "onchain_safety": safety_status_payload(account_equity=None),
         "onchain_settings": load_onchain_settings_config().to_dict(),
+        "wallet_guard": check_wallet_environment(emit_log=False),
         "paper_positions": paper_positions,
         "paper_closed_trades": paper_closed_trades,
         "paper_summary": paper_summary,
@@ -2560,6 +2568,12 @@ def _onchain_view(
         "auto_live_result": auto_live_result,
         "auto_live_result_json": json.dumps(auto_live_result, indent=2, ensure_ascii=False) if auto_live_result else "",
         "live_settings_error": live_settings_error,
+        "unsigned_tx_symbol": unsigned_tx_symbol,
+        "unsigned_tx_direction": unsigned_tx_direction,
+        "unsigned_tx_amount": unsigned_tx_amount,
+        "unsigned_tx_result": unsigned_tx_result,
+        "unsigned_tx_result_json": json.dumps(unsigned_tx_result, indent=2, ensure_ascii=False) if unsigned_tx_result else "",
+        "unsigned_tx_error": unsigned_tx_error,
     }
 
 
@@ -3107,6 +3121,11 @@ async def onchain_live_settings_save(request: Request):
                 live_auto_live_enabled=auto_live_enabled,
                 live_default_order_amount_usdt=default_order_amount,
                 live_require_manual_confirm_env=current.live_require_manual_confirm_env,
+                live_wallet_signing_enabled=False,
+                live_broadcast_enabled=False,
+                live_require_wallet_env=current.live_require_wallet_env,
+                live_max_live_order_usdt=max_live_order,
+                live_max_live_trades_per_day=max_live_trades,
                 safety_allow_live_trading=current.safety_allow_live_trading,
                 safety_live_execute_enabled=current.safety_live_execute_enabled,
                 risk_max_price_impact_pct=current.risk_max_price_impact_pct,
@@ -3146,6 +3165,59 @@ async def onchain_auto_live_check(request: Request):
         }
         status_code = 400
     context = _onchain_view(auto_live_result=result)
+    context.update({"request": request, "project_name": "TraderBot Local Console"})
+    return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
+
+
+@app.get("/onchain/unsigned-tx/{symbol}", response_class=HTMLResponse)
+def onchain_unsigned_tx_page(request: Request, symbol: str):
+    direction = request.query_params.get("direction", "buy").strip().lower() or "buy"
+    amount = "20" if direction != "sell" else "0.1"
+    try:
+        normalized_symbol = _ensure_onchain_symbol(symbol)
+        result = prepare_unsigned_live_transactions(normalized_symbol, direction, amount)
+        context = _onchain_view(
+            unsigned_tx_symbol=normalized_symbol,
+            unsigned_tx_direction=direction,
+            unsigned_tx_amount=amount,
+            unsigned_tx_result=result,
+        )
+        status_code = 200
+    except Exception as exc:
+        normalized_symbol = symbol.strip().upper()
+        context = _onchain_view(
+            unsigned_tx_symbol=normalized_symbol,
+            unsigned_tx_direction=direction,
+            unsigned_tx_amount=amount,
+            unsigned_tx_error=str(exc),
+        )
+        status_code = 400
+    context.update({"request": request, "project_name": "TraderBot Local Console"})
+    return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
+
+
+@app.post("/onchain/unsigned-tx/{symbol}", response_class=HTMLResponse)
+async def onchain_unsigned_tx_submit(request: Request, symbol: str):
+    normalized_symbol = symbol.strip().upper()
+    form = await _read_form_data(request)
+    direction = form.get("direction", "buy").strip().lower() or "buy"
+    amount = form.get("amount", "20").strip() or "20"
+    result = None
+    error = None
+    status_code = 200
+    try:
+        normalized_symbol = _ensure_onchain_symbol(symbol)
+        result = prepare_unsigned_live_transactions(normalized_symbol, direction, amount)
+    except Exception as exc:
+        error = str(exc)
+        status_code = 400
+    context = _onchain_view(
+        unsigned_tx_symbol=normalized_symbol,
+        unsigned_tx_direction=direction,
+        unsigned_tx_amount=amount,
+        unsigned_tx_result=result,
+        unsigned_tx_error=error,
+    )
     context.update({"request": request, "project_name": "TraderBot Local Console"})
     return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
 

@@ -482,11 +482,19 @@
           </div>
           <div class="col-md-3">
             <label class="form-label" for="max-live-order">单笔最大实盘金额 <span class="text-secondary small">max_live_order_usdt</span></label>
-            <input id="max-live-order" name="max_live_order_usdt" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.risk_max_live_order_usdt or 20 }}" required>
+            <input id="max-live-order" name="max_live_order_usdt" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_max_live_order_usdt or 20 }}" required>
           </div>
           <div class="col-md-3">
             <label class="form-label" for="max-live-trades">每日最大实盘次数 <span class="text-secondary small">max_live_trades_per_day</span></label>
-            <input id="max-live-trades" name="max_live_trades_per_day" type="number" min="1" step="1" class="form-control" value="{{ onchain_settings.risk_max_live_trades_per_day or 3 }}" required>
+            <input id="max-live-trades" name="max_live_trades_per_day" type="number" min="1" step="1" class="form-control" value="{{ onchain_settings.live_max_live_trades_per_day or 3 }}" required>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">钱包签名是否启用</div>
+            <div class="form-control bg-body-secondary">{{ onchain_settings.live_wallet_signing_enabled }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">广播交易是否启用</div>
+            <div class="form-control bg-body-secondary">{{ onchain_settings.live_broadcast_enabled }}</div>
           </div>
           <div class="col-md-4">
             <label class="form-label" for="auto-live-confirm">开启二次确认</label>
@@ -534,6 +542,50 @@
           <pre class="bg-light border rounded p-3 mb-0 overflow-auto"><code>{{ auto_live_result_json }}</code></pre>
         </div>
         {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+          <div>
+            <h2 class="h5 mb-1">Wallet / Broadcast Guard</h2>
+            <p class="text-secondary mb-0">只检查环境变量是否存在，不显示私钥，不提供签名或广播按钮。</p>
+          </div>
+          {% if wallet_guard.ready_for_signing %}
+          <span class="badge text-bg-warning">ready</span>
+          {% else %}
+          <span class="badge text-bg-secondary">disabled</span>
+          {% endif %}
+        </div>
+        <div class="row g-3">
+          <div class="col-md-2">
+            <div class="text-secondary small">钱包地址是否配置</div>
+            <div class="fw-semibold">{{ wallet_guard.wallet_address_configured }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">私钥是否配置</div>
+            <div class="fw-semibold">{{ wallet_guard.private_key_configured }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">钱包签名是否启用</div>
+            <div class="fw-semibold">{{ wallet_guard.wallet_signing_enabled }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">广播交易是否启用</div>
+            <div class="fw-semibold">{{ wallet_guard.broadcast_enabled }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">是否允许签名</div>
+            <div class="fw-semibold">{{ wallet_guard.ready_for_signing }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">拒绝原因</div>
+            <div class="fw-semibold">{{ wallet_guard.reason }}</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -677,6 +729,7 @@
                     <a class="btn btn-sm btn-outline-primary" href="/onchain/quote/{{ symbol.symbol }}#onchain-quote">测试报价</a>
                     <a class="btn btn-sm btn-outline-success" href="/onchain/live-preview/{{ symbol.symbol }}?direction=buy#onchain-live-preview">买入预览</a>
                     <a class="btn btn-sm btn-outline-warning" href="/onchain/live-preview/{{ symbol.symbol }}?direction=sell#onchain-live-preview">卖出预览</a>
+                    <a class="btn btn-sm btn-outline-dark" href="/onchain/unsigned-tx/{{ symbol.symbol }}?direction=buy#onchain-unsigned-tx">未签名交易</a>
                     <form method="post" action="/onchain/symbols/{{ symbol.symbol }}/toggle">
                       {% if symbol.enabled %}
                       <button class="btn btn-sm btn-outline-secondary" type="submit">Disable</button>
@@ -1143,6 +1196,82 @@
           <div class="col-12">
             <div class="text-secondary small mb-2">原始报价</div>
             <pre class="bg-light border rounded p-3 mb-0 overflow-auto"><code>{{ quote_result_json }}</code></pre>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if unsigned_tx_symbol %}
+  <div class="col-12" id="onchain-unsigned-tx">
+    <div class="card shadow-sm {% if unsigned_tx_result and unsigned_tx_result.ok %}border-success{% elif unsigned_tx_error or (unsigned_tx_result and not unsigned_tx_result.ok) %}border-danger{% endif %}">
+      <div class="card-body">
+        <h2 class="h5 mb-3">未签名交易对象：{{ unsigned_tx_symbol }}</h2>
+        <form class="row g-3 align-items-end" method="post" action="/onchain/unsigned-tx/{{ unsigned_tx_symbol }}">
+          <div class="col-md-4 col-xl-3">
+            <label class="form-label" for="unsigned-tx-direction">方向 <span class="text-secondary small">direction</span></label>
+            <select id="unsigned-tx-direction" name="direction" class="form-select">
+              <option value="buy" {% if unsigned_tx_direction != "sell" %}selected{% endif %}>买入</option>
+              <option value="sell" {% if unsigned_tx_direction == "sell" %}selected{% endif %}>卖出</option>
+            </select>
+          </div>
+          <div class="col-md-4 col-xl-3">
+            <label class="form-label" for="unsigned-tx-amount">金额 <span class="text-secondary small">amount</span></label>
+            <input id="unsigned-tx-amount" name="amount" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ unsigned_tx_amount or '20' }}" required>
+          </div>
+          <div class="col-md-8 col-xl-6">
+            <button class="btn btn-primary" type="submit">生成未签名交易对象</button>
+            <a class="btn btn-outline-secondary ms-2" href="/onchain">返回</a>
+          </div>
+        </form>
+
+        {% if unsigned_tx_error %}
+        <div class="alert alert-danger mt-3 mb-0">错误信息：{{ unsigned_tx_error }}</div>
+        {% endif %}
+
+        {% if unsigned_tx_result %}
+        <div class="row g-3 mt-3">
+          <div class="col-md-3">
+            <div class="text-secondary small">是否成功</div>
+            <div class="fw-semibold {% if unsigned_tx_result.ok %}text-success{% else %}text-danger{% endif %}">{{ unsigned_tx_result.ok }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">wallet guard</div>
+            <div class="fw-semibold">{{ unsigned_tx_result.wallet_guard.reason }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">broadcast guard</div>
+            <div class="fw-semibold">{{ unsigned_tx_result.broadcast_guard.reason }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">live guard</div>
+            <div class="fw-semibold">{{ unsigned_tx_result.live_guard.reason or "n/a" }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="text-secondary small">失败原因</div>
+            <div class="{% if unsigned_tx_result.failures %}text-danger{% else %}text-secondary{% endif %}">
+              {{ unsigned_tx_result.failures | join(", ") if unsigned_tx_result.failures else "无" }}
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="text-secondary small">警告</div>
+            <div class="{% if unsigned_tx_result.warnings %}text-warning{% else %}text-secondary{% endif %}">
+              {{ unsigned_tx_result.warnings | join(", ") if unsigned_tx_result.warnings else "无" }}
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="text-secondary small mb-2">approve unsigned tx</div>
+            <pre class="bg-light border rounded p-3 mb-0 overflow-auto"><code>{{ unsigned_tx_result.approve_transaction | tojson(indent=2) }}</code></pre>
+          </div>
+          <div class="col-md-6">
+            <div class="text-secondary small mb-2">swap unsigned tx</div>
+            <pre class="bg-light border rounded p-3 mb-0 overflow-auto"><code>{{ unsigned_tx_result.swap_transaction | tojson(indent=2) }}</code></pre>
+          </div>
+          <div class="col-12">
+            <div class="text-secondary small mb-2">原始结果</div>
+            <pre class="bg-light border rounded p-3 mb-0 overflow-auto"><code>{{ unsigned_tx_result_json }}</code></pre>
           </div>
         </div>
         {% endif %}

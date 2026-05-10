@@ -8,6 +8,7 @@ from typing import Any
 from onchain_bot.config_loader import load_onchain_symbols_config
 from onchain_bot.executable_check import check_onchain_executable
 from onchain_bot.live_guard import assert_onchain_live_allowed
+from onchain_bot.live_transaction_builder import build_unsigned_transactions
 from onchain_bot.okx_dex_client import OkxDexQuoteClient
 from onchain_bot.paper_state import load_paper_state
 from onchain_bot.risk import check_onchain_quote_risk
@@ -15,6 +16,7 @@ from onchain_bot.session_filter import get_execution_session_status
 from onchain_bot.signal_reader import read_signal_for_mapping
 from onchain_bot.status_onchain import build_quote_payload
 from onchain_bot.trade_limits import check_onchain_trade_limits
+from onchain_bot.wallet_guard import check_wallet_environment
 
 
 ONCHAIN_WALLET_ADDRESS_ENV = "ONCHAIN_WALLET_ADDRESS"
@@ -178,4 +180,59 @@ def execute_live_swap(*args: Any, **kwargs: Any) -> dict[str, Any]:
         "reason": "wallet_signing_not_implemented",
         "signing": "not_implemented",
         "broadcast": "not_implemented",
+    }
+
+
+def prepare_unsigned_live_transactions(symbol: str, direction: str, amount: str | int | float | Decimal) -> dict[str, Any]:
+    preview = prepare_live_swap(symbol, direction, amount)
+    wallet_guard = check_wallet_environment()
+    live_guard = preview.get("live_guard") if isinstance(preview.get("live_guard"), dict) else {}
+    mapping = preview.get("mapping") if isinstance(preview.get("mapping"), dict) else {}
+    unsigned = build_unsigned_transactions(
+        preview.get("tx_preview") if isinstance(preview.get("tx_preview"), dict) else None,
+        chain_id=str(mapping.get("chain_id") or preview.get("chain_id") or ""),
+        direction=str(preview.get("direction") or direction),
+        symbol=str(preview.get("symbol") or symbol).upper(),
+    )
+    failures = []
+    for source in (preview.get("failures"), unsigned.get("failures")):
+        if isinstance(source, list):
+            failures.extend(str(item) for item in source)
+    warnings = []
+    for source in (preview.get("warnings"), unsigned.get("warnings")):
+        if isinstance(source, list):
+            warnings.extend(str(item) for item in source)
+    return {
+        "ok": bool(preview.get("ok")) and bool(unsigned.get("ok")),
+        "symbol": str(preview.get("symbol") or symbol).upper(),
+        "direction": str(preview.get("direction") or direction),
+        "amount": preview.get("amount"),
+        "approve_transaction": unsigned.get("approve_transaction"),
+        "swap_transaction": unsigned.get("swap_transaction"),
+        "wallet_guard": wallet_guard,
+        "broadcast_guard": {
+            "broadcast_enabled": wallet_guard.get("broadcast_enabled"),
+            "allowed": False,
+            "reason": "broadcast_not_enabled",
+        },
+        "live_guard": live_guard,
+        "tx_preview": preview.get("tx_preview"),
+        "failures": list(dict.fromkeys(failures)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "signing": "not_implemented",
+        "broadcast": "not_implemented",
+    }
+
+
+def sign_live_transaction(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "reason": "wallet_signing_not_enabled",
+    }
+
+
+def broadcast_live_transaction(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "reason": "broadcast_not_enabled",
     }

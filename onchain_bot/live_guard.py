@@ -75,7 +75,7 @@ def assert_onchain_live_allowed(
     settings = load_onchain_settings_config()
     safety = _runtime_safety()
     amount = _amount_decimal(amount_usdt or settings.live_default_order_amount_usdt)
-    max_amount = Decimal(str(settings.risk_max_live_order_usdt))
+    max_amount = min(Decimal(str(settings.live_max_live_order_usdt)), Decimal(str(settings.risk_max_live_order_usdt)))
 
     reason = "ok"
     allowed = True

@@ -24,6 +24,11 @@ class OnchainSettings:
     live_auto_live_enabled: bool
     live_default_order_amount_usdt: float
     live_require_manual_confirm_env: bool
+    live_wallet_signing_enabled: bool
+    live_broadcast_enabled: bool
+    live_require_wallet_env: bool
+    live_max_live_order_usdt: float
+    live_max_live_trades_per_day: int
     safety_allow_live_trading: bool
     safety_live_execute_enabled: bool
     risk_max_price_impact_pct: float
@@ -296,6 +301,19 @@ def load_onchain_settings_config(
             "live",
         ),
         live_require_manual_confirm_env=bool(live.get("require_manual_confirm_env", True)),
+        live_wallet_signing_enabled=bool(live.get("wallet_signing_enabled", False)),
+        live_broadcast_enabled=bool(live.get("broadcast_enabled", False)),
+        live_require_wallet_env=bool(live.get("require_wallet_env", True)),
+        live_max_live_order_usdt=_settings_positive_number(
+            {"max_live_order_usdt": live.get("max_live_order_usdt", risk.get("max_live_order_usdt", 20))},
+            "max_live_order_usdt",
+            "live",
+        ),
+        live_max_live_trades_per_day=_settings_positive_int(
+            {"max_live_trades_per_day": live.get("max_live_trades_per_day", risk.get("max_live_trades_per_day", 3))},
+            "max_live_trades_per_day",
+            "live",
+        ),
         safety_allow_live_trading=_settings_bool(safety, "allow_live_trading", "safety"),
         safety_live_execute_enabled=_settings_bool(safety, "live_execute_enabled", "safety"),
         risk_max_price_impact_pct=_settings_non_negative_number(risk, "max_price_impact_pct", "risk", 1.0),
@@ -357,6 +375,11 @@ def dump_onchain_settings_yaml(settings: OnchainSettings) -> str:
             "auto_live_enabled": settings.live_auto_live_enabled,
             "default_order_amount_usdt": settings.live_default_order_amount_usdt,
             "require_manual_confirm_env": settings.live_require_manual_confirm_env,
+            "wallet_signing_enabled": settings.live_wallet_signing_enabled,
+            "broadcast_enabled": settings.live_broadcast_enabled,
+            "require_wallet_env": settings.live_require_wallet_env,
+            "max_live_order_usdt": settings.live_max_live_order_usdt,
+            "max_live_trades_per_day": settings.live_max_live_trades_per_day,
         },
         "safety": {
             "allow_live_trading": settings.safety_allow_live_trading,
@@ -398,8 +421,9 @@ def save_onchain_settings_config(
     settings_path: Path | None = None,
 ) -> dict[str, Any]:
     path = settings_path or DEFAULT_ONCHAIN_SETTINGS_PATH
-    if settings.live_default_order_amount_usdt > settings.risk_max_live_order_usdt:
-        raise ValueError("live.default_order_amount_usdt cannot exceed risk.max_live_order_usdt")
+    hard_max = min(settings.live_max_live_order_usdt, settings.risk_max_live_order_usdt)
+    if settings.live_default_order_amount_usdt > hard_max:
+        raise ValueError("live.default_order_amount_usdt cannot exceed max_live_order_usdt")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dump_onchain_settings_yaml(settings), encoding="utf-8")
     return {

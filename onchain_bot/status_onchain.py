@@ -22,6 +22,7 @@ from onchain_bot.paper_summary import load_paper_summary  # noqa: E402
 from onchain_bot.quote_cache import DEFAULT_QUOTE_CACHE_PATH, get_cached_quote, load_quote_cache  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
 from onchain_bot.tx_status import get_tx_status  # noqa: E402
+from onchain_bot.wallet_guard import check_wallet_environment  # noqa: E402
 from runtime.safety import load_runtime_safety_config  # noqa: E402
 
 
@@ -84,6 +85,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--paper-summary",
         action="store_true",
         help="Show daily Onchain paper loop and action summary.",
+    )
+    parser.add_argument(
+        "--wallet-guard",
+        action="store_true",
+        help="Show wallet signing and broadcast guard status without exposing secrets.",
+    )
+    parser.add_argument(
+        "--unsigned-tx",
+        metavar="SYMBOL",
+        help="Build normalized unsigned live transaction objects from tx preview.",
     )
     parser.add_argument(
         "--tx-status",
@@ -548,6 +559,8 @@ def main() -> int:
             args.live_guard,
             args.loop_status,
             args.paper_summary,
+            args.wallet_guard,
+            args.unsigned_tx,
             args.tx_status,
         )
     )
@@ -559,7 +572,7 @@ def main() -> int:
                     "message": (
                         "use --symbols, --quote, --live-preview, --readiness, --quote-cache, "
                         "--health, --manual-trades, --manual-live-health, --live-guard, "
-                        "--loop-status, --paper-summary, or --tx-status"
+                        "--loop-status, --paper-summary, --wallet-guard, --unsigned-tx, or --tx-status"
                     ),
                 },
                 indent=2,
@@ -578,6 +591,25 @@ def main() -> int:
             print(
                 json.dumps(
                     {"error": "missing_amount", "message": "--live-preview --direction buy requires --amount-usdt"},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+    if args.unsigned_tx:
+        if args.direction == "buy" and args.amount_usdt is None:
+            print(
+                json.dumps(
+                    {"error": "missing_amount", "message": "--unsigned-tx --direction buy requires --amount-usdt"},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        if args.direction == "sell" and args.amount_token is None:
+            print(
+                json.dumps(
+                    {"error": "missing_amount", "message": "--unsigned-tx --direction sell requires --amount-token"},
                     indent=2,
                     sort_keys=True,
                 )
@@ -612,6 +644,13 @@ def main() -> int:
             payload = load_loop_state()
         elif args.paper_summary:
             payload = load_paper_summary()
+        elif args.wallet_guard:
+            payload = check_wallet_environment(emit_log=False)
+        elif args.unsigned_tx:
+            from onchain_bot.live_executor import prepare_unsigned_live_transactions
+
+            amount = args.amount_usdt if args.direction == "buy" else args.amount_token
+            payload = prepare_unsigned_live_transactions(args.unsigned_tx, args.direction, amount)
         elif args.tx_status:
             payload = get_tx_status(args.tx_status[0], args.tx_status[1])
         elif args.live_preview:
