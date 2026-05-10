@@ -35,6 +35,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Run an OKX DEX quote-only query for a mapped symbol.",
     )
     parser.add_argument(
+        "--live-preview",
+        metavar="SYMBOL",
+        help="Run an Onchain live swap preview dry run for a mapped symbol.",
+    )
+    parser.add_argument(
         "--readiness",
         action="store_true",
         help="Show onchain mapping readiness with cached Futures signals.",
@@ -53,6 +58,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--amount-usdt",
         type=str,
         help="Quote token amount, currently intended for USDC/USDT stablecoin quotes.",
+    )
+    parser.add_argument(
+        "--amount-token",
+        type=str,
+        help="Target token amount for sell live preview dry runs.",
     )
     parser.add_argument(
         "--direction",
@@ -374,13 +384,16 @@ def build_health_payload() -> dict[str, Any]:
 
 def main() -> int:
     args = parse_args(sys.argv[1:])
-    selected_modes = sum(bool(mode) for mode in (args.symbols, args.quote, args.readiness, args.quote_cache, args.health))
+    selected_modes = sum(
+        bool(mode)
+        for mode in (args.symbols, args.quote, args.live_preview, args.readiness, args.quote_cache, args.health)
+    )
     if selected_modes == 0:
         print(
             json.dumps(
                 {
                     "error": "missing_mode",
-                    "message": "use --symbols, --quote, --readiness, --quote-cache, or --health",
+                    "message": "use --symbols, --quote, --live-preview, --readiness, --quote-cache, or --health",
                 },
                 indent=2,
                 sort_keys=True,
@@ -393,6 +406,25 @@ def main() -> int:
     if args.quote and args.amount_usdt is None:
         print(json.dumps({"error": "missing_amount", "message": "--quote requires --amount-usdt"}, indent=2, sort_keys=True))
         return 1
+    if args.live_preview:
+        if args.direction == "buy" and args.amount_usdt is None:
+            print(
+                json.dumps(
+                    {"error": "missing_amount", "message": "--live-preview --direction buy requires --amount-usdt"},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        if args.direction == "sell" and args.amount_token is None:
+            print(
+                json.dumps(
+                    {"error": "missing_amount", "message": "--live-preview --direction sell requires --amount-token"},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
 
     try:
         if args.symbols:
@@ -403,6 +435,11 @@ def main() -> int:
             payload = load_quote_cache()
         elif args.health:
             payload = build_health_payload()
+        elif args.live_preview:
+            from onchain_bot.live_preview import build_live_swap_preview
+
+            amount = args.amount_usdt if args.direction == "buy" else args.amount_token
+            payload = build_live_swap_preview(args.live_preview, args.direction, amount)
         else:
             payload = build_quote_payload(args.quote, args.amount_usdt, direction=args.direction)
     except Exception as exc:

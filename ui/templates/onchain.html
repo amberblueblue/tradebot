@@ -376,6 +376,8 @@
                   <div class="d-flex justify-content-end gap-2">
                     <a class="btn btn-sm btn-outline-secondary" href="/onchain/symbols/{{ symbol.symbol }}/edit#onchain-edit">Edit</a>
                     <a class="btn btn-sm btn-outline-primary" href="/onchain/quote/{{ symbol.symbol }}#onchain-quote">测试报价</a>
+                    <a class="btn btn-sm btn-outline-success" href="/onchain/live-preview/{{ symbol.symbol }}?direction=buy#onchain-live-preview">买入预览</a>
+                    <a class="btn btn-sm btn-outline-warning" href="/onchain/live-preview/{{ symbol.symbol }}?direction=sell#onchain-live-preview">卖出预览</a>
                     <form method="post" action="/onchain/symbols/{{ symbol.symbol }}/toggle">
                       {% if symbol.enabled %}
                       <button class="btn btn-sm btn-outline-secondary" type="submit">Disable</button>
@@ -759,6 +761,125 @@
           <div class="col-12">
             <div class="text-secondary small mb-2">原始报价</div>
             <pre class="bg-light border rounded p-3 mb-0 overflow-auto"><code>{{ quote_result_json }}</code></pre>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if live_preview_symbol %}
+  <div class="col-12" id="onchain-live-preview">
+    <div class="card shadow-sm {% if live_preview_result and live_preview_result.ok %}border-success{% elif live_preview_error or (live_preview_result and not live_preview_result.ok) %}border-danger{% endif %}">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Onchain Live Preview：{{ live_preview_symbol }}</h2>
+        <form class="row g-3 align-items-end" method="post" action="/onchain/live-preview/{{ live_preview_symbol }}">
+          <div class="col-md-4 col-xl-3">
+            <label class="form-label" for="live-preview-direction">方向 <span class="text-secondary small">direction</span></label>
+            <select id="live-preview-direction" name="direction" class="form-select">
+              <option value="buy" {% if live_preview_direction != "sell" %}selected{% endif %}>买入预览</option>
+              <option value="sell" {% if live_preview_direction == "sell" %}selected{% endif %}>卖出预览</option>
+            </select>
+          </div>
+          <div class="col-md-4 col-xl-3">
+            <label class="form-label" for="live-preview-amount">金额 <span class="text-secondary small">amount</span></label>
+            <input id="live-preview-amount" name="amount" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ live_preview_amount or '20' }}" required>
+          </div>
+          <div class="col-md-8 col-xl-6">
+            <button class="btn btn-primary" type="submit">生成预览</button>
+            <a class="btn btn-outline-secondary ms-2" href="/onchain">返回</a>
+          </div>
+        </form>
+
+        {% if live_preview_error %}
+        <div class="alert alert-danger mt-3 mb-0">错误信息：{{ live_preview_error }}</div>
+        {% endif %}
+
+        {% if live_preview_result %}
+        {% set preview = live_preview_result %}
+        {% set parsed = preview.parsed_quote or {} %}
+        <div class="row g-3 mt-3">
+          <div class="col-md-3">
+            <div class="text-secondary small">方向</div>
+            <div class="fw-semibold">{{ preview.direction }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">金额</div>
+            <div class="fw-semibold">{{ preview.amount }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">合约信号</div>
+            <div class="fw-semibold">{{ preview.futures_signal.action or "n/a" }}</div>
+            <div class="text-secondary small">{{ preview.futures_signal.reason or preview.futures_signal.error or "" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">是否允许进入手动交易下一步</div>
+            {% if preview.can_continue_to_manual_swap %}
+            <div class="fw-semibold text-success">true</div>
+            {% else %}
+            <div class="fw-semibold text-danger">false</div>
+            {% endif %}
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">准备状态</div>
+            <div class="fw-semibold {% if preview.readiness.executable %}text-success{% else %}text-danger{% endif %}">
+              {{ "通过" if preview.readiness.executable else "失败" }}
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">风控状态</div>
+            <div class="fw-semibold {% if preview.risk.ok %}text-success{% else %}text-danger{% endif %}">
+              {{ preview.risk.reason or "ok" }}
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">安全状态</div>
+            <div class="fw-semibold {% if preview.safety.ok %}text-success{% else %}text-danger{% endif %}">
+              {{ "通过" if preview.safety.ok else "失败" }}
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">是否在执行时段</div>
+            <div class="fw-semibold {% if preview.session.session_allowed %}text-success{% else %}text-warning{% endif %}">
+              {{ preview.session.session_allowed }}
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">支付金额</div>
+            <div class="fw-semibold">{{ parsed.from_amount_display or "n/a" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">预计获得数量</div>
+            <div class="fw-semibold">{{ parsed.to_amount_display or "n/a" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">价格冲击</div>
+            <div class="fw-semibold">{{ parsed.price_impact_pct or "n/a" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">Gas raw</div>
+            <div class="fw-semibold">{{ parsed.estimated_gas_raw or "n/a" }}</div>
+          </div>
+          <div class="col-12">
+            <div class="text-secondary small">报价详情</div>
+            <div class="fw-semibold">{{ parsed.route or "n/a" }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="text-secondary small">失败原因</div>
+            <div class="{% if preview.failures %}text-danger{% else %}text-secondary{% endif %}">
+              {{ preview.failures | join(", ") if preview.failures else "无" }}
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="text-secondary small">警告</div>
+            <div class="{% if preview.warnings %}text-warning{% else %}text-secondary{% endif %}">
+              {{ preview.warnings | join(", ") if preview.warnings else "无" }}
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="text-secondary small mb-2">Dry Run 原始结果</div>
+            <pre class="bg-light border rounded p-3 mb-0 overflow-auto"><code>{{ live_preview_result_json }}</code></pre>
           </div>
         </div>
         {% endif %}

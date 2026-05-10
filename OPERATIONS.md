@@ -35,11 +35,14 @@ python3 onchain_bot/status_onchain.py --symbols
 python3 onchain_bot/status_onchain.py --readiness
 python3 onchain_bot/status_onchain.py --quote-cache
 python3 onchain_bot/status_onchain.py --health
+python3 onchain_bot/status_onchain.py --live-preview GOOGLUSDT --direction buy --amount-usdt 20
+python3 onchain_bot/status_onchain.py --live-preview GOOGLUSDT --direction sell --amount-token 0.1
 python3 onchain_bot/run_onchain_paper_once.py
 python3 onchain_bot/run_onchain_paper_loop.py
 ```
 
 Onchain 当前只允许 quote + paper，不支持 approve/swap/sign/broadcast。
+Onchain Live Preview 当前只是 dry run：不会签名，不会交易，不会生成 approve/swap 交易，真实 swap 仍未实现。
 
 ## Prod 启动 / 停止 / 状态
 

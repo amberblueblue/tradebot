@@ -60,6 +60,7 @@ from onchain_bot.config_loader import (
     save_onchain_symbols_config,
 )
 from onchain_bot.executable_check import check_onchain_executable
+from onchain_bot.live_preview import build_live_swap_preview
 from onchain_bot.paper_pnl import update_paper_positions_with_latest_quotes
 from onchain_bot.paper_state import get_closed_trades, get_positions, load_paper_state
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache
@@ -2470,6 +2471,11 @@ def _onchain_view(
     quote_direction: str = "buy",
     quote_result: dict[str, object] | None = None,
     quote_error: str | None = None,
+    live_preview_symbol: str | None = None,
+    live_preview_direction: str = "buy",
+    live_preview_amount: str = "20",
+    live_preview_result: dict[str, object] | None = None,
+    live_preview_error: str | None = None,
     paper_run_result: dict[str, object] | None = None,
 ) -> dict[str, object]:
     symbols, config_error = _onchain_symbol_rows()
@@ -2531,6 +2537,12 @@ def _onchain_view(
         "quote_result": quote_result,
         "quote_result_json": json.dumps(quote_result, indent=2, ensure_ascii=False) if quote_result else "",
         "quote_error": quote_error,
+        "live_preview_symbol": live_preview_symbol,
+        "live_preview_direction": live_preview_direction,
+        "live_preview_amount": live_preview_amount,
+        "live_preview_result": live_preview_result,
+        "live_preview_result_json": json.dumps(live_preview_result, indent=2, ensure_ascii=False) if live_preview_result else "",
+        "live_preview_error": live_preview_error,
         "paper_run_result": paper_run_result,
     }
 
@@ -2860,6 +2872,69 @@ async def onchain_quote_submit(request: Request, symbol: str):
         quote_direction=quote_direction,
         quote_result=quote_result,
         quote_error=quote_error,
+    )
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+        }
+    )
+    return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
+
+
+@app.get("/onchain/live-preview/{symbol}", response_class=HTMLResponse)
+def onchain_live_preview_page(request: Request, symbol: str):
+    direction = request.query_params.get("direction", "buy").strip().lower() or "buy"
+    amount = "20" if direction != "sell" else "0.1"
+    try:
+        normalized_symbol = _ensure_onchain_symbol(symbol)
+        preview_result = build_live_swap_preview(normalized_symbol, direction, amount)
+        context = _onchain_view(
+            live_preview_symbol=normalized_symbol,
+            live_preview_direction=direction,
+            live_preview_amount=amount,
+            live_preview_result=preview_result,
+        )
+        status_code = 200
+    except Exception as exc:
+        normalized_symbol = symbol.strip().upper()
+        context = _onchain_view(
+            live_preview_symbol=normalized_symbol,
+            live_preview_direction=direction,
+            live_preview_amount=amount,
+            live_preview_error=str(exc),
+        )
+        status_code = 404
+    context.update(
+        {
+            "request": request,
+            "project_name": "TraderBot Local Console",
+        }
+    )
+    return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
+
+
+@app.post("/onchain/live-preview/{symbol}", response_class=HTMLResponse)
+async def onchain_live_preview_submit(request: Request, symbol: str):
+    normalized_symbol = symbol.strip().upper()
+    form = await _read_form_data(request)
+    direction = form.get("direction", "buy").strip().lower() or "buy"
+    amount = form.get("amount", "20").strip() or "20"
+    preview_result = None
+    preview_error = None
+    status_code = 200
+    try:
+        normalized_symbol = _ensure_onchain_symbol(symbol)
+        preview_result = build_live_swap_preview(normalized_symbol, direction, amount)
+    except Exception as exc:
+        preview_error = str(exc)
+        status_code = 400
+    context = _onchain_view(
+        live_preview_symbol=normalized_symbol,
+        live_preview_direction=direction,
+        live_preview_amount=amount,
+        live_preview_result=preview_result,
+        live_preview_error=preview_error,
     )
     context.update(
         {
