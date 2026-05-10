@@ -10,11 +10,13 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from onchain_bot.config_loader import load_onchain_symbols_config, onchain_symbols_payload  # noqa: E402
+from onchain_bot.config_loader import load_onchain_settings_config, load_onchain_symbols_config, onchain_symbols_payload  # noqa: E402
 from onchain_bot.executable_check import check_onchain_executable, quote_is_stale  # noqa: E402
 from onchain_bot.okx_dex_client import OkxDexQuoteClient  # noqa: E402
-from onchain_bot.quote_cache import get_cached_quote, load_quote_cache  # noqa: E402
+from onchain_bot.paper_state import DEFAULT_PAPER_STATE_PATH, load_paper_state  # noqa: E402
+from onchain_bot.quote_cache import DEFAULT_QUOTE_CACHE_PATH, get_cached_quote, load_quote_cache  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
+from runtime.safety import load_runtime_safety_config  # noqa: E402
 
 
 SUPPORTED_QUOTE_TOKENS = {"USDC", "USDT"}
@@ -41,6 +43,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--quote-cache",
         action="store_true",
         help="Show cached onchain quote results.",
+    )
+    parser.add_argument(
+        "--health",
+        action="store_true",
+        help="Show Onchain paper, risk, quote cache, and safety health.",
     )
     parser.add_argument(
         "--amount-usdt",
@@ -231,15 +238,149 @@ def build_readiness_payload() -> dict[str, Any]:
     }
 
 
+def _is_zero_address(value: str | None) -> bool:
+    return not value or value.lower() == "0x0000000000000000000000000000000000000000"
+
+
+def _json_file_corrupt(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return True
+    return not isinstance(payload, dict)
+
+
+def _quote_cache_items(cache: dict[str, Any]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for symbol, entry in cache.items():
+        if not isinstance(entry, dict):
+            continue
+        if isinstance(entry.get("buy"), dict) or isinstance(entry.get("sell"), dict):
+            for direction in ("buy", "sell"):
+                quote = entry.get(direction)
+                if isinstance(quote, dict):
+                    items.append({"symbol": symbol, "direction": direction, **quote})
+        else:
+            items.append({"symbol": symbol, "direction": str(entry.get("direction") or "buy"), **entry})
+    return items
+
+
+def build_health_payload() -> dict[str, Any]:
+    ok = True
+    warnings: list[str] = []
+    risk_errors: list[str] = []
+    symbols_count = 0
+    enabled_symbols_count = 0
+
+    try:
+        symbols = load_onchain_symbols_config()
+        symbols_count = len(symbols)
+        enabled_symbols = [item for item in symbols.values() if item.enabled]
+        enabled_symbols_count = len(enabled_symbols)
+        for symbol_config in enabled_symbols:
+            if _is_zero_address(symbol_config.token_address):
+                ok = False
+                risk_errors.append(f"{symbol_config.symbol}: token_address_missing")
+            if _is_zero_address(symbol_config.quote_token_address):
+                ok = False
+                risk_errors.append(f"{symbol_config.symbol}: quote_token_address_missing")
+        if enabled_symbols_count == 0:
+            warnings.append("no_enabled_symbols")
+    except Exception as exc:
+        ok = False
+        symbols = {}
+        risk_errors.append(f"onchain_symbols_error: {exc}")
+
+    try:
+        load_onchain_settings_config()
+        risk_configured = True
+    except Exception as exc:
+        ok = False
+        risk_configured = False
+        risk_errors.append(f"onchain_settings_error: {exc}")
+
+    quote_cache_corrupt = _json_file_corrupt(DEFAULT_QUOTE_CACHE_PATH)
+    if quote_cache_corrupt:
+        ok = False
+        quote_items: list[dict[str, Any]] = []
+        risk_errors.append("quote_cache_corrupt")
+    else:
+        quote_items = _quote_cache_items(load_quote_cache())
+    stale_count = sum(1 for item in quote_items if quote_is_stale(item))
+    if not quote_items:
+        warnings.append("quote_cache_empty")
+    if stale_count:
+        warnings.append("quote_stale")
+
+    paper_state_corrupt = _json_file_corrupt(DEFAULT_PAPER_STATE_PATH)
+    if paper_state_corrupt:
+        ok = False
+        paper_state = {"positions": {}, "closed_trades": [], "daily_stats": {}}
+        risk_errors.append("paper_state_corrupt")
+    else:
+        paper_state = load_paper_state()
+    positions = paper_state.get("positions", {})
+    closed_trades = paper_state.get("closed_trades", [])
+    daily_stats = paper_state.get("daily_stats", {})
+
+    try:
+        safety = load_runtime_safety_config()
+        safety_payload = {
+            "global_kill_switch": safety.global_kill_switch,
+            "onchain_paper_enabled": safety.onchain_paper_enabled,
+            "onchain_trading_enabled": safety.onchain_trading_enabled,
+            "onchain_kill_switch": safety.onchain_kill_switch,
+        }
+        if not safety.onchain_paper_enabled:
+            warnings.append("onchain_paper_disabled")
+        if safety.onchain_kill_switch:
+            warnings.append("onchain_kill_switch_enabled")
+        if safety.onchain_trading_enabled:
+            warnings.append("onchain_trading_enabled_true")
+    except Exception as exc:
+        ok = False
+        safety_payload = {
+            "global_kill_switch": None,
+            "onchain_paper_enabled": None,
+            "onchain_trading_enabled": None,
+            "onchain_kill_switch": None,
+        }
+        risk_errors.append(f"runtime_safety_error: {exc}")
+
+    return {
+        "ok": ok,
+        "symbols_count": symbols_count,
+        "enabled_symbols_count": enabled_symbols_count,
+        "quote_cache": {
+            "items_count": len(quote_items),
+            "stale_count": stale_count,
+        },
+        "paper": {
+            "positions_count": len(positions) if isinstance(positions, dict) else 0,
+            "closed_trades_count": len(closed_trades) if isinstance(closed_trades, list) else 0,
+            "daily_opens_count": daily_stats.get("opens_count", 0) if isinstance(daily_stats, dict) else 0,
+            "daily_closes_count": daily_stats.get("closes_count", 0) if isinstance(daily_stats, dict) else 0,
+        },
+        "safety": safety_payload,
+        "risk": {
+            "configured": risk_configured,
+            "errors": risk_errors,
+        },
+        "warnings": list(dict.fromkeys(warnings)),
+    }
+
+
 def main() -> int:
     args = parse_args(sys.argv[1:])
-    selected_modes = sum(bool(mode) for mode in (args.symbols, args.quote, args.readiness, args.quote_cache))
+    selected_modes = sum(bool(mode) for mode in (args.symbols, args.quote, args.readiness, args.quote_cache, args.health))
     if selected_modes == 0:
         print(
             json.dumps(
                 {
                     "error": "missing_mode",
-                    "message": "use --symbols, --quote, --readiness, or --quote-cache",
+                    "message": "use --symbols, --quote, --readiness, --quote-cache, or --health",
                 },
                 indent=2,
                 sort_keys=True,
@@ -260,6 +401,8 @@ def main() -> int:
             payload = build_readiness_payload()
         elif args.quote_cache:
             payload = load_quote_cache()
+        elif args.health:
+            payload = build_health_payload()
         else:
             payload = build_quote_payload(args.quote, args.amount_usdt, direction=args.direction)
     except Exception as exc:

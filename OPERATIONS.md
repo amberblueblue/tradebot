@@ -28,6 +28,19 @@ python3 status.py
 python3 futures_bot/status_futures.py --strategy-signal BIOUSDT
 ```
 
+Onchain 状态与 Paper 命令：
+
+```bash
+python3 onchain_bot/status_onchain.py --symbols
+python3 onchain_bot/status_onchain.py --readiness
+python3 onchain_bot/status_onchain.py --quote-cache
+python3 onchain_bot/status_onchain.py --health
+python3 onchain_bot/run_onchain_paper_once.py
+python3 onchain_bot/run_onchain_paper_loop.py
+```
+
+Onchain 当前只允许 quote + paper，不支持 approve/swap/sign/broadcast。
+
 ## Prod 启动 / 停止 / 状态
 
 ```bash
@@ -100,4 +113,3 @@ bash scripts/stop_prod.sh
 bash scripts/install_launchd.sh
 bash scripts/status_prod.sh
 ```
-

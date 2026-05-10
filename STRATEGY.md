@@ -219,6 +219,31 @@ FUTURES_RSI_OVERHEAT_PARTIAL
 FUTURES_MACD_BEAR_DIV_PARTIAL
 ```
 
+## Onchain Bot 当前阶段
+
+Onchain Bot 目前只处于 quote + paper 阶段，用来验证 Binance Futures 信号和链上 token 映射是否能形成可执行的模拟流程。
+
+当前支持：
+
+- OKX DEX quote-only 查询。
+- Onchain token mapping 手动配置。
+- 使用 Futures signal 作为信号源。
+- Onchain Paper open/close 模拟。
+- Quote cache、readiness、health 状态检查。
+- 美股常规交易时段过滤，`us_regular` 只允许在 America/New_York 09:30-16:00 执行 paper。
+- Onchain 专属 quote/risk/trade-limit/safety 检查。
+
+当前不支持：
+
+- 不支持真实 swap。
+- 不支持 approve。
+- 不保存私钥。
+- 不读取 seed phrase。
+- 不做钱包签名。
+- 不广播链上交易。
+
+真实链上交易必须进入后续阶段后再设计和验收。当前所有 Onchain 执行都必须保持 paper-only。
+
 相关参数：
 
 - `rsi_overheat`
@@ -338,4 +363,3 @@ symbol 级参数 > 全局参数 > 代码默认值
 ```
 
 symbol override 只建议用于特殊标的。常规策略调参应优先改全局配置。
-
