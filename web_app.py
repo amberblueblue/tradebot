@@ -2300,6 +2300,7 @@ def _onchain_form_defaults() -> dict[str, object]:
         "enabled": False,
         "signal_source": "futures",
         "source_symbol": "",
+        "execution_session_filter": "us_regular",
         "chain_name": "ethereum",
         "chain_id": "1",
         "token_name": "",
@@ -2352,6 +2353,9 @@ def _onchain_symbol_rows() -> tuple[list[dict[str, object]], str | None]:
                 "cached_quote_amount_usdt": cached_quote.get("amount_usdt") if cached_quote else None,
                 "executable": executable_check["executable"],
                 "executable_reasons": executable_check["reasons"],
+                "session_allowed": executable_check["session_allowed"],
+                "session_name": executable_check["session_name"],
+                "session_time_now": executable_check["session_time_now"],
             }
         )
         rows.append(row)
@@ -2458,9 +2462,14 @@ def _onchain_view(
                 symbol["executable"] = executable_check["executable"]
                 symbol["executable_reasons"] = executable_check["reasons"]
                 break
+    session_warning = any(
+        row.get("execution_session_filter") == "us_regular" and not row.get("session_allowed", True)
+        for row in symbols
+    )
     return {
         "symbols": symbols,
         "symbols_count": len(symbols),
+        "onchain_session_warning": session_warning,
         "paper_positions": paper_positions,
         "paper_closed_trades": paper_closed_trades,
         "config_error": config_error,
@@ -2544,6 +2553,7 @@ def _onchain_config_from_form(form: dict[str, str]) -> dict[str, object]:
         "enabled": _parse_onchain_bool(form, "enabled"),
         "signal_source": "futures",
         "source_symbol": symbol,
+        "execution_session_filter": form.get("execution_session_filter", "us_regular").strip() or "us_regular",
         "chain_name": form.get("chain_name", "").strip(),
         "chain_id": form.get("chain_id", "").strip(),
         "token_name": form.get("token_name", "").strip(),

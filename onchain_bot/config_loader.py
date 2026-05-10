@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from futures_bot.config_loader import load_yaml_mapping
+from onchain_bot.session_filter import ALLOWED_EXECUTION_SESSION_FILTERS
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -33,6 +34,7 @@ class OnchainSymbolConfig:
     enabled: bool
     signal_source: str
     source_symbol: str
+    execution_session_filter: str
     chain_name: str
     chain_id: str
     token_symbol: str
@@ -112,6 +114,17 @@ def _validate_address(value: str, field_name: str, symbol: str) -> str:
     return value
 
 
+def _optional_execution_session_filter(raw: dict[str, Any], symbol: str) -> str:
+    value = raw.get("execution_session_filter", "us_regular")
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"symbols.{symbol}.execution_session_filter must be a non-empty string")
+    normalized = value.strip().lower()
+    if normalized not in ALLOWED_EXECUTION_SESSION_FILTERS:
+        allowed = ", ".join(ALLOWED_EXECUTION_SESSION_FILTERS)
+        raise ValueError(f"symbols.{symbol}.execution_session_filter must be one of: {allowed}")
+    return normalized
+
+
 def _validate_symbol_config(symbol: str, raw_config: Any) -> OnchainSymbolConfig:
     if not isinstance(symbol, str) or not symbol:
         raise ValueError("symbols keys must be non-empty strings")
@@ -129,6 +142,7 @@ def _validate_symbol_config(symbol: str, raw_config: Any) -> OnchainSymbolConfig
         enabled=_require_bool(raw, "enabled", normalized_symbol),
         signal_source=_require_string(raw, "signal_source", normalized_symbol),
         source_symbol=source_symbol,
+        execution_session_filter=_optional_execution_session_filter(raw, normalized_symbol),
         chain_name=_require_string(raw, "chain_name", normalized_symbol),
         chain_id=_require_string(raw, "chain_id", normalized_symbol),
         token_symbol=_require_string(raw, "token_symbol", normalized_symbol),
@@ -240,6 +254,7 @@ def dump_onchain_symbols_yaml(symbols: dict[str, OnchainSymbolConfig]) -> str:
                 f"    enabled: {_format_yaml_scalar(symbol_config.enabled)}",
                 f"    signal_source: {_format_yaml_scalar(symbol_config.signal_source)}",
                 f"    source_symbol: {_format_yaml_scalar(symbol_config.source_symbol)}",
+                f"    execution_session_filter: {_format_yaml_scalar(symbol_config.execution_session_filter)}",
                 f"    chain_name: {_format_yaml_scalar(symbol_config.chain_name)}",
                 f"    chain_id: {_format_yaml_scalar(symbol_config.chain_id)}",
                 f"    token_symbol: {_format_yaml_scalar(symbol_config.token_symbol)}",

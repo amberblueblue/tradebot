@@ -16,6 +16,7 @@ from onchain_bot.executable_check import quote_is_stale  # noqa: E402
 from onchain_bot.paper_state import load_paper_state  # noqa: E402
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache  # noqa: E402
 from onchain_bot.run_onchain_paper_once import run_once  # noqa: E402
+from onchain_bot.session_filter import get_execution_session_status  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
 from onchain_bot.status_onchain import build_quote_payload  # noqa: E402
 
@@ -120,6 +121,20 @@ def run_loop_iteration() -> dict[str, Any]:
     }
     preflight: dict[str, dict[str, Any]] = {}
     for symbol, mapping in enabled_symbols.items():
+        session_status = get_execution_session_status(mapping.execution_session_filter)
+        if not session_status["session_allowed"]:
+            preflight[symbol] = {
+                "symbol": symbol,
+                "futures_signal": None,
+                "quote_status": "not_refreshed",
+                "quote_refreshed": False,
+                "quote_refresh_error": None,
+                "execution_session_filter": session_status["execution_session_filter"],
+                "session_allowed": session_status["session_allowed"],
+                "session_name": session_status["session_name"],
+                "session_time_now": session_status["session_time_now"],
+            }
+            continue
         futures_signal = read_signal_for_mapping(mapping)
         action = _signal_action(futures_signal)
         direction = "sell" if action.startswith("CLOSE") else "buy"
@@ -142,6 +157,10 @@ def run_loop_iteration() -> dict[str, Any]:
         preflight[symbol] = {
             "symbol": symbol,
             "futures_signal": action,
+            "execution_session_filter": session_status["execution_session_filter"],
+            "session_allowed": session_status["session_allowed"],
+            "session_name": session_status["session_name"],
+            "session_time_now": session_status["session_time_now"],
             **quote_info,
         }
 
@@ -155,6 +174,8 @@ def run_loop_iteration() -> dict[str, Any]:
     for symbol, info in preflight.items():
         action_result = actions_by_symbol.get(symbol, {})
         reason = action_result.get("reason")
+        if not info.get("session_allowed", True):
+            reason = "outside_us_regular_session"
         if info.get("quote_refresh_error"):
             reason = "quote_refresh_failed"
         symbol_summaries.append(

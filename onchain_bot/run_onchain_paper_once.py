@@ -16,6 +16,7 @@ from onchain_bot.paper_broker import (  # noqa: E402
     open_paper_position,
 )
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache  # noqa: E402
+from onchain_bot.session_filter import get_execution_session_status  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
 from onchain_bot.status_onchain import build_quote_payload  # noqa: E402
 
@@ -57,6 +58,18 @@ def run_once() -> dict[str, Any]:
         try:
             if not mapping.enabled:
                 actions.append(_skip_action(symbol, "mapping_disabled"))
+                continue
+            session_status = get_execution_session_status(mapping.execution_session_filter)
+            if not session_status["session_allowed"]:
+                actions.append(
+                    _skip_action(
+                        symbol,
+                        "outside_us_regular_session",
+                        execution_session_filter=session_status["execution_session_filter"],
+                        session_name=session_status["session_name"],
+                        session_time_now=session_status["session_time_now"],
+                    )
+                )
                 continue
 
             futures_signal = read_signal_for_mapping(mapping)

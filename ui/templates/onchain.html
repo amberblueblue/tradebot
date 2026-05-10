@@ -30,6 +30,13 @@
             <option value="true" {% if config.enabled %}selected{% endif %}>true</option>
           </select>
         </div>
+        <div class="col-md-4 col-xl-3">
+          <label class="form-label" for="{{ title }}-session-filter">执行时段过滤 <span class="text-secondary small">execution_session_filter</span></label>
+          <select id="{{ title }}-session-filter" name="execution_session_filter" class="form-select" required>
+            <option value="us_regular" {% if config.execution_session_filter != "none" %}selected{% endif %}>美股常规交易时段</option>
+            <option value="none" {% if config.execution_session_filter == "none" %}selected{% endif %}>不过滤，24小时</option>
+          </select>
+        </div>
 
         <div class="col-md-4 col-xl-3">
           <label class="form-label" for="{{ title }}-token-name">代币名称 <span class="text-secondary small">token_name</span></label>
@@ -129,6 +136,11 @@
     <div class="alert alert-danger mb-0">配置读取失败：{{ config_error }}</div>
   </div>
   {% endif %}
+  {% if onchain_session_warning %}
+  <div class="col-12">
+    <div class="alert alert-warning mb-0">当前不在美股常规交易时段，Onchain Paper 不会执行买入/卖出。</div>
+  </div>
+  {% endif %}
 
   <div class="col-12">
     <div class="card shadow-sm">
@@ -147,6 +159,8 @@
                 <th>单笔最大交易金额</th>
                 <th>最大滑点</th>
                 <th>是否启用</th>
+                <th>执行时段</th>
+                <th>当前可执行</th>
                 <th>合约信号</th>
                 <th>信号原因</th>
                 <th>信号时间</th>
@@ -173,6 +187,15 @@
                   <span class="badge text-bg-success">true</span>
                   {% else %}
                   <span class="badge text-bg-secondary">false</span>
+                  {% endif %}
+                </td>
+                <td>{{ symbol.execution_session_filter }}</td>
+                <td>
+                  {% if symbol.session_allowed %}
+                  <span class="badge text-bg-success">true</span>
+                  {% else %}
+                  <span class="badge text-bg-warning">false</span>
+                  <div class="text-secondary small">{{ symbol.session_time_now }}</div>
                   {% endif %}
                 </td>
                 <td>
@@ -228,7 +251,7 @@
               </tr>
               {% else %}
               <tr>
-                <td colspan="17" class="text-secondary">暂无映射</td>
+                <td colspan="19" class="text-secondary">暂无映射</td>
               </tr>
               {% endfor %}
             </tbody>

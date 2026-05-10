@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from onchain_bot.session_filter import get_execution_session_status
+
 
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 QUOTE_TTL_SECONDS = 10 * 60
@@ -59,6 +61,9 @@ def check_onchain_executable(
         reasons.append("invalid_max_trade_usdt")
     if float(getattr(mapping, "max_slippage_pct", -1.0)) < 0:
         reasons.append("invalid_max_slippage_pct")
+    session_status = get_execution_session_status(getattr(mapping, "execution_session_filter", "us_regular"))
+    if not session_status["session_allowed"]:
+        reasons.append("outside_us_regular_session")
 
     action = _signal_action(futures_signal)
     if action == "HOLD":
@@ -88,4 +93,5 @@ def check_onchain_executable(
     return {
         "executable": not reasons,
         "reasons": reasons,
+        **session_status,
     }

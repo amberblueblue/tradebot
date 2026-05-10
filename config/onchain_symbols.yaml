@@ -3,6 +3,7 @@ symbols:
     enabled: false
     signal_source: futures
     source_symbol: GOOGLUSDT
+    execution_session_filter: us_regular
     chain_name: ethereum
     chain_id: "1"
     token_symbol: GOOGL
