@@ -55,8 +55,10 @@ from futures_bot.strategy.session_filter import (
     kline_open_time_utc,
 )
 from onchain_bot.config_loader import (
+    OnchainSettings,
     load_onchain_settings_config,
     load_onchain_symbols_config,
+    save_onchain_settings_config,
     save_onchain_symbols_config,
 )
 from onchain_bot.executable_check import check_onchain_executable
@@ -67,6 +69,7 @@ from onchain_bot.paper_pnl import update_paper_positions_with_latest_quotes
 from onchain_bot.paper_state import get_closed_trades, get_positions, load_paper_state
 from onchain_bot.paper_summary import load_paper_summary
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache
+from onchain_bot.run_onchain_live_once import run_onchain_live_once
 from onchain_bot.run_onchain_paper_once import run_once as run_onchain_paper_once
 from onchain_bot.signal_reader import read_signal_for_mapping
 from onchain_bot.status_onchain import build_health_payload, build_manual_live_health_payload, build_quote_payload
@@ -2480,6 +2483,8 @@ def _onchain_view(
     live_preview_result: dict[str, object] | None = None,
     live_preview_error: str | None = None,
     paper_run_result: dict[str, object] | None = None,
+    auto_live_result: dict[str, object] | None = None,
+    live_settings_error: str | None = None,
 ) -> dict[str, object]:
     symbols, config_error = _onchain_symbol_rows()
     paper_positions, paper_closed_trades = _onchain_paper_rows()
@@ -2529,6 +2534,7 @@ def _onchain_view(
         "manual_trades": load_manual_trades().get("trades", []),
         "onchain_session_warning": session_warning,
         "onchain_safety": safety_status_payload(account_equity=None),
+        "onchain_settings": load_onchain_settings_config().to_dict(),
         "paper_positions": paper_positions,
         "paper_closed_trades": paper_closed_trades,
         "paper_summary": paper_summary,
@@ -2551,6 +2557,9 @@ def _onchain_view(
         "live_preview_result_json": json.dumps(live_preview_result, indent=2, ensure_ascii=False) if live_preview_result else "",
         "live_preview_error": live_preview_error,
         "paper_run_result": paper_run_result,
+        "auto_live_result": auto_live_result,
+        "auto_live_result_json": json.dumps(auto_live_result, indent=2, ensure_ascii=False) if auto_live_result else "",
+        "live_settings_error": live_settings_error,
     }
 
 
@@ -3068,6 +3077,77 @@ async def onchain_safety_save(request: Request):
         )
     )
     return _onchain_redirect(message="Onchain safety saved")
+
+
+@app.post("/onchain/live-settings", response_class=HTMLResponse)
+async def onchain_live_settings_save(request: Request):
+    form = await _read_form_data(request)
+    current = load_onchain_settings_config()
+    auto_live_enabled = _parse_onchain_bool(form, "auto_live_enabled")
+    confirm_text = form.get("auto_live_confirm", "").strip()
+    try:
+        default_order_amount = float(form.get("default_order_amount_usdt", current.live_default_order_amount_usdt))
+        max_live_order = float(form.get("max_live_order_usdt", current.risk_max_live_order_usdt))
+        max_live_trades = int(float(form.get("max_live_trades_per_day", current.risk_max_live_trades_per_day)))
+        if auto_live_enabled and confirm_text != "YES":
+            raise ValueError("开启链上自动实盘必须输入 YES 二次确认")
+        if default_order_amount <= 0 or max_live_order <= 0:
+            raise ValueError("默认下单金额和单笔最大实盘金额必须大于 0")
+        if max_live_trades <= 0:
+            raise ValueError("每日最大实盘次数必须大于 0")
+        if default_order_amount > max_live_order:
+            raise ValueError("默认下单金额不能大于单笔最大实盘金额")
+        save_onchain_settings_config(
+            OnchainSettings(
+                app_mode=current.app_mode,
+                polling_interval_seconds=current.polling_interval_seconds,
+                quote_auto_refresh_enabled=current.quote_auto_refresh_enabled,
+                quote_stale_seconds=current.quote_stale_seconds,
+                quote_default_amount_usdt=current.quote_default_amount_usdt,
+                live_auto_live_enabled=auto_live_enabled,
+                live_default_order_amount_usdt=default_order_amount,
+                live_require_manual_confirm_env=current.live_require_manual_confirm_env,
+                safety_allow_live_trading=current.safety_allow_live_trading,
+                safety_live_execute_enabled=current.safety_live_execute_enabled,
+                risk_max_price_impact_pct=current.risk_max_price_impact_pct,
+                risk_max_slippage_pct=current.risk_max_slippage_pct,
+                risk_max_gas_raw=current.risk_max_gas_raw,
+                risk_quote_stale_seconds=current.risk_quote_stale_seconds,
+                risk_max_token_tax_rate_pct=current.risk_max_token_tax_rate_pct,
+                risk_max_trade_usdt=current.risk_max_trade_usdt,
+                risk_max_live_order_usdt=max_live_order,
+                risk_max_live_trades_per_day=max_live_trades,
+                risk_max_open_positions=current.risk_max_open_positions,
+                risk_max_opens_per_day=current.risk_max_opens_per_day,
+                risk_max_closes_per_day=current.risk_max_closes_per_day,
+                risk_min_trade_interval_seconds=current.risk_min_trade_interval_seconds,
+            )
+        )
+    except Exception as exc:
+        context = _onchain_view(live_settings_error=str(exc))
+        context.update({"request": request, "project_name": "TraderBot Local Console"})
+        return templates.TemplateResponse(request, "onchain.html", context, status_code=400)
+    return _onchain_redirect(message="Onchain live settings saved")
+
+
+@app.post("/onchain/auto-live-check", response_class=HTMLResponse)
+async def onchain_auto_live_check(request: Request):
+    status_code = 200
+    try:
+        result = run_onchain_live_once()
+    except Exception as exc:
+        result = {
+            "ok": False,
+            "mode": "auto_live_check_only",
+            "actions": [],
+            "errors": [{"error": str(exc)}],
+            "signing": "not_implemented",
+            "broadcast": "not_implemented",
+        }
+        status_code = 400
+    context = _onchain_view(auto_live_result=result)
+    context.update({"request": request, "project_name": "TraderBot Local Console"})
+    return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
 
 
 @app.post("/spot/config")

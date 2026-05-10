@@ -7,6 +7,11 @@ quote:
   quote_stale_seconds: 600
   default_amount_usdt: 20
 
+live:
+  auto_live_enabled: false
+  default_order_amount_usdt: 20
+  require_manual_confirm_env: true
+
 safety:
   allow_live_trading: false
   live_execute_enabled: false
@@ -18,6 +23,8 @@ risk:
   quote_stale_seconds: 600
   max_token_tax_rate_pct: 0.0
   max_trade_usdt: 50
+  max_live_order_usdt: 20
+  max_live_trades_per_day: 3
   max_open_positions: 3
   max_opens_per_day: 5
   max_closes_per_day: 5

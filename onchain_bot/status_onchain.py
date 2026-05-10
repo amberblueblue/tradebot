@@ -607,7 +607,7 @@ def main() -> int:
         elif args.manual_live_health:
             payload = build_manual_live_health_payload()
         elif args.live_guard:
-            payload = assert_onchain_live_allowed("status_check")
+            payload = assert_onchain_live_allowed("status_check", emit_log=False)
         elif args.loop_status:
             payload = load_loop_state()
         elif args.paper_summary:

@@ -456,6 +456,91 @@
   <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-body">
+        <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">
+          <div>
+            <h2 class="h5 mb-1">Live Settings</h2>
+            <p class="text-secondary mb-0">链上自动实盘默认关闭；本阶段只做 tx data preview，不签名、不广播。</p>
+          </div>
+          <form method="post" action="/onchain/auto-live-check#onchain-auto-live-result">
+            <button class="btn btn-sm btn-outline-danger" type="submit">运行一次 Auto Live Check</button>
+          </form>
+        </div>
+        {% if live_settings_error %}
+        <div class="alert alert-danger">{{ live_settings_error }}</div>
+        {% endif %}
+        <form method="post" action="/onchain/live-settings" class="row g-3 align-items-end">
+          <div class="col-md-3">
+            <label class="form-label" for="auto-live-enabled">链上自动实盘启用 <span class="text-secondary small">auto_live_enabled</span></label>
+            <select id="auto-live-enabled" name="auto_live_enabled" class="form-select">
+              <option value="false" {% if not onchain_settings.live_auto_live_enabled %}selected{% endif %}>false</option>
+              <option value="true" {% if onchain_settings.live_auto_live_enabled %}selected{% endif %}>true</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="default-order-amount">默认下单金额 <span class="text-secondary small">default_order_amount_usdt</span></label>
+            <input id="default-order-amount" name="default_order_amount_usdt" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_default_order_amount_usdt or 20 }}" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="max-live-order">单笔最大实盘金额 <span class="text-secondary small">max_live_order_usdt</span></label>
+            <input id="max-live-order" name="max_live_order_usdt" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.risk_max_live_order_usdt or 20 }}" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="max-live-trades">每日最大实盘次数 <span class="text-secondary small">max_live_trades_per_day</span></label>
+            <input id="max-live-trades" name="max_live_trades_per_day" type="number" min="1" step="1" class="form-control" value="{{ onchain_settings.risk_max_live_trades_per_day or 3 }}" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="auto-live-confirm">开启二次确认</label>
+            <input id="auto-live-confirm" name="auto_live_confirm" class="form-control" placeholder="开启 auto_live_enabled 时输入 YES">
+          </div>
+          <div class="col-md-8">
+            <button class="btn btn-primary" type="submit">保存 Live Settings</button>
+            <span class="text-secondary small ms-2">环境变量需单独设置：ONCHAIN_CONFIRM_LIVE=YES</span>
+          </div>
+        </form>
+        {% if auto_live_result %}
+        <div class="mt-3" id="onchain-auto-live-result">
+          <div class="alert {% if auto_live_result.ok %}alert-success{% else %}alert-danger{% endif %}">
+            自动实盘检查：{{ "通过" if auto_live_result.ok else "未通过" }}。
+            当前只生成 tx data preview，不签名、不广播。
+          </div>
+          <div class="table-responsive">
+            <table class="table align-middle">
+              <thead>
+                <tr>
+                  <th>symbol</th>
+                  <th>action</th>
+                  <th>reason</th>
+                  <th>failures</th>
+                  <th>tx preview</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for action in auto_live_result.actions %}
+                <tr>
+                  <td class="fw-semibold">{{ action.symbol }}</td>
+                  <td>{{ action.action }}</td>
+                  <td>{{ action.reason }}</td>
+                  <td class="{% if action.failures %}text-danger{% else %}text-secondary{% endif %}">{{ action.failures | join(", ") if action.failures else "无" }}</td>
+                  <td>{{ "有" if action.tx_preview else "无" }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="5" class="text-secondary">暂无检查结果</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <pre class="bg-light border rounded p-3 mb-0 overflow-auto"><code>{{ auto_live_result_json }}</code></pre>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
         <h2 class="h5 mb-3">映射列表</h2>
         <div class="table-responsive">
           <table class="table align-middle">

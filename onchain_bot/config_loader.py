@@ -21,6 +21,9 @@ class OnchainSettings:
     quote_auto_refresh_enabled: bool
     quote_stale_seconds: int
     quote_default_amount_usdt: float
+    live_auto_live_enabled: bool
+    live_default_order_amount_usdt: float
+    live_require_manual_confirm_env: bool
     safety_allow_live_trading: bool
     safety_live_execute_enabled: bool
     risk_max_price_impact_pct: float
@@ -29,6 +32,8 @@ class OnchainSettings:
     risk_quote_stale_seconds: int
     risk_max_token_tax_rate_pct: float
     risk_max_trade_usdt: float
+    risk_max_live_order_usdt: float
+    risk_max_live_trades_per_day: int
     risk_max_open_positions: int
     risk_max_opens_per_day: int
     risk_max_closes_per_day: int
@@ -268,6 +273,8 @@ def load_onchain_settings_config(
     raw_config = load_yaml_mapping(path)
     app = _require_mapping(raw_config.get("app"), "app")
     quote = _require_mapping(raw_config.get("quote"), "quote")
+    live = raw_config.get("live")
+    live = live if isinstance(live, dict) else {}
     safety = _require_mapping(raw_config.get("safety"), "safety")
     risk = raw_config.get("risk")
     risk = risk if isinstance(risk, dict) else {}
@@ -282,6 +289,13 @@ def load_onchain_settings_config(
         quote_auto_refresh_enabled=_settings_bool(quote, "auto_refresh_enabled", "quote"),
         quote_stale_seconds=_settings_positive_int(quote, "quote_stale_seconds", "quote"),
         quote_default_amount_usdt=_settings_positive_number(quote, "default_amount_usdt", "quote"),
+        live_auto_live_enabled=bool(live.get("auto_live_enabled", False)),
+        live_default_order_amount_usdt=_settings_positive_number(
+            {"default_order_amount_usdt": live.get("default_order_amount_usdt", 20)},
+            "default_order_amount_usdt",
+            "live",
+        ),
+        live_require_manual_confirm_env=bool(live.get("require_manual_confirm_env", True)),
         safety_allow_live_trading=_settings_bool(safety, "allow_live_trading", "safety"),
         safety_live_execute_enabled=_settings_bool(safety, "live_execute_enabled", "safety"),
         risk_max_price_impact_pct=_settings_non_negative_number(risk, "max_price_impact_pct", "risk", 1.0),
@@ -294,6 +308,16 @@ def load_onchain_settings_config(
         ),
         risk_max_token_tax_rate_pct=_settings_non_negative_number(risk, "max_token_tax_rate_pct", "risk", 0.0),
         risk_max_trade_usdt=_settings_positive_number({"max_trade_usdt": risk.get("max_trade_usdt", 50)}, "max_trade_usdt", "risk"),
+        risk_max_live_order_usdt=_settings_positive_number(
+            {"max_live_order_usdt": risk.get("max_live_order_usdt", 20)},
+            "max_live_order_usdt",
+            "risk",
+        ),
+        risk_max_live_trades_per_day=_settings_positive_int(
+            {"max_live_trades_per_day": risk.get("max_live_trades_per_day", 3)},
+            "max_live_trades_per_day",
+            "risk",
+        ),
         risk_max_open_positions=_settings_positive_int(
             {"max_open_positions": risk.get("max_open_positions", 3)},
             "max_open_positions",
@@ -316,6 +340,72 @@ def load_onchain_settings_config(
             300,
         )),
     )
+
+
+def dump_onchain_settings_yaml(settings: OnchainSettings) -> str:
+    data = {
+        "app": {
+            "mode": settings.app_mode,
+            "polling_interval_seconds": settings.polling_interval_seconds,
+        },
+        "quote": {
+            "auto_refresh_enabled": settings.quote_auto_refresh_enabled,
+            "quote_stale_seconds": settings.quote_stale_seconds,
+            "default_amount_usdt": settings.quote_default_amount_usdt,
+        },
+        "live": {
+            "auto_live_enabled": settings.live_auto_live_enabled,
+            "default_order_amount_usdt": settings.live_default_order_amount_usdt,
+            "require_manual_confirm_env": settings.live_require_manual_confirm_env,
+        },
+        "safety": {
+            "allow_live_trading": settings.safety_allow_live_trading,
+            "live_execute_enabled": settings.safety_live_execute_enabled,
+        },
+        "risk": {
+            "max_price_impact_pct": settings.risk_max_price_impact_pct,
+            "max_slippage_pct": settings.risk_max_slippage_pct,
+            "max_gas_raw": settings.risk_max_gas_raw,
+            "quote_stale_seconds": settings.risk_quote_stale_seconds,
+            "max_token_tax_rate_pct": settings.risk_max_token_tax_rate_pct,
+            "max_trade_usdt": settings.risk_max_trade_usdt,
+            "max_live_order_usdt": settings.risk_max_live_order_usdt,
+            "max_live_trades_per_day": settings.risk_max_live_trades_per_day,
+            "max_open_positions": settings.risk_max_open_positions,
+            "max_opens_per_day": settings.risk_max_opens_per_day,
+            "max_closes_per_day": settings.risk_max_closes_per_day,
+            "min_trade_interval_seconds": settings.risk_min_trade_interval_seconds,
+        },
+    }
+
+    def write_value(lines: list[str], key: str, value: Any, indent: int) -> None:
+        prefix = " " * indent
+        if isinstance(value, dict):
+            lines.append(f"{prefix}{key}:")
+            for child_key, child_value in value.items():
+                write_value(lines, str(child_key), child_value, indent + 2)
+        else:
+            lines.append(f"{prefix}{key}: {_format_yaml_scalar(value)}")
+
+    lines: list[str] = []
+    for key, value in data.items():
+        write_value(lines, key, value, 0)
+    return "\n".join(lines) + "\n"
+
+
+def save_onchain_settings_config(
+    settings: OnchainSettings,
+    settings_path: Path | None = None,
+) -> dict[str, Any]:
+    path = settings_path or DEFAULT_ONCHAIN_SETTINGS_PATH
+    if settings.live_default_order_amount_usdt > settings.risk_max_live_order_usdt:
+        raise ValueError("live.default_order_amount_usdt cannot exceed risk.max_live_order_usdt")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dump_onchain_settings_yaml(settings), encoding="utf-8")
+    return {
+        "ok": True,
+        "path": str(path),
+    }
 
 
 def _format_yaml_scalar(value: Any) -> str:

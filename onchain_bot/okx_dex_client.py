@@ -58,6 +58,7 @@ for web3_key, legacy_key in LEGACY_OKX_WEB3_ENV_MAP.items():
 
 OKX_DEX_BASE_URL = "https://web3.okx.com"
 OKX_DEX_QUOTE_PATH = "/api/v6/dex/aggregator/quote"
+OKX_DEX_SWAP_PATH = "/api/v6/dex/aggregator/swap"
 OKX_DEX_USER_AGENT = "Mozilla/5.0 tradebot-onchain-quote/1.0"
 OKX_WEB3_ENV_KEYS = (
     "OKX_WEB3_API_KEY",
@@ -280,6 +281,136 @@ class OkxDexQuoteClient:
                     "response_body": body,
                     "diagnostics": diagnostics,
                     "quote": None,
+                    "error": "okx_dex_http_error",
+                    "message": body or str(exc),
+                }
+            except (TimeoutError, URLError, OSError) as exc:
+                last_error = str(exc)
+                if attempt < 3:
+                    time.sleep(backoff_seconds)
+
+        return {
+            "ok": False,
+            "endpoint": endpoint,
+            "status_code": None,
+            "latency_ms": _elapsed_ms(started_at),
+            "request_url": url,
+            "request_headers_present": _request_diagnostics(
+                url=url,
+                headers=headers,
+                status_code=None,
+            )["request_headers_present"],
+            "timestamp": headers.get("OK-ACCESS-TIMESTAMP"),
+            "quote": None,
+            "error": "okx_dex_network_error",
+            "message": last_error,
+        }
+
+    def swap_tx_data(
+        self,
+        *,
+        chain_id: str,
+        from_token_address: str,
+        to_token_address: str,
+        amount: int,
+        slippage_pct: float | int | str,
+        user_wallet_address: str,
+    ) -> dict[str, Any]:
+        started_at = time.perf_counter()
+        credentials, missing = load_okx_dex_credentials()
+        endpoint = f"{self.base_url}{OKX_DEX_SWAP_PATH}"
+        if credentials is None:
+            return {
+                "ok": False,
+                "endpoint": endpoint,
+                "status_code": None,
+                "latency_ms": _elapsed_ms(started_at),
+                "tx_preview": None,
+                "error": "missing_okx_web3_credentials",
+                "message": "Missing OKX Web3 API environment variables: " + ", ".join(missing),
+            }
+        if not user_wallet_address:
+            return {
+                "ok": False,
+                "endpoint": endpoint,
+                "status_code": None,
+                "latency_ms": _elapsed_ms(started_at),
+                "tx_preview": None,
+                "error": "missing_wallet_address",
+                "message": "ONCHAIN_WALLET_ADDRESS is required to generate OKX swap tx data preview.",
+            }
+
+        params = {
+            "chainIndex": chain_id,
+            "fromTokenAddress": from_token_address,
+            "toTokenAddress": to_token_address,
+            "amount": str(amount),
+            "slippage": str(slippage_pct),
+            "userWalletAddress": user_wallet_address,
+            "swapMode": "exactIn",
+        }
+        query_string = urlencode(params)
+        request_path_with_query = f"{OKX_DEX_SWAP_PATH}?{query_string}"
+        url = f"{self.base_url}{request_path_with_query}"
+        headers = _headers(
+            credentials=credentials,
+            method="GET",
+            request_path_with_query=request_path_with_query,
+        )
+
+        last_error: str | None = None
+        for attempt, backoff_seconds in enumerate((1, 2, 3), start=1):
+            request = Request(url, headers=headers, method="GET")
+            try:
+                with urlopen(request, timeout=self.timeout_seconds) as response:
+                    body = response.read().decode("utf-8", "ignore")
+                    try:
+                        payload = json.loads(body)
+                    except json.JSONDecodeError:
+                        payload = {"raw_body": body}
+                    business_error = _okx_business_error(payload)
+                    if business_error:
+                        error, message = business_error
+                        return {
+                            "ok": False,
+                            "endpoint": endpoint,
+                            "status_code": response.status,
+                            "http_status": response.status,
+                            "latency_ms": _elapsed_ms(started_at),
+                            "tx_preview": payload,
+                            "error": error,
+                            "message": message,
+                        }
+                    return {
+                        "ok": True,
+                        "endpoint": endpoint,
+                        "status_code": response.status,
+                        "http_status": response.status,
+                        "latency_ms": _elapsed_ms(started_at),
+                        "tx_preview": payload,
+                        "error": None,
+                        "message": None,
+                    }
+            except HTTPError as exc:
+                body = exc.read().decode("utf-8", "ignore")
+                diagnostics = _request_diagnostics(
+                    url=url,
+                    headers=headers,
+                    status_code=exc.code,
+                    response_body=body,
+                )
+                return {
+                    "ok": False,
+                    "endpoint": endpoint,
+                    "status_code": exc.code,
+                    "http_status": exc.code,
+                    "latency_ms": _elapsed_ms(started_at),
+                    "request_url": url,
+                    "request_headers_present": diagnostics["request_headers_present"],
+                    "timestamp": diagnostics["timestamp"],
+                    "response_body": body,
+                    "diagnostics": diagnostics,
+                    "tx_preview": None,
                     "error": "okx_dex_http_error",
                     "message": body or str(exc),
                 }
