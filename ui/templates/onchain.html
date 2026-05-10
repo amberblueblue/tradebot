@@ -146,6 +146,9 @@
     <div class="alert alert-danger mb-0">Onchain Kill Switch 已开启，Paper 不会执行买入/卖出。</div>
   </div>
   {% endif %}
+  <div class="col-12">
+    <div class="alert alert-warning mb-0">当前 Onchain 仅支持 Paper 和手动交易辅助，不支持自动实盘。</div>
+  </div>
 
   <div class="col-12">
     <div class="card shadow-sm">
@@ -298,6 +301,10 @@
               <label class="form-label small text-secondary mb-1">Trading Enabled</label>
               <div class="form-control form-control-sm bg-body-secondary">{{ "true" if onchain_safety.onchain_trading_enabled else "false" }}</div>
             </div>
+            <div>
+              <label class="form-label small text-secondary mb-1">链上自动实盘</label>
+              <div class="form-control form-control-sm bg-body-secondary">{{ "已启用" if onchain_safety.onchain_auto_live_enabled else "未启用" }}</div>
+            </div>
             <button class="btn btn-sm btn-primary" type="submit">保存</button>
           </form>
         </div>
@@ -308,6 +315,8 @@
           <dd class="col-sm-2">{{ "ON" if onchain_safety.onchain_trading_enabled else "OFF" }}</dd>
           <dt class="col-sm-2">Kill Switch</dt>
           <dd class="col-sm-2 {% if onchain_safety.onchain_kill_switch %}text-danger fw-semibold{% else %}text-success{% endif %}">{{ "ON" if onchain_safety.onchain_kill_switch else "OFF" }}</dd>
+          <dt class="col-sm-2">链上自动实盘</dt>
+          <dd class="col-sm-2 {% if onchain_safety.onchain_auto_live_enabled %}text-danger fw-semibold{% else %}text-success{% endif %}">{{ "ON" if onchain_safety.onchain_auto_live_enabled else "OFF" }}</dd>
         </dl>
       </div>
     </div>

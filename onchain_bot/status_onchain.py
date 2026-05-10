@@ -13,6 +13,7 @@ if __package__ in {None, ""}:
 
 from onchain_bot.config_loader import load_onchain_settings_config, load_onchain_symbols_config, onchain_symbols_payload  # noqa: E402
 from onchain_bot.executable_check import check_onchain_executable, quote_is_stale  # noqa: E402
+from onchain_bot.live_guard import assert_onchain_live_allowed  # noqa: E402
 from onchain_bot.manual_trade_log import DEFAULT_MANUAL_TRADES_PATH, load_manual_trades  # noqa: E402
 from onchain_bot.okx_dex_client import OkxDexQuoteClient  # noqa: E402
 from onchain_bot.paper_state import DEFAULT_PAPER_STATE_PATH, load_paper_state  # noqa: E402
@@ -66,6 +67,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--manual-live-health",
         action="store_true",
         help="Show manual onchain live assist readiness without signing or broadcasting.",
+    )
+    parser.add_argument(
+        "--live-guard",
+        action="store_true",
+        help="Show the onchain auto live guard status. Auto live swap is not supported.",
     )
     parser.add_argument(
         "--tx-status",
@@ -361,6 +367,7 @@ def build_health_payload() -> dict[str, Any]:
             "onchain_paper_enabled": safety.onchain_paper_enabled,
             "onchain_trading_enabled": safety.onchain_trading_enabled,
             "onchain_kill_switch": safety.onchain_kill_switch,
+            "onchain_auto_live_enabled": safety.onchain_auto_live_enabled,
         }
         if not safety.onchain_paper_enabled:
             warnings.append("onchain_paper_disabled")
@@ -368,6 +375,8 @@ def build_health_payload() -> dict[str, Any]:
             warnings.append("onchain_kill_switch_enabled")
         if safety.onchain_trading_enabled:
             warnings.append("onchain_trading_enabled_true")
+        if safety.onchain_auto_live_enabled:
+            warnings.append("onchain_auto_live_enabled_true")
     except Exception as exc:
         ok = False
         safety_payload = {
@@ -375,6 +384,7 @@ def build_health_payload() -> dict[str, Any]:
             "onchain_paper_enabled": None,
             "onchain_trading_enabled": None,
             "onchain_kill_switch": None,
+            "onchain_auto_live_enabled": None,
         }
         risk_errors.append(f"runtime_safety_error: {exc}")
 
@@ -472,7 +482,7 @@ def build_manual_live_health_payload() -> dict[str, Any]:
 
     try:
         safety_config = load_runtime_safety_config()
-        auto_swap_enabled = False
+        auto_swap_enabled = bool(safety_config.onchain_auto_live_enabled)
         if safety_config.onchain_trading_enabled:
             warnings.append("onchain_trading_enabled_true")
         else:
@@ -523,6 +533,7 @@ def main() -> int:
             args.health,
             args.manual_trades,
             args.manual_live_health,
+            args.live_guard,
             args.tx_status,
         )
     )
@@ -533,7 +544,7 @@ def main() -> int:
                     "error": "missing_mode",
                     "message": (
                         "use --symbols, --quote, --live-preview, --readiness, --quote-cache, "
-                        "--health, --manual-trades, --manual-live-health, or --tx-status"
+                        "--health, --manual-trades, --manual-live-health, --live-guard, or --tx-status"
                     ),
                 },
                 indent=2,
@@ -580,6 +591,8 @@ def main() -> int:
             payload = load_manual_trades()
         elif args.manual_live_health:
             payload = build_manual_live_health_payload()
+        elif args.live_guard:
+            payload = assert_onchain_live_allowed("status_check")
         elif args.tx_status:
             payload = get_tx_status(args.tx_status[0], args.tx_status[1])
         elif args.live_preview:

@@ -10,3 +10,4 @@ onchain:
   paper_enabled: true
   trading_enabled: false
   kill_switch: false
+  auto_live_enabled: false
