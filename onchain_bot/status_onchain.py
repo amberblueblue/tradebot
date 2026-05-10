@@ -12,10 +12,12 @@ if __package__ in {None, ""}:
 
 from onchain_bot.config_loader import load_onchain_settings_config, load_onchain_symbols_config, onchain_symbols_payload  # noqa: E402
 from onchain_bot.executable_check import check_onchain_executable, quote_is_stale  # noqa: E402
+from onchain_bot.manual_trade_log import load_manual_trades  # noqa: E402
 from onchain_bot.okx_dex_client import OkxDexQuoteClient  # noqa: E402
 from onchain_bot.paper_state import DEFAULT_PAPER_STATE_PATH, load_paper_state  # noqa: E402
 from onchain_bot.quote_cache import DEFAULT_QUOTE_CACHE_PATH, get_cached_quote, load_quote_cache  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
+from onchain_bot.tx_status import get_tx_status  # noqa: E402
 from runtime.safety import load_runtime_safety_config  # noqa: E402
 
 
@@ -53,6 +55,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--health",
         action="store_true",
         help="Show Onchain paper, risk, quote cache, and safety health.",
+    )
+    parser.add_argument(
+        "--manual-trades",
+        action="store_true",
+        help="Show manually recorded onchain trades.",
+    )
+    parser.add_argument(
+        "--tx-status",
+        nargs=2,
+        metavar=("CHAIN_ID", "TX_HASH"),
+        help="Query a transaction hash status without signing or broadcasting.",
     )
     parser.add_argument(
         "--amount-usdt",
@@ -386,14 +399,26 @@ def main() -> int:
     args = parse_args(sys.argv[1:])
     selected_modes = sum(
         bool(mode)
-        for mode in (args.symbols, args.quote, args.live_preview, args.readiness, args.quote_cache, args.health)
+        for mode in (
+            args.symbols,
+            args.quote,
+            args.live_preview,
+            args.readiness,
+            args.quote_cache,
+            args.health,
+            args.manual_trades,
+            args.tx_status,
+        )
     )
     if selected_modes == 0:
         print(
             json.dumps(
                 {
                     "error": "missing_mode",
-                    "message": "use --symbols, --quote, --live-preview, --readiness, --quote-cache, or --health",
+                    "message": (
+                        "use --symbols, --quote, --live-preview, --readiness, --quote-cache, "
+                        "--health, --manual-trades, or --tx-status"
+                    ),
                 },
                 indent=2,
                 sort_keys=True,
@@ -435,6 +460,10 @@ def main() -> int:
             payload = load_quote_cache()
         elif args.health:
             payload = build_health_payload()
+        elif args.manual_trades:
+            payload = load_manual_trades()
+        elif args.tx_status:
+            payload = get_tx_status(args.tx_status[0], args.tx_status[1])
         elif args.live_preview:
             from onchain_bot.live_preview import build_live_swap_preview
 

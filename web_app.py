@@ -61,6 +61,7 @@ from onchain_bot.config_loader import (
 )
 from onchain_bot.executable_check import check_onchain_executable
 from onchain_bot.live_preview import build_live_swap_preview
+from onchain_bot.manual_trade_log import add_manual_trade, load_manual_trades, refresh_manual_trade_statuses
 from onchain_bot.paper_pnl import update_paper_positions_with_latest_quotes
 from onchain_bot.paper_state import get_closed_trades, get_positions, load_paper_state
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache
@@ -2520,6 +2521,7 @@ def _onchain_view(
         "symbols": symbols,
         "symbols_count": len(symbols),
         "onchain_health": build_health_payload(),
+        "manual_trades": load_manual_trades().get("trades", []),
         "onchain_session_warning": session_warning,
         "onchain_safety": safety_status_payload(account_equity=None),
         "paper_positions": paper_positions,
@@ -2827,6 +2829,30 @@ def onchain_paper_run_once(request: Request):
         }
     )
     return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
+
+
+@app.post("/onchain/manual-trades/add")
+async def onchain_manual_trade_add(request: Request):
+    form = await _read_form_data(request)
+    try:
+        add_manual_trade(
+            symbol=form.get("symbol", ""),
+            direction=form.get("direction", ""),
+            tx_hash=form.get("tx_hash", ""),
+            amount=float(form.get("amount", "0") or 0),
+            note=form.get("note", ""),
+        )
+    except Exception as exc:
+        return _onchain_redirect(error=f"手动交易记录失败：{exc}")
+    return _onchain_redirect(message="手动交易已记录")
+
+
+@app.post("/onchain/manual-trades/refresh")
+def onchain_manual_trade_refresh():
+    result = refresh_manual_trade_statuses()
+    if not result.get("ok"):
+        return _onchain_redirect(error=f"交易状态刷新失败：{result.get('message') or result.get('write_error')}")
+    return _onchain_redirect(message=f"交易状态已刷新，更新 {result.get('updated_count', 0)} 笔")
 
 
 @app.get("/onchain/quote/{symbol}", response_class=HTMLResponse)

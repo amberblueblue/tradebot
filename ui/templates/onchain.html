@@ -637,6 +637,89 @@
   </div>
 
   <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">
+          <div>
+            <h2 class="h5 mb-1">Manual Onchain Trades</h2>
+            <p class="text-secondary mb-0">机器人不会签名、不会广播、不会执行真实交易。这里只记录你已经在钱包中手动完成的交易哈希。</p>
+          </div>
+          <form method="post" action="/onchain/manual-trades/refresh">
+            <button class="btn btn-sm btn-outline-primary" type="submit">刷新交易状态</button>
+          </form>
+        </div>
+        <form class="row g-3 align-items-end mb-3" method="post" action="/onchain/manual-trades/add">
+          <div class="col-md-3 col-xl-2">
+            <label class="form-label" for="manual-symbol">symbol</label>
+            <input id="manual-symbol" name="symbol" class="form-control" placeholder="GOOGLUSDT" required>
+          </div>
+          <div class="col-md-3 col-xl-2">
+            <label class="form-label" for="manual-direction">direction</label>
+            <select id="manual-direction" name="direction" class="form-select">
+              <option value="buy">buy</option>
+              <option value="sell">sell</option>
+            </select>
+          </div>
+          <div class="col-md-6 col-xl-3">
+            <label class="form-label" for="manual-tx">tx_hash</label>
+            <input id="manual-tx" name="tx_hash" class="form-control" placeholder="0x..." required>
+          </div>
+          <div class="col-md-3 col-xl-2">
+            <label class="form-label" for="manual-amount">amount</label>
+            <input id="manual-amount" name="amount" type="number" min="0.000001" step="0.000001" class="form-control" required>
+          </div>
+          <div class="col-md-6 col-xl-2">
+            <label class="form-label" for="manual-note">note</label>
+            <input id="manual-note" name="note" class="form-control" placeholder="manual swap from OKX wallet">
+          </div>
+          <div class="col-md-3 col-xl-1">
+            <button class="btn btn-primary w-100" type="submit">记录</button>
+          </div>
+        </form>
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead>
+              <tr>
+                <th>symbol</th>
+                <th>direction</th>
+                <th>tx_hash</th>
+                <th>status</th>
+                <th>amount</th>
+                <th>created_at</th>
+                <th>updated_at</th>
+                <th>note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for trade in manual_trades %}
+              <tr>
+                <td class="fw-semibold">{{ trade.symbol }}</td>
+                <td>{{ trade.direction }}</td>
+                <td><code>{{ trade.tx_hash }}</code></td>
+                <td>
+                  <span class="badge text-bg-secondary">{{ trade.status }}</span>
+                  {% if trade.status_reason %}
+                  <div class="text-secondary small">{{ trade.status_reason }}</div>
+                  {% endif %}
+                </td>
+                <td>{{ trade.amount }}</td>
+                <td>{{ trade.created_at }}</td>
+                <td>{{ trade.updated_at }}</td>
+                <td>{{ trade.note or "" }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="8" class="text-secondary">暂无手动交易记录</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
     {{ mapping_form(form_defaults, "/onchain/symbols/add", "新增映射", "Add Mapping") }}
   </div>
 
