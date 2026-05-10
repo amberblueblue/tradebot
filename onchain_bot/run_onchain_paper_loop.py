@@ -16,6 +16,7 @@ from onchain_bot.config_loader import load_onchain_settings_config, load_onchain
 from onchain_bot.executable_check import quote_is_stale  # noqa: E402
 from onchain_bot.loop_state import write_loop_state  # noqa: E402
 from onchain_bot.paper_state import load_paper_state  # noqa: E402
+from onchain_bot.paper_summary import update_paper_summary  # noqa: E402
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache  # noqa: E402
 from onchain_bot.run_onchain_paper_once import run_once  # noqa: E402
 from onchain_bot.session_filter import get_execution_session_status  # noqa: E402
@@ -206,7 +207,7 @@ def run_loop_iteration() -> dict[str, Any]:
             **quote_info,
         }
 
-    run_result = run_once()
+    run_result = run_once(update_summary=False)
     actions_by_symbol = {
         str(action.get("symbol")): action
         for action in run_result.get("actions", [])
@@ -265,6 +266,7 @@ def main() -> int:
     try:
         while True:
             payload = run_loop_iteration()
+            payload["paper_summary"] = update_paper_summary(payload)
             last_loop_at = datetime.now(timezone.utc).isoformat()
             write_loop_state(
                 running=True,

@@ -65,6 +65,7 @@ from onchain_bot.loop_state import load_loop_state
 from onchain_bot.manual_trade_log import add_manual_trade, load_manual_trades, refresh_manual_trade_statuses
 from onchain_bot.paper_pnl import update_paper_positions_with_latest_quotes
 from onchain_bot.paper_state import get_closed_trades, get_positions, load_paper_state
+from onchain_bot.paper_summary import load_paper_summary
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache
 from onchain_bot.run_onchain_paper_once import run_once as run_onchain_paper_once
 from onchain_bot.signal_reader import read_signal_for_mapping
@@ -2524,6 +2525,7 @@ def _onchain_view(
         "onchain_health": build_health_payload(),
         "manual_live_health": build_manual_live_health_payload(),
         "onchain_loop_state": load_loop_state(),
+        "onchain_paper_summary": load_paper_summary(),
         "manual_trades": load_manual_trades().get("trades", []),
         "onchain_session_warning": session_warning,
         "onchain_safety": safety_status_payload(account_equity=None),

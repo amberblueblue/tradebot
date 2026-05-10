@@ -15,6 +15,7 @@ from onchain_bot.paper_broker import (  # noqa: E402
     load_paper_state,
     open_paper_position,
 )
+from onchain_bot.paper_summary import update_paper_summary  # noqa: E402
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache  # noqa: E402
 from onchain_bot.risk import check_onchain_quote_risk  # noqa: E402
 from onchain_bot.session_filter import get_execution_session_status  # noqa: E402
@@ -47,14 +48,14 @@ def _skip_action(symbol: str, reason: str, **extra: Any) -> dict[str, Any]:
     }
 
 
-def run_once() -> dict[str, Any]:
+def run_once(*, update_summary: bool = True) -> dict[str, Any]:
     symbols = load_onchain_symbols_config()
     actions: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     safety_decision = check_onchain_paper_allowed()
     if not safety_decision.allowed:
         state = load_paper_state()
-        return {
+        result = {
             "actions": [
                 _skip_action(symbol, "onchain_safety_blocked", safety_reason=safety_decision.reason)
                 for symbol in symbols
@@ -63,6 +64,9 @@ def run_once() -> dict[str, Any]:
             "closed_trades_count": len(state.get("closed_trades", [])),
             "errors": errors,
         }
+        if update_summary:
+            result["paper_summary"] = update_paper_summary(result)
+        return result
 
     for symbol, mapping in symbols.items():
         try:
@@ -196,12 +200,15 @@ def run_once() -> dict[str, Any]:
             actions.append(_skip_action(symbol, "run_error", error=str(exc)))
 
     state = load_paper_state()
-    return {
+    result = {
         "actions": actions,
         "positions_count": len(state.get("positions", {})),
         "closed_trades_count": len(state.get("closed_trades", [])),
         "errors": errors,
     }
+    if update_summary:
+        result["paper_summary"] = update_paper_summary(result)
+    return result
 
 
 def main() -> int:

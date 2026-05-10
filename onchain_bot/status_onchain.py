@@ -18,6 +18,7 @@ from onchain_bot.loop_state import load_loop_state  # noqa: E402
 from onchain_bot.manual_trade_log import DEFAULT_MANUAL_TRADES_PATH, load_manual_trades  # noqa: E402
 from onchain_bot.okx_dex_client import OkxDexQuoteClient  # noqa: E402
 from onchain_bot.paper_state import DEFAULT_PAPER_STATE_PATH, load_paper_state  # noqa: E402
+from onchain_bot.paper_summary import load_paper_summary  # noqa: E402
 from onchain_bot.quote_cache import DEFAULT_QUOTE_CACHE_PATH, get_cached_quote, load_quote_cache  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
 from onchain_bot.tx_status import get_tx_status  # noqa: E402
@@ -78,6 +79,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--loop-status",
         action="store_true",
         help="Show Onchain paper loop heartbeat status.",
+    )
+    parser.add_argument(
+        "--paper-summary",
+        action="store_true",
+        help="Show daily Onchain paper loop and action summary.",
     )
     parser.add_argument(
         "--tx-status",
@@ -541,6 +547,7 @@ def main() -> int:
             args.manual_live_health,
             args.live_guard,
             args.loop_status,
+            args.paper_summary,
             args.tx_status,
         )
     )
@@ -552,7 +559,7 @@ def main() -> int:
                     "message": (
                         "use --symbols, --quote, --live-preview, --readiness, --quote-cache, "
                         "--health, --manual-trades, --manual-live-health, --live-guard, "
-                        "--loop-status, or --tx-status"
+                        "--loop-status, --paper-summary, or --tx-status"
                     ),
                 },
                 indent=2,
@@ -603,6 +610,8 @@ def main() -> int:
             payload = assert_onchain_live_allowed("status_check")
         elif args.loop_status:
             payload = load_loop_state()
+        elif args.paper_summary:
+            payload = load_paper_summary()
         elif args.tx_status:
             payload = get_tx_status(args.tx_status[0], args.tx_status[1])
         elif args.live_preview:

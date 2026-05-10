@@ -205,6 +205,82 @@
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
           <div>
+            <h2 class="h5 mb-1">Onchain Paper Summary</h2>
+            <p class="text-secondary mb-0">Paper loop 与手动运行的一日统计，用于观察 1-2 周表现。</p>
+          </div>
+          <span class="badge text-bg-secondary">{{ onchain_paper_summary.date }}</span>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-2">
+            <div class="text-secondary small">今日循环次数</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.loop_count }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">LONG 信号次数</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.signal_counts.LONG }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">CLOSE 信号次数</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.signal_counts.CLOSE }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">HOLD 信号次数</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.signal_counts.HOLD }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">Paper 开仓次数</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.paper_actions["open"] }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">Paper 平仓次数</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.paper_actions["close"] }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">跳过次数</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.paper_actions.skipped }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">Quote 风控拦截</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.blocks.quote_risk }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">交易时段拦截</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.blocks.session }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">交易限制拦截</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.blocks.trade_limits }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">Safety 拦截</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.blocks.safety }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">当前 paper positions</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.positions_count }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">今日已实现盈亏</div>
+            <div class="{% if onchain_paper_summary.realized_pnl > 0 %}text-success{% elif onchain_paper_summary.realized_pnl < 0 %}text-danger{% endif %} fw-semibold">{{ onchain_paper_summary.realized_pnl }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">当前未实现盈亏</div>
+            <div class="{% if onchain_paper_summary.unrealized_pnl > 0 %}text-success{% elif onchain_paper_summary.unrealized_pnl < 0 %}text-danger{% endif %} fw-semibold">{{ onchain_paper_summary.unrealized_pnl }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="text-secondary small">更新时间</div>
+            <div class="fw-semibold">{{ onchain_paper_summary.updated_at or "暂无" }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+          <div>
             <h2 class="h5 mb-1">Onchain Paper Loop Status</h2>
             <p class="text-secondary mb-0">只显示 Paper loop 心跳，不提供前端启动或停止。</p>
           </div>
