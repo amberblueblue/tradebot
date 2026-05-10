@@ -141,6 +141,53 @@
     <div class="alert alert-warning mb-0">当前不在美股常规交易时段，Onchain Paper 不会执行买入/卖出。</div>
   </div>
   {% endif %}
+  {% if onchain_safety.onchain_kill_switch %}
+  <div class="col-12">
+    <div class="alert alert-danger mb-0">Onchain Kill Switch 已开启，Paper 不会执行买入/卖出。</div>
+  </div>
+  {% endif %}
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+          <div>
+            <h2 class="h5 mb-1">Onchain Safety</h2>
+            <p class="text-secondary mb-0">当前阶段仅控制 Onchain Paper，链上真实交易保持关闭。</p>
+          </div>
+          <form method="post" action="/onchain/safety" class="d-flex flex-wrap align-items-end gap-3">
+            <div>
+              <label class="form-label small text-secondary mb-1">Paper Enabled</label>
+              <select name="onchain_paper_enabled" class="form-select form-select-sm">
+                <option value="true" {% if onchain_safety.onchain_paper_enabled %}selected{% endif %}>true</option>
+                <option value="false" {% if not onchain_safety.onchain_paper_enabled %}selected{% endif %}>false</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label small text-secondary mb-1">Kill Switch</label>
+              <select name="onchain_kill_switch" class="form-select form-select-sm">
+                <option value="false" {% if not onchain_safety.onchain_kill_switch %}selected{% endif %}>false</option>
+                <option value="true" {% if onchain_safety.onchain_kill_switch %}selected{% endif %}>true</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label small text-secondary mb-1">Trading Enabled</label>
+              <div class="form-control form-control-sm bg-body-secondary">{{ "true" if onchain_safety.onchain_trading_enabled else "false" }}</div>
+            </div>
+            <button class="btn btn-sm btn-primary" type="submit">保存</button>
+          </form>
+        </div>
+        <dl class="row mt-3 mb-0 small">
+          <dt class="col-sm-2">Paper Enabled</dt>
+          <dd class="col-sm-2 {% if onchain_safety.onchain_paper_enabled %}text-success{% else %}text-danger fw-semibold{% endif %}">{{ "ON" if onchain_safety.onchain_paper_enabled else "OFF" }}</dd>
+          <dt class="col-sm-2">Trading Enabled</dt>
+          <dd class="col-sm-2">{{ "ON" if onchain_safety.onchain_trading_enabled else "OFF" }}</dd>
+          <dt class="col-sm-2">Kill Switch</dt>
+          <dd class="col-sm-2 {% if onchain_safety.onchain_kill_switch %}text-danger fw-semibold{% else %}text-success{% endif %}">{{ "ON" if onchain_safety.onchain_kill_switch else "OFF" }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
 
   <div class="col-12">
     <div class="card shadow-sm">

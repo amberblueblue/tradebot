@@ -56,6 +56,12 @@
         <dd class="col-sm-3">{{ "YES" if safety.spot_trading_enabled else "NO" }}</dd>
         <dt class="col-sm-3">Futures Trading Enabled</dt>
         <dd class="col-sm-3">{{ "YES" if safety.futures_trading_enabled else "NO" }}</dd>
+        <dt class="col-sm-3">链上 Paper 启用</dt>
+        <dd class="col-sm-3 {% if safety.onchain_paper_enabled %}text-success{% else %}text-danger fw-semibold{% endif %}">{{ "YES" if safety.onchain_paper_enabled else "NO" }}</dd>
+        <dt class="col-sm-3">链上交易启用</dt>
+        <dd class="col-sm-3">{{ "YES" if safety.onchain_trading_enabled else "NO" }}</dd>
+        <dt class="col-sm-3">链上紧急停止</dt>
+        <dd class="col-sm-3 {% if safety.onchain_kill_switch %}text-danger fw-semibold{% else %}text-success{% endif %}">{{ "ON" if safety.onchain_kill_switch else "OFF" }}</dd>
         <dt class="col-sm-3">Consecutive Errors</dt>
         <dd class="col-sm-3">{{ safety.consecutive_errors }}</dd>
         <dt class="col-sm-3">Today Realized PnL</dt>

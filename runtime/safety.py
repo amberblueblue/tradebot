@@ -24,6 +24,9 @@ class RuntimeSafetyConfig:
     global_kill_switch: bool = False
     spot_trading_enabled: bool = False
     futures_trading_enabled: bool = False
+    onchain_paper_enabled: bool = True
+    onchain_trading_enabled: bool = False
+    onchain_kill_switch: bool = False
     daily_loss_limit_pct: float = 5.0
     max_consecutive_errors: int = 5
     max_open_trades_per_hour: int = 5
@@ -51,6 +54,11 @@ def _default_config_mapping() -> dict[str, Any]:
         "max_open_trades_per_hour": 5,
         "spot": {"trading_enabled": False},
         "futures": {"trading_enabled": False},
+        "onchain": {
+            "paper_enabled": True,
+            "trading_enabled": False,
+            "kill_switch": False,
+        },
     }
 
 
@@ -66,14 +74,20 @@ def load_runtime_safety_config(path: Path = DEFAULT_RUNTIME_SAFETY_PATH) -> Runt
     payload = _load_yaml_file(path)
     spot = payload.get("spot", {})
     futures = payload.get("futures", {})
+    onchain = payload.get("onchain", {})
     if not isinstance(spot, dict):
         spot = {}
     if not isinstance(futures, dict):
         futures = {}
+    if not isinstance(onchain, dict):
+        onchain = {}
     return RuntimeSafetyConfig(
         global_kill_switch=bool(payload.get("global_kill_switch", False)),
         spot_trading_enabled=bool(spot.get("trading_enabled", False)),
         futures_trading_enabled=bool(futures.get("trading_enabled", False)),
+        onchain_paper_enabled=bool(onchain.get("paper_enabled", True)),
+        onchain_trading_enabled=False,
+        onchain_kill_switch=bool(onchain.get("kill_switch", False)),
         daily_loss_limit_pct=float(payload.get("daily_loss_limit_pct", 5.0) or 5.0),
         max_consecutive_errors=int(payload.get("max_consecutive_errors", 5) or 5),
         max_open_trades_per_hour=int(payload.get("max_open_trades_per_hour", 5) or 5),
@@ -94,6 +108,11 @@ def save_runtime_safety_config(
                 "max_open_trades_per_hour": config.max_open_trades_per_hour,
                 "spot": {"trading_enabled": config.spot_trading_enabled},
                 "futures": {"trading_enabled": config.futures_trading_enabled},
+                "onchain": {
+                    "paper_enabled": config.onchain_paper_enabled,
+                    "trading_enabled": False,
+                    "kill_switch": config.onchain_kill_switch,
+                },
             }
         ),
         encoding="utf-8",
@@ -162,6 +181,9 @@ def set_global_kill_switch(reason: str, *, enabled: bool = True) -> None:
             global_kill_switch=enabled,
             spot_trading_enabled=config.spot_trading_enabled,
             futures_trading_enabled=config.futures_trading_enabled,
+            onchain_paper_enabled=config.onchain_paper_enabled,
+            onchain_trading_enabled=False,
+            onchain_kill_switch=config.onchain_kill_switch,
             daily_loss_limit_pct=config.daily_loss_limit_pct,
             max_consecutive_errors=config.max_consecutive_errors,
             max_open_trades_per_hour=config.max_open_trades_per_hour,
@@ -243,6 +265,19 @@ def check_new_entry_allowed(
     return SafetyDecision(True)
 
 
+def check_onchain_paper_allowed() -> SafetyDecision:
+    config = load_runtime_safety_config()
+    if config.global_kill_switch:
+        return SafetyDecision(False, "global_kill_switch_enabled")
+    if config.onchain_kill_switch:
+        return SafetyDecision(False, "onchain_kill_switch_enabled")
+    if not config.onchain_paper_enabled:
+        return SafetyDecision(False, "onchain_paper_disabled")
+    if config.onchain_trading_enabled:
+        return SafetyDecision(False, "onchain_live_not_supported_yet")
+    return SafetyDecision(True)
+
+
 def check_market_data_safe(mark_price: float | None, klines: list[Any] | None = None) -> SafetyDecision:
     if mark_price is None or mark_price <= 0:
         print("[SAFETY] abnormal market data reason=invalid_mark_price")
@@ -273,6 +308,9 @@ def safety_status_payload(account_equity: float | None = None) -> dict[str, Any]
         "global_kill_switch": config.global_kill_switch,
         "spot_trading_enabled": config.spot_trading_enabled,
         "futures_trading_enabled": config.futures_trading_enabled,
+        "onchain_paper_enabled": config.onchain_paper_enabled,
+        "onchain_trading_enabled": config.onchain_trading_enabled,
+        "onchain_kill_switch": config.onchain_kill_switch,
         "consecutive_errors": int(state.get("consecutive_errors", 0) or 0),
         "today_realized_pnl": float(state.get("today_realized_pnl", 0.0) or 0.0),
         "daily_loss_limit_pct": config.daily_loss_limit_pct,

@@ -6,3 +6,7 @@ spot:
   trading_enabled: false
 futures:
   trading_enabled: false
+onchain:
+  paper_enabled: true
+  trading_enabled: false
+  kill_switch: false

@@ -2514,6 +2514,7 @@ def _onchain_view(
         "symbols": symbols,
         "symbols_count": len(symbols),
         "onchain_session_warning": session_warning,
+        "onchain_safety": safety_status_payload(account_equity=None),
         "paper_positions": paper_positions,
         "paper_closed_trades": paper_closed_trades,
         "paper_summary": paper_summary,
@@ -2929,12 +2930,35 @@ async def safety_save(request: Request):
             global_kill_switch=_parse_safety_bool(form, "global_kill_switch"),
             spot_trading_enabled=spot_enabled,
             futures_trading_enabled=futures_enabled,
+            onchain_paper_enabled=current.onchain_paper_enabled,
+            onchain_trading_enabled=False,
+            onchain_kill_switch=current.onchain_kill_switch,
             daily_loss_limit_pct=float(form.get("daily_loss_limit_pct", current.daily_loss_limit_pct)),
             max_consecutive_errors=int(float(form.get("max_consecutive_errors", current.max_consecutive_errors))),
             max_open_trades_per_hour=int(float(form.get("max_open_trades_per_hour", current.max_open_trades_per_hour))),
         )
     )
     return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/onchain/safety")
+async def onchain_safety_save(request: Request):
+    form = await _read_form_data(request)
+    current = load_runtime_safety_config()
+    save_runtime_safety_config(
+        RuntimeSafetyConfig(
+            global_kill_switch=current.global_kill_switch,
+            spot_trading_enabled=current.spot_trading_enabled,
+            futures_trading_enabled=current.futures_trading_enabled,
+            onchain_paper_enabled=_parse_safety_bool(form, "onchain_paper_enabled"),
+            onchain_trading_enabled=False,
+            onchain_kill_switch=_parse_safety_bool(form, "onchain_kill_switch"),
+            daily_loss_limit_pct=current.daily_loss_limit_pct,
+            max_consecutive_errors=current.max_consecutive_errors,
+            max_open_trades_per_hour=current.max_open_trades_per_hour,
+        )
+    )
+    return _onchain_redirect(message="Onchain safety saved")
 
 
 @app.post("/spot/config")

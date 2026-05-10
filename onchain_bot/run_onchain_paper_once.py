@@ -21,6 +21,7 @@ from onchain_bot.session_filter import get_execution_session_status  # noqa: E40
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
 from onchain_bot.status_onchain import build_quote_payload  # noqa: E402
 from onchain_bot.trade_limits import check_onchain_trade_limits  # noqa: E402
+from runtime.safety import check_onchain_paper_allowed  # noqa: E402
 
 
 def _signal_action(signal: dict[str, Any] | None) -> str:
@@ -50,6 +51,18 @@ def run_once() -> dict[str, Any]:
     symbols = load_onchain_symbols_config()
     actions: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
+    safety_decision = check_onchain_paper_allowed()
+    if not safety_decision.allowed:
+        state = load_paper_state()
+        return {
+            "actions": [
+                _skip_action(symbol, "onchain_safety_blocked", safety_reason=safety_decision.reason)
+                for symbol in symbols
+            ],
+            "positions_count": len(state.get("positions", {})),
+            "closed_trades_count": len(state.get("closed_trades", [])),
+            "errors": errors,
+        }
 
     for symbol, mapping in symbols.items():
         try:

@@ -19,6 +19,7 @@ from onchain_bot.run_onchain_paper_once import run_once  # noqa: E402
 from onchain_bot.session_filter import get_execution_session_status  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
 from onchain_bot.status_onchain import build_quote_payload  # noqa: E402
+from runtime.safety import check_onchain_paper_allowed  # noqa: E402
 
 
 LOG_PREFIX = "[onchain_paper_loop]"
@@ -107,6 +108,45 @@ def run_loop_iteration() -> dict[str, Any]:
             "reason": "onchain_live_not_supported_yet",
             "app_mode": settings.app_mode,
             "actions": [],
+        }
+    safety_decision = check_onchain_paper_allowed()
+    if not safety_decision.allowed:
+        symbols = load_onchain_symbols_config()
+        paper_state = load_paper_state()
+        positions = paper_state.get("positions", {})
+        closed_trades = paper_state.get("closed_trades", [])
+        actions = [
+            {
+                "ok": False,
+                "action": "skipped",
+                "symbol": symbol,
+                "reason": "onchain_safety_blocked",
+                "safety_reason": safety_decision.reason,
+            }
+            for symbol in symbols
+        ]
+        return {
+            "ok": True,
+            "loop_started": datetime.now(timezone.utc).isoformat(),
+            "enabled_symbols_count": len([mapping for mapping in symbols.values() if mapping.enabled]),
+            "symbols": [
+                {
+                    "symbol": action["symbol"],
+                    "futures_signal": None,
+                    "quote_status": "not_refreshed",
+                    "quote_refreshed": False,
+                    "quote_refresh_error": None,
+                    "action_taken": "skipped",
+                    "reason": "onchain_safety_blocked",
+                    "ok": False,
+                }
+                for action in actions
+            ],
+            "actions": actions,
+            "positions_count": len(positions) if isinstance(positions, dict) else 0,
+            "closed_trades_count": len(closed_trades) if isinstance(closed_trades, list) else 0,
+            "errors": [],
+            "polling_interval_seconds": settings.polling_interval_seconds,
         }
 
     symbols = load_onchain_symbols_config()
