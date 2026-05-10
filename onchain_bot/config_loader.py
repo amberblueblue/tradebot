@@ -10,6 +10,21 @@ from futures_bot.config_loader import load_yaml_mapping
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = PROJECT_ROOT / "config"
 DEFAULT_ONCHAIN_SYMBOLS_PATH = CONFIG_DIR / "onchain_symbols.yaml"
+DEFAULT_ONCHAIN_SETTINGS_PATH = CONFIG_DIR / "onchain_settings.yaml"
+
+
+@dataclass(frozen=True)
+class OnchainSettings:
+    app_mode: str
+    polling_interval_seconds: int
+    quote_auto_refresh_enabled: bool
+    quote_stale_seconds: int
+    quote_default_amount_usdt: float
+    safety_allow_live_trading: bool
+    safety_live_execute_enabled: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -153,6 +168,55 @@ def load_onchain_symbols_config(
         symbol_config = _validate_symbol_config(str(symbol), raw_symbol_config)
         loaded[symbol_config.symbol] = symbol_config
     return loaded
+
+
+def _settings_bool(raw: dict[str, Any], key: str, section: str) -> bool:
+    value = raw.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"{section}.{key} must be boolean")
+    return value
+
+
+def _settings_positive_int(raw: dict[str, Any], key: str, section: str) -> int:
+    value = raw.get(key)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{section}.{key} must be an integer greater than 0")
+    if value <= 0:
+        raise ValueError(f"{section}.{key} must be greater than 0")
+    return value
+
+
+def _settings_positive_number(raw: dict[str, Any], key: str, section: str) -> float:
+    value = raw.get(key)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f"{section}.{key} must be a number greater than 0")
+    if value <= 0:
+        raise ValueError(f"{section}.{key} must be greater than 0")
+    return float(value)
+
+
+def load_onchain_settings_config(
+    settings_path: Path | None = None,
+) -> OnchainSettings:
+    path = settings_path or DEFAULT_ONCHAIN_SETTINGS_PATH
+    raw_config = load_yaml_mapping(path)
+    app = _require_mapping(raw_config.get("app"), "app")
+    quote = _require_mapping(raw_config.get("quote"), "quote")
+    safety = _require_mapping(raw_config.get("safety"), "safety")
+
+    mode = app.get("mode")
+    if not isinstance(mode, str) or not mode:
+        raise ValueError("app.mode must be a non-empty string")
+
+    return OnchainSettings(
+        app_mode=mode,
+        polling_interval_seconds=_settings_positive_int(app, "polling_interval_seconds", "app"),
+        quote_auto_refresh_enabled=_settings_bool(quote, "auto_refresh_enabled", "quote"),
+        quote_stale_seconds=_settings_positive_int(quote, "quote_stale_seconds", "quote"),
+        quote_default_amount_usdt=_settings_positive_number(quote, "default_amount_usdt", "quote"),
+        safety_allow_live_trading=_settings_bool(safety, "allow_live_trading", "safety"),
+        safety_live_execute_enabled=_settings_bool(safety, "live_execute_enabled", "safety"),
+    )
 
 
 def _format_yaml_scalar(value: Any) -> str:

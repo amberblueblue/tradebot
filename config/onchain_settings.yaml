@@ -1,0 +1,12 @@
+app:
+  mode: paper
+  polling_interval_seconds: 60
+
+quote:
+  auto_refresh_enabled: true
+  quote_stale_seconds: 600
+  default_amount_usdt: 20
+
+safety:
+  allow_live_trading: false
+  live_execute_enabled: false
