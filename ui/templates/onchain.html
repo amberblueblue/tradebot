@@ -322,6 +322,28 @@
           Onchain Paper Loop 当前需命令行启动：
           <code>python3 onchain_bot/run_onchain_paper_loop.py</code>
         </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-2">
+            <div class="text-secondary small">今日开仓次数</div>
+            <div class="fw-semibold">{{ paper_summary.today_opens_count }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">今日平仓次数</div>
+            <div class="fw-semibold">{{ paper_summary.today_closes_count }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">最大持仓数</div>
+            <div class="fw-semibold">{{ paper_summary.max_open_positions }}</div>
+          </div>
+          <div class="col-md-2">
+            <div class="text-secondary small">当前持仓数</div>
+            <div class="fw-semibold">{{ paper_summary.current_positions_count }}</div>
+          </div>
+          <div class="col-md-4">
+            <div class="text-secondary small">最近交易时间</div>
+            <div class="fw-semibold">{{ paper_summary.last_trade_time or "暂无" }}</div>
+          </div>
+        </div>
         <div class="table-responsive">
           <table class="table align-middle">
             <thead>
@@ -415,7 +437,15 @@
               <tr>
                 <td class="fw-semibold">{{ action.symbol }}</td>
                 <td>{{ action.action }}</td>
-                <td>{{ action.reason or "无" }}</td>
+                <td>
+                  {{ action.reason or "无" }}
+                  {% if action.trade_limit_reason %}
+                  <div class="text-secondary small">{{ action.trade_limit_reason }}</div>
+                  {% endif %}
+                  {% if action.trade_limit_failures %}
+                  <div class="text-secondary small">{{ action.trade_limit_failures | join(", ") }}</div>
+                  {% endif %}
+                </td>
                 <td>
                   {% if action.ok %}
                   <span class="badge text-bg-success">true</span>

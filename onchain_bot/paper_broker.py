@@ -12,6 +12,22 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _record_paper_trade(state: dict[str, Any], symbol: str, action: str, timestamp: str) -> None:
+    daily_stats = state.setdefault(
+        "daily_stats",
+        {
+            "date": datetime.now(timezone.utc).date().isoformat(),
+            "opens_count": 0,
+            "closes_count": 0,
+        },
+    )
+    if action == "open":
+        daily_stats["opens_count"] = int(daily_stats.get("opens_count", 0)) + 1
+    elif action == "close":
+        daily_stats["closes_count"] = int(daily_stats.get("closes_count", 0)) + 1
+    state.setdefault("last_trade_times", {})[symbol] = timestamp
+
+
 def _decimal_from_text(value: Any) -> Decimal | None:
     if value is None:
         return None
@@ -86,6 +102,7 @@ def open_paper_position(
             "reason": "quote_missing_parsed_amounts",
         }
 
+    entry_time = _now_iso()
     position = {
         "symbol": normalized_symbol,
         "source_symbol": getattr(mapping, "source_symbol", normalized_symbol),
@@ -98,12 +115,13 @@ def open_paper_position(
         "entry_quote_amount": entry_quote_amount,
         "entry_token_amount": entry_token_amount,
         "entry_price": entry_price,
-        "entry_time": _now_iso(),
+        "entry_time": entry_time,
         "last_quote_price": entry_price,
         "unrealized_pnl": 0.0,
         "unrealized_pnl_pct": 0.0,
     }
     positions[normalized_symbol] = position
+    _record_paper_trade(state, normalized_symbol, "open", entry_time)
     save_result = save_paper_state(state, state_path)
     return {
         "ok": bool(save_result.get("ok")),
@@ -166,11 +184,12 @@ def close_paper_position(
     realized_pnl_pct = (realized_pnl / entry_quote_amount * 100) if entry_quote_amount else 0.0
     parsed_sell_quote = _parsed_quote(sell_quote_result)
 
+    exit_time = _now_iso()
     closed_trade = {
         **position,
         "exit_price": exit_price,
         "exit_quote_amount": exit_quote_amount,
-        "exit_time": _now_iso(),
+        "exit_time": exit_time,
         "realized_pnl": realized_pnl,
         "realized_pnl_pct": realized_pnl_pct,
         "close_reason": close_reason,
@@ -180,6 +199,7 @@ def close_paper_position(
     }
     positions.pop(normalized_symbol)
     state["closed_trades"].append(closed_trade)
+    _record_paper_trade(state, normalized_symbol, "close", exit_time)
     save_result = save_paper_state(state, state_path)
     return {
         "ok": bool(save_result.get("ok")),

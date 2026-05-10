@@ -28,6 +28,11 @@ class OnchainSettings:
     risk_max_gas_raw: float
     risk_quote_stale_seconds: int
     risk_max_token_tax_rate_pct: float
+    risk_max_trade_usdt: float
+    risk_max_open_positions: int
+    risk_max_opens_per_day: int
+    risk_max_closes_per_day: int
+    risk_min_trade_interval_seconds: int
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -137,6 +142,8 @@ RISK_KEYS = (
     "max_gas_raw",
     "quote_stale_seconds",
     "max_token_tax_rate_pct",
+    "max_trade_usdt",
+    "min_trade_interval_seconds",
 )
 
 
@@ -152,6 +159,8 @@ def _optional_risk_overrides(raw: dict[str, Any], symbol: str) -> dict[str, floa
         value = risk_mapping[key]
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             raise ValueError(f"symbols.{symbol}.risk.{key} must be a number")
+        if key == "max_trade_usdt" and value <= 0:
+            raise ValueError(f"symbols.{symbol}.risk.{key} must be greater than 0")
         if value < 0:
             raise ValueError(f"symbols.{symbol}.risk.{key} must be greater than or equal to 0")
         parsed[key] = float(value)
@@ -284,6 +293,28 @@ def load_onchain_settings_config(
             "risk",
         ),
         risk_max_token_tax_rate_pct=_settings_non_negative_number(risk, "max_token_tax_rate_pct", "risk", 0.0),
+        risk_max_trade_usdt=_settings_positive_number({"max_trade_usdt": risk.get("max_trade_usdt", 50)}, "max_trade_usdt", "risk"),
+        risk_max_open_positions=_settings_positive_int(
+            {"max_open_positions": risk.get("max_open_positions", 3)},
+            "max_open_positions",
+            "risk",
+        ),
+        risk_max_opens_per_day=_settings_positive_int(
+            {"max_opens_per_day": risk.get("max_opens_per_day", 5)},
+            "max_opens_per_day",
+            "risk",
+        ),
+        risk_max_closes_per_day=_settings_positive_int(
+            {"max_closes_per_day": risk.get("max_closes_per_day", 5)},
+            "max_closes_per_day",
+            "risk",
+        ),
+        risk_min_trade_interval_seconds=int(_settings_non_negative_number(
+            {"min_trade_interval_seconds": risk.get("min_trade_interval_seconds", 300)},
+            "min_trade_interval_seconds",
+            "risk",
+            300,
+        )),
     )
 
 

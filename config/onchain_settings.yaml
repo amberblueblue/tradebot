@@ -17,3 +17,8 @@ risk:
   max_gas_raw: 500000
   quote_stale_seconds: 600
   max_token_tax_rate_pct: 0.0
+  max_trade_usdt: 50
+  max_open_positions: 3
+  max_opens_per_day: 5
+  max_closes_per_day: 5
+  min_trade_interval_seconds: 300

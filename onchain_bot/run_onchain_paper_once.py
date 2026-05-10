@@ -20,6 +20,7 @@ from onchain_bot.risk import check_onchain_quote_risk  # noqa: E402
 from onchain_bot.session_filter import get_execution_session_status  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
 from onchain_bot.status_onchain import build_quote_payload  # noqa: E402
+from onchain_bot.trade_limits import check_onchain_trade_limits  # noqa: E402
 
 
 def _signal_action(signal: dict[str, Any] | None) -> str:
@@ -27,11 +28,6 @@ def _signal_action(signal: dict[str, Any] | None) -> str:
         return "error"
     action = signal.get("action")
     return str(action) if action is not None else "error"
-
-
-def _has_position(symbol: str) -> bool:
-    state = load_paper_state()
-    return symbol.strip().upper() in state.get("positions", {})
 
 
 def _position(symbol: str) -> dict[str, Any] | None:
@@ -85,12 +81,8 @@ def run_once() -> dict[str, Any]:
                 buy_quote_result=cached_buy_quote,
                 sell_quote_result=cached_sell_quote,
             )
-            has_position = _has_position(symbol)
 
             if signal_action == "LONG":
-                if has_position:
-                    actions.append(_skip_action(symbol, "position_exists", signal_action=signal_action))
-                    continue
                 if not readiness.get("executable"):
                     actions.append(
                         _skip_action(
@@ -116,12 +108,35 @@ def run_once() -> dict[str, Any]:
                         )
                     )
                     continue
+                trade_limit_result = check_onchain_trade_limits(symbol, "open", load_paper_state(), mapping)
+                if not trade_limit_result["ok"]:
+                    actions.append(
+                        _skip_action(
+                            symbol,
+                            "trade_limit_failed",
+                            signal_action=signal_action,
+                            trade_limit_reason=trade_limit_result["reason"],
+                            trade_limit_failures=trade_limit_result["failures"],
+                            trade_limit_details=trade_limit_result["details"],
+                        )
+                    )
+                    continue
                 actions.append(open_paper_position(symbol, mapping, cached_buy_quote))
                 continue
 
             if signal_action.startswith("CLOSE"):
-                if not has_position:
-                    actions.append(_skip_action(symbol, "position_not_found", signal_action=signal_action))
+                trade_limit_result = check_onchain_trade_limits(symbol, "close", load_paper_state(), mapping)
+                if not trade_limit_result["ok"]:
+                    actions.append(
+                        _skip_action(
+                            symbol,
+                            "trade_limit_failed",
+                            signal_action=signal_action,
+                            trade_limit_reason=trade_limit_result["reason"],
+                            trade_limit_failures=trade_limit_result["failures"],
+                            trade_limit_details=trade_limit_result["details"],
+                        )
+                    )
                     continue
                 if cached_sell_quote is None or not bool(cached_sell_quote.get("ok")) or quote_is_stale(cached_sell_quote):
                     position = _position(symbol)

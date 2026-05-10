@@ -55,12 +55,13 @@ from futures_bot.strategy.session_filter import (
     kline_open_time_utc,
 )
 from onchain_bot.config_loader import (
+    load_onchain_settings_config,
     load_onchain_symbols_config,
     save_onchain_symbols_config,
 )
 from onchain_bot.executable_check import check_onchain_executable
 from onchain_bot.paper_pnl import update_paper_positions_with_latest_quotes
-from onchain_bot.paper_state import get_closed_trades, get_positions
+from onchain_bot.paper_state import get_closed_trades, get_positions, load_paper_state
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache
 from onchain_bot.run_onchain_paper_once import run_once as run_onchain_paper_once
 from onchain_bot.signal_reader import read_signal_for_mapping
@@ -2434,6 +2435,30 @@ def _onchain_paper_rows() -> tuple[list[dict[str, object]], list[dict[str, objec
     return positions, closed_trades
 
 
+def _onchain_paper_summary() -> dict[str, object]:
+    state = load_paper_state()
+    daily_stats = state.get("daily_stats", {})
+    positions = state.get("positions", {})
+    last_trade_times = state.get("last_trade_times", {})
+    try:
+        settings = load_onchain_settings_config()
+        max_open_positions = settings.risk_max_open_positions
+    except Exception:
+        max_open_positions = 3
+    trade_times = [
+        value
+        for value in (last_trade_times.values() if isinstance(last_trade_times, dict) else [])
+        if isinstance(value, str) and value
+    ]
+    return {
+        "today_opens_count": daily_stats.get("opens_count", 0) if isinstance(daily_stats, dict) else 0,
+        "today_closes_count": daily_stats.get("closes_count", 0) if isinstance(daily_stats, dict) else 0,
+        "max_open_positions": max_open_positions,
+        "current_positions_count": len(positions) if isinstance(positions, dict) else 0,
+        "last_trade_time": max(trade_times) if trade_times else None,
+    }
+
+
 def _onchain_view(
     *,
     message: str | None = None,
@@ -2449,6 +2474,7 @@ def _onchain_view(
 ) -> dict[str, object]:
     symbols, config_error = _onchain_symbol_rows()
     paper_positions, paper_closed_trades = _onchain_paper_rows()
+    paper_summary = _onchain_paper_summary()
     if quote_symbol and quote_result:
         quote_status = "ok" if quote_result.get("ok") else "error"
         for symbol in symbols:
@@ -2490,6 +2516,7 @@ def _onchain_view(
         "onchain_session_warning": session_warning,
         "paper_positions": paper_positions,
         "paper_closed_trades": paper_closed_trades,
+        "paper_summary": paper_summary,
         "config_error": config_error,
         "message": message,
         "error": error,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,48 @@ def _empty_state() -> dict[str, Any]:
     return {
         "positions": {},
         "closed_trades": [],
+        "daily_stats": {
+            "date": _today_date(),
+            "opens_count": 0,
+            "closes_count": 0,
+        },
+        "last_trade_times": {},
+    }
+
+
+def _today_date(now: datetime | None = None) -> str:
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    return current.astimezone(timezone.utc).date().isoformat()
+
+
+def _normalize_daily_stats(value: Any, *, now: datetime | None = None) -> dict[str, Any]:
+    today = _today_date(now)
+    if not isinstance(value, dict) or value.get("date") != today:
+        return {
+            "date": today,
+            "opens_count": 0,
+            "closes_count": 0,
+        }
+    opens_count = value.get("opens_count", 0)
+    closes_count = value.get("closes_count", 0)
+    return {
+        "date": today,
+        "opens_count": opens_count if isinstance(opens_count, int) and opens_count >= 0 else 0,
+        "closes_count": closes_count if isinstance(closes_count, int) and closes_count >= 0 else 0,
+    }
+
+
+def normalize_paper_state(state: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+    positions = state.get("positions")
+    closed_trades = state.get("closed_trades")
+    last_trade_times = state.get("last_trade_times")
+    return {
+        "positions": positions if isinstance(positions, dict) else {},
+        "closed_trades": closed_trades if isinstance(closed_trades, list) else [],
+        "daily_stats": _normalize_daily_stats(state.get("daily_stats"), now=now),
+        "last_trade_times": last_trade_times if isinstance(last_trade_times, dict) else {},
     }
 
 
@@ -27,12 +70,7 @@ def load_paper_state(state_path: Path | None = None) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return _empty_state()
 
-    positions = payload.get("positions")
-    closed_trades = payload.get("closed_trades")
-    return {
-        "positions": positions if isinstance(positions, dict) else {},
-        "closed_trades": closed_trades if isinstance(closed_trades, list) else [],
-    }
+    return normalize_paper_state(payload)
 
 
 def save_paper_state(
@@ -40,6 +78,7 @@ def save_paper_state(
     state_path: Path | None = None,
 ) -> dict[str, Any]:
     path = state_path or DEFAULT_PAPER_STATE_PATH
+    state = normalize_paper_state(state)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
