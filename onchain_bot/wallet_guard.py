@@ -58,9 +58,6 @@ def check_wallet_environment(*, emit_log: bool = True) -> dict[str, Any]:
     elif settings.live_require_wallet_env and not private_key_configured:
         reason = "wallet_private_key_missing"
         ready_for_signing = False
-    elif broadcast_enabled:
-        reason = "broadcast_not_enabled_current_stage"
-        ready_for_signing = False
 
     result = {
         "wallet_address_configured": wallet_address_configured,

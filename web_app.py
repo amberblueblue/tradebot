@@ -69,7 +69,7 @@ from onchain_bot.paper_pnl import update_paper_positions_with_latest_quotes
 from onchain_bot.paper_state import get_closed_trades, get_positions, load_paper_state
 from onchain_bot.paper_summary import load_paper_summary
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache
-from onchain_bot.live_executor import prepare_unsigned_live_transactions
+from onchain_bot.live_executor import execute_live_swap, prepare_unsigned_live_transactions
 from onchain_bot.run_onchain_live_once import run_onchain_live_once
 from onchain_bot.run_onchain_paper_once import run_once as run_onchain_paper_once
 from onchain_bot.signal_reader import read_signal_for_mapping
@@ -2492,6 +2492,8 @@ def _onchain_view(
     unsigned_tx_amount: str = "20",
     unsigned_tx_result: dict[str, object] | None = None,
     unsigned_tx_error: str | None = None,
+    live_execute_result: dict[str, object] | None = None,
+    live_execute_error: str | None = None,
 ) -> dict[str, object]:
     symbols, config_error = _onchain_symbol_rows()
     paper_positions, paper_closed_trades = _onchain_paper_rows()
@@ -2574,6 +2576,9 @@ def _onchain_view(
         "unsigned_tx_result": unsigned_tx_result,
         "unsigned_tx_result_json": json.dumps(unsigned_tx_result, indent=2, ensure_ascii=False) if unsigned_tx_result else "",
         "unsigned_tx_error": unsigned_tx_error,
+        "live_execute_result": live_execute_result,
+        "live_execute_result_json": json.dumps(live_execute_result, indent=2, ensure_ascii=False) if live_execute_result else "",
+        "live_execute_error": live_execute_error,
     }
 
 
@@ -3098,6 +3103,8 @@ async def onchain_live_settings_save(request: Request):
     form = await _read_form_data(request)
     current = load_onchain_settings_config()
     auto_live_enabled = _parse_onchain_bool(form, "auto_live_enabled")
+    wallet_signing_enabled = _parse_onchain_bool(form, "wallet_signing_enabled")
+    broadcast_enabled = _parse_onchain_bool(form, "broadcast_enabled")
     confirm_text = form.get("auto_live_confirm", "").strip()
     try:
         default_order_amount = float(form.get("default_order_amount_usdt", current.live_default_order_amount_usdt))
@@ -3105,6 +3112,8 @@ async def onchain_live_settings_save(request: Request):
         max_live_trades = int(float(form.get("max_live_trades_per_day", current.risk_max_live_trades_per_day)))
         if auto_live_enabled and confirm_text != "YES":
             raise ValueError("开启链上自动实盘必须输入 YES 二次确认")
+        if (wallet_signing_enabled or broadcast_enabled) and confirm_text != "YES":
+            raise ValueError("开启钱包签名或广播必须输入 YES 二次确认")
         if default_order_amount <= 0 or max_live_order <= 0:
             raise ValueError("默认下单金额和单笔最大实盘金额必须大于 0")
         if max_live_trades <= 0:
@@ -3121,8 +3130,8 @@ async def onchain_live_settings_save(request: Request):
                 live_auto_live_enabled=auto_live_enabled,
                 live_default_order_amount_usdt=default_order_amount,
                 live_require_manual_confirm_env=current.live_require_manual_confirm_env,
-                live_wallet_signing_enabled=False,
-                live_broadcast_enabled=False,
+                live_wallet_signing_enabled=wallet_signing_enabled,
+                live_broadcast_enabled=broadcast_enabled,
                 live_require_wallet_env=current.live_require_wallet_env,
                 live_max_live_order_usdt=max_live_order,
                 live_max_live_trades_per_day=max_live_trades,
@@ -3140,6 +3149,9 @@ async def onchain_live_settings_save(request: Request):
                 risk_max_opens_per_day=current.risk_max_opens_per_day,
                 risk_max_closes_per_day=current.risk_max_closes_per_day,
                 risk_min_trade_interval_seconds=current.risk_min_trade_interval_seconds,
+                rpc_ethereum=current.rpc_ethereum,
+                rpc_base=current.rpc_base,
+                rpc_arbitrum=current.rpc_arbitrum,
             )
         )
     except Exception as exc:
@@ -3218,6 +3230,29 @@ async def onchain_unsigned_tx_submit(request: Request, symbol: str):
         unsigned_tx_result=result,
         unsigned_tx_error=error,
     )
+    context.update({"request": request, "project_name": "TraderBot Local Console"})
+    return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
+
+
+@app.post("/onchain/live-execute", response_class=HTMLResponse)
+async def onchain_live_execute(request: Request):
+    form = await _read_form_data(request)
+    confirm_text = form.get("live_execute_confirm", "").strip()
+    symbol = form.get("symbol", "").strip().upper()
+    direction = form.get("direction", "buy").strip().lower() or "buy"
+    amount = form.get("amount", "20").strip() or "20"
+    result = None
+    error = None
+    status_code = 200
+    try:
+        if confirm_text != "YES":
+            raise ValueError("真实 Onchain Live 执行必须输入 YES")
+        normalized_symbol = _ensure_onchain_symbol(symbol)
+        result = execute_live_swap(normalized_symbol, direction, amount)
+    except Exception as exc:
+        error = str(exc)
+        status_code = 400
+    context = _onchain_view(live_execute_result=result, live_execute_error=error)
     context.update({"request": request, "project_name": "TraderBot Local Console"})
     return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
 

@@ -43,6 +43,9 @@ class OnchainSettings:
     risk_max_opens_per_day: int
     risk_max_closes_per_day: int
     risk_min_trade_interval_seconds: int
+    rpc_ethereum: str
+    rpc_base: str
+    rpc_arbitrum: str
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -283,6 +286,8 @@ def load_onchain_settings_config(
     safety = _require_mapping(raw_config.get("safety"), "safety")
     risk = raw_config.get("risk")
     risk = risk if isinstance(risk, dict) else {}
+    rpc = raw_config.get("rpc")
+    rpc = rpc if isinstance(rpc, dict) else {}
 
     mode = app.get("mode")
     if not isinstance(mode, str) or not mode:
@@ -357,6 +362,9 @@ def load_onchain_settings_config(
             "risk",
             300,
         )),
+        rpc_ethereum=str(rpc.get("ethereum", "") or ""),
+        rpc_base=str(rpc.get("base", "") or ""),
+        rpc_arbitrum=str(rpc.get("arbitrum", "") or ""),
     )
 
 
@@ -398,6 +406,11 @@ def dump_onchain_settings_yaml(settings: OnchainSettings) -> str:
             "max_opens_per_day": settings.risk_max_opens_per_day,
             "max_closes_per_day": settings.risk_max_closes_per_day,
             "min_trade_interval_seconds": settings.risk_min_trade_interval_seconds,
+        },
+        "rpc": {
+            "ethereum": settings.rpc_ethereum,
+            "base": settings.rpc_base,
+            "arbitrum": settings.rpc_arbitrum,
         },
     }
 

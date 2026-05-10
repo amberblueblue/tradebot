@@ -5,9 +5,10 @@ import os
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from onchain_bot.config_loader import load_onchain_symbols_config
+from onchain_bot.config_loader import load_onchain_settings_config, load_onchain_symbols_config
 from onchain_bot.executable_check import check_onchain_executable
 from onchain_bot.live_guard import assert_onchain_live_allowed
+from onchain_bot.live_trade_log import append_live_trade
 from onchain_bot.live_transaction_builder import build_unsigned_transactions
 from onchain_bot.okx_dex_client import OkxDexQuoteClient
 from onchain_bot.paper_state import load_paper_state
@@ -17,6 +18,8 @@ from onchain_bot.signal_reader import read_signal_for_mapping
 from onchain_bot.status_onchain import build_quote_payload
 from onchain_bot.trade_limits import check_onchain_trade_limits
 from onchain_bot.wallet_guard import check_wallet_environment
+from onchain_bot.wallet_signer import broadcast_transaction as broadcast_signed_transaction
+from onchain_bot.wallet_signer import sign_transaction as sign_unsigned_transaction
 
 
 ONCHAIN_WALLET_ADDRESS_ENV = "ONCHAIN_WALLET_ADDRESS"
@@ -174,15 +177,6 @@ def prepare_live_swap(symbol: str, direction: str, amount: str | int | float | D
     return result
 
 
-def execute_live_swap(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    return {
-        "ok": False,
-        "reason": "wallet_signing_not_implemented",
-        "signing": "not_implemented",
-        "broadcast": "not_implemented",
-    }
-
-
 def prepare_unsigned_live_transactions(symbol: str, direction: str, amount: str | int | float | Decimal) -> dict[str, Any]:
     preview = prepare_live_swap(symbol, direction, amount)
     wallet_guard = check_wallet_environment()
@@ -217,6 +211,9 @@ def prepare_unsigned_live_transactions(symbol: str, direction: str, amount: str 
         },
         "live_guard": live_guard,
         "tx_preview": preview.get("tx_preview"),
+        "quote": preview.get("quote"),
+        "parsed_quote": preview.get("parsed_quote"),
+        "risk_result": preview.get("risk"),
         "failures": list(dict.fromkeys(failures)),
         "warnings": list(dict.fromkeys(warnings)),
         "signing": "not_implemented",
@@ -225,14 +222,87 @@ def prepare_unsigned_live_transactions(symbol: str, direction: str, amount: str 
 
 
 def sign_live_transaction(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    return {
-        "ok": False,
-        "reason": "wallet_signing_not_enabled",
-    }
+    return sign_unsigned_transaction(*args, **kwargs)
 
 
 def broadcast_live_transaction(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    return broadcast_signed_transaction(*args, **kwargs)
+
+
+def execute_live_swap(symbol: str, direction: str, amount: str | int | float | Decimal) -> dict[str, Any]:
+    settings = load_onchain_settings_config()
+    unsigned = prepare_unsigned_live_transactions(symbol, direction, amount)
+    if unsigned.get("failures"):
+        return {
+            **unsigned,
+            "ok": False,
+            "reason": "preflight_failed",
+            "tx_hash": None,
+        }
+    if not settings.live_wallet_signing_enabled:
+        return {
+            **unsigned,
+            "ok": False,
+            "reason": "wallet_signing_not_enabled",
+            "tx_hash": None,
+        }
+    if not settings.live_broadcast_enabled:
+        return {
+            **unsigned,
+            "ok": False,
+            "reason": "broadcast_not_enabled",
+            "tx_hash": None,
+        }
+    swap_transaction = unsigned.get("swap_transaction")
+    if not isinstance(swap_transaction, dict):
+        return {
+            **unsigned,
+            "ok": False,
+            "reason": "swap_tx_data_missing",
+            "tx_hash": None,
+        }
+    signed = sign_live_transaction(
+        swap_transaction,
+        amount_usdt=amount if str(direction).lower() == "buy" else unsigned.get("amount"),
+        action=f"execute_{direction}",
+    )
+    if not signed.get("ok"):
+        return {
+            **unsigned,
+            "ok": False,
+            "reason": signed.get("reason") or "wallet_signing_failed",
+            "sign_result": {key: value for key, value in signed.items() if key != "signed_tx"},
+            "tx_hash": None,
+        }
+    broadcast = broadcast_live_transaction(
+        signed.get("signed_tx"),
+        chain_id=swap_transaction.get("chain_id"),
+    )
+    if not broadcast.get("ok"):
+        return {
+            **unsigned,
+            "ok": False,
+            "reason": broadcast.get("reason") or "broadcast_failed",
+            "broadcast_result": broadcast,
+            "tx_hash": None,
+        }
+    tx_hash = broadcast.get("tx_hash")
+    append_live_trade(
+        {
+            "symbol": unsigned.get("symbol"),
+            "direction": unsigned.get("direction"),
+            "amount": unsigned.get("amount"),
+            "tx_hash": tx_hash,
+            "status": "submitted",
+            "quote": unsigned.get("tx_preview"),
+            "parsed_quote": unsigned.get("parsed_quote"),
+            "risk_result": unsigned.get("risk_result"),
+        }
+    )
     return {
-        "ok": False,
-        "reason": "broadcast_not_enabled",
+        **unsigned,
+        "ok": True,
+        "reason": "submitted",
+        "tx_hash": tx_hash,
+        "broadcast_result": broadcast,
     }

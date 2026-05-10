@@ -34,3 +34,8 @@ risk:
   max_opens_per_day: 5
   max_closes_per_day: 5
   min_trade_interval_seconds: 300
+
+rpc:
+  ethereum: ""
+  base: ""
+  arbitrum: ""

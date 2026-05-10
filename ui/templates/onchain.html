@@ -201,6 +201,68 @@
   </div>
 
   <div class="col-12">
+    <div class="card shadow-sm border-danger">
+      <div class="card-body">
+        <h2 class="h5 mb-2">Auto Live Execute Panel</h2>
+        <div class="alert alert-danger">
+          这会真实发送链上交易。必须开启 auto live、钱包签名、广播，并设置 ONCHAIN_CONFIRM_LIVE=YES。
+        </div>
+        <form class="row g-3 align-items-end" method="post" action="/onchain/live-execute#onchain-live-execute-result">
+          <div class="col-md-3">
+            <label class="form-label" for="live-execute-symbol">symbol</label>
+            <input id="live-execute-symbol" name="symbol" class="form-control" placeholder="GOOGLUSDT" required>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label" for="live-execute-direction">direction</label>
+            <select id="live-execute-direction" name="direction" class="form-select">
+              <option value="buy">buy</option>
+              <option value="sell">sell</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label" for="live-execute-amount">amount</label>
+            <input id="live-execute-amount" name="amount" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_default_order_amount_usdt or 20 }}" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="live-execute-confirm">确认</label>
+            <input id="live-execute-confirm" name="live_execute_confirm" class="form-control" placeholder="输入 YES 才会执行">
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-danger w-100" type="submit">运行一次真实 Onchain Live</button>
+          </div>
+        </form>
+        {% if live_execute_error %}
+        <div class="alert alert-danger mt-3 mb-0">{{ live_execute_error }}</div>
+        {% endif %}
+        {% if live_execute_result %}
+        <div class="mt-3" id="onchain-live-execute-result">
+          <div class="alert {% if live_execute_result.ok %}alert-success{% else %}alert-danger{% endif %}">
+            执行结果：{{ live_execute_result.reason or ("submitted" if live_execute_result.ok else "failed") }}
+          </div>
+          <div class="row g-3">
+            <div class="col-md-3">
+              <div class="text-secondary small">tx_hash</div>
+              <code>{{ live_execute_result.tx_hash or "无" }}</code>
+            </div>
+            <div class="col-md-4">
+              <div class="text-secondary small">failures</div>
+              <div class="{% if live_execute_result.failures %}text-danger{% else %}text-secondary{% endif %}">{{ live_execute_result.failures | join(", ") if live_execute_result.failures else "无" }}</div>
+            </div>
+            <div class="col-md-5">
+              <div class="text-secondary small">warnings</div>
+              <div class="{% if live_execute_result.warnings %}text-warning{% else %}text-secondary{% endif %}">{{ live_execute_result.warnings | join(", ") if live_execute_result.warnings else "无" }}</div>
+            </div>
+            <div class="col-12">
+              <pre class="bg-light border rounded p-3 mb-0 overflow-auto"><code>{{ live_execute_result_json }}</code></pre>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
@@ -490,11 +552,17 @@
           </div>
           <div class="col-md-3">
             <div class="text-secondary small">钱包签名是否启用</div>
-            <div class="form-control bg-body-secondary">{{ onchain_settings.live_wallet_signing_enabled }}</div>
+            <select name="wallet_signing_enabled" class="form-select">
+              <option value="false" {% if not onchain_settings.live_wallet_signing_enabled %}selected{% endif %}>false</option>
+              <option value="true" {% if onchain_settings.live_wallet_signing_enabled %}selected{% endif %}>true</option>
+            </select>
           </div>
           <div class="col-md-3">
             <div class="text-secondary small">广播交易是否启用</div>
-            <div class="form-control bg-body-secondary">{{ onchain_settings.live_broadcast_enabled }}</div>
+            <select name="broadcast_enabled" class="form-select">
+              <option value="false" {% if not onchain_settings.live_broadcast_enabled %}selected{% endif %}>false</option>
+              <option value="true" {% if onchain_settings.live_broadcast_enabled %}selected{% endif %}>true</option>
+            </select>
           </div>
           <div class="col-md-4">
             <label class="form-label" for="auto-live-confirm">开启二次确认</label>

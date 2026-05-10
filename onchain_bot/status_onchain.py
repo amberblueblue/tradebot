@@ -454,6 +454,7 @@ def _manual_trades_file_corrupt(path: Path = DEFAULT_MANUAL_TRADES_PATH) -> bool
 
 def _onchain_sensitive_env_reads() -> list[str]:
     suspicious: list[str] = []
+    allowed_private_key_readers = {"wallet_guard.py", "wallet_signer.py"}
     sensitive_words = ("private", "private_key", "seed", "seed_phrase", "mnemonic")
     for path in sorted((Path(__file__).resolve().parent).glob("*.py")):
         try:
@@ -463,6 +464,8 @@ def _onchain_sensitive_env_reads() -> list[str]:
         for lineno, line in enumerate(lines, start=1):
             lowered = line.lower()
             if ("os.getenv" not in lowered and "os.environ" not in lowered) or not any(word in lowered for word in sensitive_words):
+                continue
+            if path.name in allowed_private_key_readers and "seed" not in lowered and "mnemonic" not in lowered:
                 continue
             suspicious.append(f"{path.name}:{lineno}")
     return suspicious
