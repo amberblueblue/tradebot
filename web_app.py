@@ -2324,11 +2324,16 @@ def _onchain_symbol_rows() -> tuple[list[dict[str, object]], str | None]:
     for symbol_config in symbols.values():
         row = symbol_config.to_dict()
         futures_signal = read_signal_for_mapping(symbol_config)
-        cached_quote = get_cached_quote(symbol_config.symbol)
+        cached_buy_quote = get_cached_quote(symbol_config.symbol, "buy")
+        cached_sell_quote = get_cached_quote(symbol_config.symbol, "sell")
+        action = str(futures_signal.get("action") or "")
+        cached_quote = cached_sell_quote if action.startswith("CLOSE") else cached_buy_quote
         executable_check = check_onchain_executable(
             mapping=symbol_config,
             futures_signal=futures_signal,
             quote_result=cached_quote,
+            buy_quote_result=cached_buy_quote,
+            sell_quote_result=cached_sell_quote,
         )
         row.update(
             {
@@ -2337,7 +2342,11 @@ def _onchain_symbol_rows() -> tuple[list[dict[str, object]], str | None]:
                 "futures_signal_reason": futures_signal.get("reason"),
                 "futures_signal_time": futures_signal.get("updated_at"),
                 "cached_quote": cached_quote,
+                "cached_buy_quote": cached_buy_quote,
+                "cached_sell_quote": cached_sell_quote,
                 "quote_status": "not_tested" if cached_quote is None else "ok" if cached_quote.get("ok") else "error",
+                "buy_quote_status": "not_tested" if cached_buy_quote is None else "ok" if cached_buy_quote.get("ok") else "error",
+                "sell_quote_status": "not_tested" if cached_sell_quote is None else "ok" if cached_sell_quote.get("ok") else "error",
                 "cached_quote_time": cached_quote.get("quoted_at") if cached_quote else None,
                 "cached_quote_error": cached_quote.get("error") if cached_quote else None,
                 "cached_quote_amount_usdt": cached_quote.get("amount_usdt") if cached_quote else None,
@@ -2372,8 +2381,19 @@ def _onchain_paper_rows() -> tuple[list[dict[str, object]], list[dict[str, objec
     for position in get_positions():
         row = dict(position)
         mapping = mappings.get(str(row.get("symbol", "")).upper())
+        buy_quote = get_cached_quote(str(row.get("symbol", "")), "buy")
+        sell_quote = get_cached_quote(str(row.get("symbol", "")), "sell")
         row["chain_name"] = row.get("chain_name") or (mapping.chain_name if mapping else None)
         row["latest_quote_price"] = row.get("latest_quote_price") or row.get("last_quote_price")
+        row["buy_quote_status"] = "not_tested" if buy_quote is None else "ok" if buy_quote.get("ok") else "error"
+        row["sell_quote_status"] = "not_tested" if sell_quote is None else "ok" if sell_quote.get("ok") else "error"
+        row["estimated_exit_quote_amount"] = None
+        row["estimated_exit_pnl"] = None
+        if sell_quote and sell_quote.get("ok"):
+            parsed_quote = sell_quote.get("parsed_quote")
+            if isinstance(parsed_quote, dict):
+                row["estimated_exit_quote_amount"] = parsed_quote.get("to_amount_display")
+                row["estimated_exit_pnl"] = row.get("unrealized_pnl")
         row["holding_minutes"] = _minutes_since(row.get("entry_time"))
         positions.append(row)
 
@@ -2409,6 +2429,7 @@ def _onchain_view(
     edit_error: str | None = None,
     quote_symbol: str | None = None,
     quote_amount_usdt: str = "10",
+    quote_direction: str = "buy",
     quote_result: dict[str, object] | None = None,
     quote_error: str | None = None,
     paper_run_result: dict[str, object] | None = None,
@@ -2423,10 +2444,16 @@ def _onchain_view(
                 symbol["cached_quote_time"] = quote_result.get("quoted_at") or symbol.get("cached_quote_time")
                 symbol["cached_quote_error"] = quote_result.get("error") or quote_result.get("message")
                 symbol["cached_quote_amount_usdt"] = quote_result.get("amount_usdt")
+                if quote_result.get("direction") == "sell":
+                    symbol["sell_quote_status"] = quote_status
+                else:
+                    symbol["buy_quote_status"] = quote_status
                 executable_check = check_onchain_executable(
                     mapping=SimpleNamespace(**symbol),
                     futures_signal=symbol.get("futures_signal"),
                     quote_result=quote_result,
+                    buy_quote_result=quote_result if quote_result.get("direction") == "buy" else symbol.get("cached_buy_quote"),
+                    sell_quote_result=quote_result if quote_result.get("direction") == "sell" else symbol.get("cached_sell_quote"),
                 )
                 symbol["executable"] = executable_check["executable"]
                 symbol["executable_reasons"] = executable_check["reasons"]
@@ -2444,6 +2471,7 @@ def _onchain_view(
         "form_defaults": _onchain_form_defaults(),
         "quote_symbol": quote_symbol,
         "quote_amount_usdt": quote_amount_usdt,
+        "quote_direction": quote_direction,
         "quote_result": quote_result,
         "quote_result_json": json.dumps(quote_result, indent=2, ensure_ascii=False) if quote_result else "",
         "quote_error": quote_error,
@@ -2753,13 +2781,14 @@ async def onchain_quote_submit(request: Request, symbol: str):
     normalized_symbol = symbol.strip().upper()
     form = await _read_form_data(request)
     amount_usdt = form.get("amount_usdt", "10").strip() or "10"
+    quote_direction = form.get("quote_direction", "buy").strip().lower() or "buy"
     quote_result = None
     quote_error = None
     status_code = 200
     try:
         normalized_symbol = _ensure_onchain_symbol(symbol)
-        quote_result = build_quote_payload(normalized_symbol, amount_usdt)
-        cached_quote = update_quote_cache(normalized_symbol, quote_result)
+        quote_result = build_quote_payload(normalized_symbol, amount_usdt, direction=quote_direction)
+        cached_quote = update_quote_cache(normalized_symbol, quote_result, direction=quote_direction)
         quote_result = dict(quote_result)
         quote_result["quoted_at"] = cached_quote.get("quoted_at")
     except Exception as exc:
@@ -2768,6 +2797,7 @@ async def onchain_quote_submit(request: Request, symbol: str):
     context = _onchain_view(
         quote_symbol=normalized_symbol,
         quote_amount_usdt=amount_usdt,
+        quote_direction=quote_direction,
         quote_result=quote_result,
         quote_error=quote_error,
     )

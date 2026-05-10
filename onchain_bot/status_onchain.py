@@ -13,7 +13,6 @@ if __package__ in {None, ""}:
 from onchain_bot.config_loader import load_onchain_symbols_config, onchain_symbols_payload  # noqa: E402
 from onchain_bot.executable_check import check_onchain_executable, quote_is_stale  # noqa: E402
 from onchain_bot.okx_dex_client import OkxDexQuoteClient  # noqa: E402
-from onchain_bot.quote_parser import parse_okx_quote  # noqa: E402
 from onchain_bot.quote_cache import get_cached_quote, load_quote_cache  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
 
@@ -48,6 +47,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=str,
         help="Quote token amount, currently intended for USDC/USDT stablecoin quotes.",
     )
+    parser.add_argument(
+        "--direction",
+        choices=("buy", "sell"),
+        default="buy",
+        help="Quote direction for --quote. buy=quote token to target token, sell=target token to quote token.",
+    )
     return parser.parse_args(argv)
 
 
@@ -67,8 +72,11 @@ def _amount_to_base_units(amount_usdt: str, decimals: int) -> int:
     return int(amount * scale)
 
 
-def build_quote_payload(symbol: str, amount_usdt: str) -> dict[str, Any]:
+def build_quote_payload(symbol: str, amount_usdt: str, direction: str = "buy") -> dict[str, Any]:
     normalized_symbol = symbol.strip().upper()
+    normalized_direction = direction.strip().lower()
+    if normalized_direction not in {"buy", "sell"}:
+        raise ValueError("direction must be buy or sell")
     symbols = load_onchain_symbols_config()
     symbol_config = symbols.get(normalized_symbol)
     if symbol_config is None:
@@ -101,25 +109,36 @@ def build_quote_payload(symbol: str, amount_usdt: str) -> dict[str, Any]:
             "message": "Current quote-only mode supports USDC/USDT quote tokens only.",
         }
 
-    from_token_amount = _amount_to_base_units(amount_usdt, symbol_config.quote_token_decimals)
-    quote_result = OkxDexQuoteClient().quote(
+    if normalized_direction == "buy":
+        from_token_address = symbol_config.quote_token_address
+        to_token_address = symbol_config.token_address
+        from_token_decimals = symbol_config.quote_token_decimals
+        to_token_decimals = symbol_config.token_decimals
+        from_token_symbol = symbol_config.quote_token_symbol
+        to_token_symbol = symbol_config.token_symbol
+    else:
+        from_token_address = symbol_config.token_address
+        to_token_address = symbol_config.quote_token_address
+        from_token_decimals = symbol_config.token_decimals
+        to_token_decimals = symbol_config.quote_token_decimals
+        from_token_symbol = symbol_config.token_symbol
+        to_token_symbol = symbol_config.quote_token_symbol
+
+    quote_result = OkxDexQuoteClient().get_quote(
         chain_id=symbol_config.chain_id,
-        from_token_address=symbol_config.quote_token_address,
-        to_token_address=symbol_config.token_address,
-        amount=from_token_amount,
-    )
-    parsed_quote = parse_okx_quote(
-        raw_quote=quote_result.get("quote"),
-        amount_usdt=amount_value,
-        quote_token_symbol=symbol_config.quote_token_symbol,
-        quote_token_decimals=symbol_config.quote_token_decimals,
-        token_symbol=symbol_config.token_symbol,
-        token_decimals=symbol_config.token_decimals,
-        max_slippage_pct=symbol_config.max_slippage_pct,
-        latency_ms=quote_result.get("latency_ms"),
+        from_token_address=from_token_address,
+        to_token_address=to_token_address,
+        from_token_decimals=from_token_decimals,
+        to_token_decimals=to_token_decimals,
+        amount_display=amount_usdt,
+        slippage_pct=symbol_config.max_slippage_pct,
+        direction=normalized_direction,
+        from_token_symbol=from_token_symbol,
+        to_token_symbol=to_token_symbol,
     )
     return {
         "ok": bool(quote_result.get("ok")),
+        "direction": normalized_direction,
         "symbol": normalized_symbol,
         "chain_id": symbol_config.chain_id,
         "token_symbol": symbol_config.token_symbol,
@@ -127,9 +146,19 @@ def build_quote_payload(symbol: str, amount_usdt: str) -> dict[str, Any]:
         "quote_token_symbol": symbol_config.quote_token_symbol,
         "quote_token_address": symbol_config.quote_token_address,
         "amount_usdt": amount_value,
-        "from_token_amount": str(from_token_amount),
+        "amount_display": amount_value,
+        "from_token_symbol": from_token_symbol,
+        "to_token_symbol": to_token_symbol,
+        "from_token_address": from_token_address,
+        "to_token_address": to_token_address,
+        "from_token_amount": quote_result.get("from_token_amount"),
+        "from_amount_display": quote_result.get("from_amount_display"),
+        "to_amount_display": quote_result.get("to_amount_display"),
+        "implied_price": quote_result.get("implied_price"),
+        "price_impact_pct": quote_result.get("price_impact_pct"),
+        "route": quote_result.get("route"),
         "quote": quote_result.get("quote"),
-        "parsed_quote": parsed_quote,
+        "parsed_quote": quote_result.get("parsed_quote"),
         "endpoint": quote_result.get("endpoint"),
         "status_code": quote_result.get("status_code"),
         "http_status": quote_result.get("http_status"),
@@ -150,13 +179,18 @@ def build_readiness_payload() -> dict[str, Any]:
     items = []
     for symbol, symbol_config in symbols.items():
         futures_signal = read_signal_for_mapping(symbol_config)
-        cached_quote = get_cached_quote(symbol)
-        cached_quote_error = cached_quote.get("error") if cached_quote else None
-        cached_quote_stale = quote_is_stale(cached_quote)
+        cached_buy_quote = get_cached_quote(symbol, "buy")
+        cached_sell_quote = get_cached_quote(symbol, "sell")
+        action = str(futures_signal.get("action") or "")
+        readiness_quote = cached_sell_quote if action.startswith("CLOSE") else cached_buy_quote
+        cached_quote_error = readiness_quote.get("error") if readiness_quote else None
+        cached_quote_stale = quote_is_stale(readiness_quote)
         executable_check = check_onchain_executable(
             mapping=symbol_config,
             futures_signal=futures_signal,
-            quote_result=cached_quote,
+            quote_result=readiness_quote,
+            buy_quote_result=cached_buy_quote,
+            sell_quote_result=cached_sell_quote,
         )
         items.append(
             {
@@ -168,11 +202,15 @@ def build_readiness_payload() -> dict[str, Any]:
                 "token_address": symbol_config.token_address,
                 "quote_token_symbol": symbol_config.quote_token_symbol,
                 "quote_token_address": symbol_config.quote_token_address,
-                "quote_status": "not_tested" if cached_quote is None else "ok" if cached_quote.get("ok") else "error",
-                "cached_quote_ok": cached_quote.get("ok") if cached_quote else None,
-                "cached_quote_time": cached_quote.get("quoted_at") if cached_quote else None,
+                "quote_status": "not_tested" if readiness_quote is None else "ok" if readiness_quote.get("ok") else "error",
+                "cached_quote_ok": readiness_quote.get("ok") if readiness_quote else None,
+                "cached_quote_time": readiness_quote.get("quoted_at") if readiness_quote else None,
                 "cached_quote_error": cached_quote_error,
-                "cached_quote_amount_usdt": cached_quote.get("amount_usdt") if cached_quote else None,
+                "cached_quote_amount_usdt": readiness_quote.get("amount_usdt") if readiness_quote else None,
+                "cached_buy_quote_ok": cached_buy_quote.get("ok") if cached_buy_quote else None,
+                "cached_buy_quote_time": cached_buy_quote.get("quoted_at") if cached_buy_quote else None,
+                "cached_sell_quote_ok": cached_sell_quote.get("ok") if cached_sell_quote else None,
+                "cached_sell_quote_time": cached_sell_quote.get("quoted_at") if cached_sell_quote else None,
                 "quote_stale": cached_quote_stale,
                 "futures_signal": futures_signal,
                 "executable": executable_check["executable"],
@@ -215,7 +253,7 @@ def main() -> int:
         elif args.quote_cache:
             payload = load_quote_cache()
         else:
-            payload = build_quote_payload(args.quote, args.amount_usdt)
+            payload = build_quote_payload(args.quote, args.amount_usdt, direction=args.direction)
     except Exception as exc:
         print(json.dumps({"error": "onchain_config_error", "message": str(exc)}, indent=2, sort_keys=True))
         return 1

@@ -40,6 +40,8 @@ def check_onchain_executable(
     mapping: Any,
     futures_signal: dict[str, Any] | None,
     quote_result: dict[str, Any] | None = None,
+    buy_quote_result: dict[str, Any] | None = None,
+    sell_quote_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     reasons: list[str] = []
 
@@ -62,14 +64,21 @@ def check_onchain_executable(
     if action == "HOLD":
         reasons.append("signal_hold")
     elif action == "LONG":
-        if quote_result is None:
-            reasons.append("quote_not_available")
-        elif not bool(quote_result.get("ok", False)):
+        buy_quote = buy_quote_result or quote_result
+        if buy_quote is None:
+            reasons.append("buy_quote_not_available")
+        elif not bool(buy_quote.get("ok", False)):
             reasons.append("quote_error")
-        elif quote_is_stale(quote_result):
+        elif quote_is_stale(buy_quote):
             reasons.append("quote_stale")
     elif action.startswith("CLOSE"):
-        reasons.append("close_quote_not_implemented")
+        sell_quote = sell_quote_result or quote_result
+        if sell_quote is None:
+            reasons.append("sell_quote_not_available")
+        elif not bool(sell_quote.get("ok", False)):
+            reasons.append("quote_error")
+        elif quote_is_stale(sell_quote):
+            reasons.append("quote_stale")
     else:
         reasons.append("signal_not_executable")
 

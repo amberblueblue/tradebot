@@ -268,6 +268,10 @@
                 <th>最新价格</th>
                 <th>未实现盈亏</th>
                 <th>未实现盈亏 %</th>
+                <th>最近买入报价状态</th>
+                <th>最近卖出报价状态</th>
+                <th>当前估算退出金额</th>
+                <th>当前估算PnL</th>
                 <th>开仓时间</th>
                 <th>持仓分钟数</th>
                 <th>链名称</th>
@@ -288,13 +292,19 @@
                 <td class="{% if position.unrealized_pnl_pct and position.unrealized_pnl_pct > 0 %}text-success{% elif position.unrealized_pnl_pct and position.unrealized_pnl_pct < 0 %}text-danger{% endif %}">
                   {{ position.unrealized_pnl_pct }}
                 </td>
+                <td>{{ position.buy_quote_status }}</td>
+                <td>{{ position.sell_quote_status }}</td>
+                <td>{{ position.estimated_exit_quote_amount or "n/a" }}</td>
+                <td class="{% if position.estimated_exit_pnl and position.estimated_exit_pnl > 0 %}text-success{% elif position.estimated_exit_pnl and position.estimated_exit_pnl < 0 %}text-danger{% endif %}">
+                  {{ position.estimated_exit_pnl or "n/a" }}
+                </td>
                 <td>{{ position.entry_time }}</td>
                 <td>{{ position.holding_minutes or "n/a" }}</td>
                 <td>{{ position.chain_name or "n/a" }}</td>
               </tr>
               {% else %}
               <tr>
-                <td colspan="11" class="text-secondary">暂无持仓</td>
+                <td colspan="15" class="text-secondary">暂无持仓</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -388,8 +398,11 @@
                 <th>信号标的</th>
                 <th>开仓价格</th>
                 <th>平仓价格</th>
+                <th>退出金额</th>
                 <th>已实现盈亏</th>
                 <th>已实现盈亏 %</th>
+                <th>卖出路由</th>
+                <th>卖出价格冲击</th>
                 <th>持仓分钟数</th>
                 <th>开仓时间</th>
                 <th>平仓时间</th>
@@ -402,12 +415,15 @@
                 <td class="fw-semibold">{{ trade.symbol }}</td>
                 <td>{{ trade.entry_price }}</td>
                 <td>{{ trade.exit_price }}</td>
+                <td>{{ trade.exit_quote_amount }}</td>
                 <td class="{% if trade.realized_pnl and trade.realized_pnl > 0 %}text-success{% elif trade.realized_pnl and trade.realized_pnl < 0 %}text-danger{% endif %}">
                   {{ trade.realized_pnl }}
                 </td>
                 <td class="{% if trade.realized_pnl_pct and trade.realized_pnl_pct > 0 %}text-success{% elif trade.realized_pnl_pct and trade.realized_pnl_pct < 0 %}text-danger{% endif %}">
                   {{ trade.realized_pnl_pct }}
                 </td>
+                <td>{{ trade.sell_quote_route or "n/a" }}</td>
+                <td>{{ trade.sell_quote_price_impact or "n/a" }}</td>
                 <td>{{ trade.holding_minutes or "n/a" }}</td>
                 <td>{{ trade.entry_time }}</td>
                 <td>{{ trade.exit_time }}</td>
@@ -415,7 +431,7 @@
               </tr>
               {% else %}
               <tr>
-                <td colspan="9" class="text-secondary">暂无历史交易</td>
+                <td colspan="12" class="text-secondary">暂无历史交易</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -442,7 +458,14 @@
         <h2 class="h5 mb-3">测试报价：{{ quote_symbol }}</h2>
         <form class="row g-3 align-items-end" method="post" action="/onchain/quote/{{ quote_symbol }}">
           <div class="col-md-4 col-xl-3">
-            <label class="form-label" for="quote-amount">测试金额 <span class="text-secondary small">amount-usdt</span></label>
+            <label class="form-label" for="quote-direction">Quote Direction <span class="text-secondary small">direction</span></label>
+            <select id="quote-direction" name="quote_direction" class="form-select">
+              <option value="buy" {% if quote_direction != "sell" %}selected{% endif %}>买入报价：USDC → Token</option>
+              <option value="sell" {% if quote_direction == "sell" %}selected{% endif %}>卖出报价：Token → USDC</option>
+            </select>
+          </div>
+          <div class="col-md-4 col-xl-3">
+            <label class="form-label" for="quote-amount">测试数量 <span class="text-secondary small">amount</span></label>
             <input id="quote-amount" name="amount_usdt" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ quote_amount_usdt or '10' }}" required>
           </div>
           <div class="col-md-8 col-xl-6">
@@ -475,8 +498,12 @@
             <div class="fw-semibold">{{ quote_result.chain_id }}</div>
           </div>
           <div class="col-md-3">
+            <div class="text-secondary small">报价方向</div>
+            <div class="fw-semibold">{% if quote_result.direction == "sell" %}卖出报价{% else %}买入报价{% endif %}</div>
+          </div>
+          <div class="col-md-3">
             <div class="text-secondary small">测试金额</div>
-            <div class="fw-semibold">{{ quote_result.amount_usdt }}</div>
+            <div class="fw-semibold">{{ quote_result.amount_display or quote_result.amount_usdt }}</div>
           </div>
           <div class="col-md-3">
             <div class="text-secondary small">支付金额</div>
@@ -495,8 +522,8 @@
             <div class="fw-semibold">{{ parsed.max_slippage_pct or "n/a" }}</div>
           </div>
           <div class="col-md-3">
-            <div class="text-secondary small">预估 Gas</div>
-            <div class="fw-semibold">{{ parsed.estimated_gas_usdt or "n/a" }}</div>
+            <div class="text-secondary small">预估 Gas（原始值）</div>
+            <div class="fw-semibold">{{ parsed.estimated_gas_raw or "n/a" }}</div>
           </div>
           <div class="col-md-3">
             <div class="text-secondary small">价格冲击</div>

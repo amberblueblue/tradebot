@@ -133,22 +133,38 @@ def close_paper_position(
             "reason": "position_not_found",
         }
 
-    exit_price = _price(sell_quote_result)
-    if exit_price is None:
+    if not bool(sell_quote_result.get("ok")):
         return {
             "ok": False,
             "action": "skipped",
             "symbol": normalized_symbol,
-            "reason": "quote_missing_exit_price",
-            "sell_quote_mode": "estimated_from_buy_quote",
+            "reason": "sell_quote_not_available",
+        }
+    if sell_quote_result.get("direction") != "sell":
+        return {
+            "ok": False,
+            "action": "skipped",
+            "symbol": normalized_symbol,
+            "reason": "sell_quote_not_available",
+        }
+
+    exit_quote_amount = _token_amount(sell_quote_result)
+    if exit_quote_amount is None:
+        return {
+            "ok": False,
+            "action": "skipped",
+            "symbol": normalized_symbol,
+            "reason": "sell_quote_not_available",
+            "sell_quote_mode": "sell_quote",
         }
 
     entry_price = float(position.get("entry_price") or 0.0)
     entry_token_amount = float(position.get("entry_token_amount") or 0.0)
     entry_quote_amount = float(position.get("entry_quote_amount") or 0.0)
-    exit_quote_amount = entry_token_amount * exit_price
+    exit_price = (exit_quote_amount / entry_token_amount) if entry_token_amount else 0.0
     realized_pnl = exit_quote_amount - entry_quote_amount
     realized_pnl_pct = (realized_pnl / entry_quote_amount * 100) if entry_quote_amount else 0.0
+    parsed_sell_quote = _parsed_quote(sell_quote_result)
 
     closed_trade = {
         **position,
@@ -158,7 +174,9 @@ def close_paper_position(
         "realized_pnl": realized_pnl,
         "realized_pnl_pct": realized_pnl_pct,
         "close_reason": close_reason,
-        "sell_quote_mode": "estimated_from_buy_quote",
+        "sell_quote_mode": "sell_quote",
+        "sell_quote_route": parsed_sell_quote.get("route"),
+        "sell_quote_price_impact": parsed_sell_quote.get("price_impact_pct"),
     }
     positions.pop(normalized_symbol)
     state["closed_trades"].append(closed_trade)
@@ -173,5 +191,5 @@ def close_paper_position(
         "exit_price": exit_price,
         "realized_pnl": realized_pnl,
         "realized_pnl_pct": realized_pnl_pct,
-        "sell_quote_mode": "estimated_from_buy_quote",
+        "sell_quote_mode": "sell_quote",
     }

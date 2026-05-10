@@ -20,13 +20,23 @@ def _decimal_from_text(value: Any) -> Decimal | None:
         return None
 
 
-def _latest_quote_price(symbol: str) -> float | None:
-    cached_quote = get_cached_quote(symbol)
+def _display_amount(value: Any) -> float | None:
+    parsed = _decimal_from_text(value)
+    return float(parsed) if parsed is not None else None
+
+
+def _latest_quote_price(symbol: str, position: dict[str, Any]) -> float | None:
+    cached_quote = get_cached_quote(symbol, "sell") or get_cached_quote(symbol, "buy")
     if not cached_quote or not bool(cached_quote.get("ok")):
         return None
     parsed_quote = cached_quote.get("parsed_quote")
     if not isinstance(parsed_quote, dict):
         return None
+    if cached_quote.get("direction") == "sell":
+        exit_quote_amount = _display_amount(parsed_quote.get("to_amount_display"))
+        entry_token_amount = float(position.get("entry_token_amount") or 0.0)
+        if exit_quote_amount is not None and entry_token_amount:
+            return exit_quote_amount / entry_token_amount
     price = _decimal_from_text(parsed_quote.get("implied_price"))
     return float(price) if price is not None else None
 
@@ -44,7 +54,7 @@ def update_paper_positions_with_latest_quotes() -> dict[str, Any]:
         if not isinstance(position, dict):
             skipped_symbols.append(symbol)
             continue
-        latest_price = _latest_quote_price(symbol)
+        latest_price = _latest_quote_price(symbol, position)
         if latest_price is None:
             skipped_symbols.append(symbol)
             continue

@@ -13,6 +13,7 @@ if __package__ in {None, ""}:
 
 from onchain_bot.config_loader import load_onchain_settings_config, load_onchain_symbols_config  # noqa: E402
 from onchain_bot.executable_check import quote_is_stale  # noqa: E402
+from onchain_bot.paper_state import load_paper_state  # noqa: E402
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache  # noqa: E402
 from onchain_bot.run_onchain_paper_once import run_once  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
@@ -57,8 +58,11 @@ def _refresh_quote_if_needed(
     stale_seconds: int,
     default_amount_usdt: float,
     auto_refresh_enabled: bool,
+    amount_display: float | int | str | None = None,
+    direction: str = "buy",
 ) -> dict[str, Any]:
-    cached_quote = get_cached_quote(symbol)
+    normalized_direction = direction.strip().lower()
+    cached_quote = get_cached_quote(symbol, normalized_direction)
     status = _quote_status(cached_quote, stale_seconds=stale_seconds)
     if (
         not auto_refresh_enabled
@@ -71,8 +75,9 @@ def _refresh_quote_if_needed(
             "quote_refresh_error": None,
         }
 
-    quote_result = build_quote_payload(symbol, str(default_amount_usdt))
-    cached_quote = update_quote_cache(symbol, quote_result)
+    quote_amount = amount_display if amount_display is not None else default_amount_usdt
+    quote_result = build_quote_payload(symbol, str(quote_amount), direction=normalized_direction)
+    cached_quote = update_quote_cache(symbol, quote_result, direction=normalized_direction)
     if not bool(cached_quote.get("ok")):
         return {
             "quote_status": "error",
@@ -104,6 +109,10 @@ def run_loop_iteration() -> dict[str, Any]:
         }
 
     symbols = load_onchain_symbols_config()
+    paper_state = load_paper_state()
+    positions = paper_state.get("positions", {})
+    if not isinstance(positions, dict):
+        positions = {}
     enabled_symbols = {
         symbol: mapping
         for symbol, mapping in symbols.items()
@@ -113,12 +122,22 @@ def run_loop_iteration() -> dict[str, Any]:
     for symbol, mapping in enabled_symbols.items():
         futures_signal = read_signal_for_mapping(mapping)
         action = _signal_action(futures_signal)
+        direction = "sell" if action.startswith("CLOSE") else "buy"
+        amount_display = None
+        if direction == "sell":
+            position = positions.get(symbol)
+            if isinstance(position, dict):
+                amount_display = position.get("entry_token_amount")
+            else:
+                amount_display = None
         quote_info = _refresh_quote_if_needed(
             symbol=symbol,
             signal_action=action,
             stale_seconds=settings.quote_stale_seconds,
             default_amount_usdt=settings.quote_default_amount_usdt,
-            auto_refresh_enabled=settings.quote_auto_refresh_enabled,
+            auto_refresh_enabled=settings.quote_auto_refresh_enabled and (direction == "buy" or amount_display is not None),
+            amount_display=amount_display,
+            direction=direction,
         )
         preflight[symbol] = {
             "symbol": symbol,

@@ -8,11 +8,14 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+from onchain_bot.quote_parser import parse_okx_quote
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DOTENV_PATH = PROJECT_ROOT / ".env"
@@ -104,6 +107,16 @@ def _elapsed_ms(started_at: float) -> float:
     return round((time.perf_counter() - started_at) * 1000, 2)
 
 
+def _amount_to_base_units(amount_display: float | int | str, decimals: int) -> int:
+    try:
+        amount = Decimal(str(amount_display))
+    except InvalidOperation as exc:
+        raise ValueError("amount_display must be a number greater than 0") from exc
+    if amount <= 0:
+        raise ValueError("amount_display must be greater than 0")
+    return int(amount * (Decimal(10) ** decimals))
+
+
 def _headers(
     *,
     credentials: OkxDexCredentials,
@@ -162,6 +175,18 @@ def _request_diagnostics(
     }
 
 
+def _okx_business_error(payload: Any) -> tuple[str, str] | None:
+    if not isinstance(payload, dict):
+        return "okx_invalid_response", "OKX response is not a JSON object."
+    code = str(payload.get("code", ""))
+    if code and code != "0":
+        return "okx_business_error", str(payload.get("msg") or payload.get("message") or f"OKX error code {code}")
+    data = payload.get("data")
+    if not isinstance(data, list) or not data:
+        return "okx_business_error", str(payload.get("msg") or "OKX quote response data is empty.")
+    return None
+
+
 class OkxDexQuoteClient:
     def __init__(self, *, base_url: str = OKX_DEX_BASE_URL, timeout_seconds: int = 10) -> None:
         self.base_url = base_url.rstrip("/")
@@ -214,6 +239,19 @@ class OkxDexQuoteClient:
                         payload = json.loads(body)
                     except json.JSONDecodeError:
                         payload = {"raw_body": body}
+                    business_error = _okx_business_error(payload)
+                    if business_error:
+                        error, message = business_error
+                        return {
+                            "ok": False,
+                            "endpoint": endpoint,
+                            "status_code": response.status,
+                            "http_status": response.status,
+                            "latency_ms": _elapsed_ms(started_at),
+                            "quote": payload,
+                            "error": error,
+                            "message": message,
+                        }
                     return {
                         "ok": True,
                         "endpoint": endpoint,
@@ -265,4 +303,71 @@ class OkxDexQuoteClient:
             "quote": None,
             "error": "okx_dex_network_error",
             "message": last_error,
+        }
+
+    def get_quote(
+        self,
+        *,
+        chain_id: str,
+        from_token_address: str,
+        to_token_address: str,
+        from_token_decimals: int,
+        to_token_decimals: int,
+        amount_display: float | int | str,
+        slippage_pct: float | int | str | None = None,
+        direction: str,
+        from_token_symbol: str | None = None,
+        to_token_symbol: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_direction = direction.strip().lower()
+        if normalized_direction not in {"buy", "sell"}:
+            raise ValueError("direction must be buy or sell")
+
+        amount = _amount_to_base_units(amount_display, from_token_decimals)
+        quote_result = self.quote(
+            chain_id=chain_id,
+            from_token_address=from_token_address,
+            to_token_address=to_token_address,
+            amount=amount,
+        )
+        parsed_quote = parse_okx_quote(
+            raw_quote=quote_result.get("quote"),
+            amount_display=amount_display,
+            from_token_symbol=from_token_symbol,
+            from_token_decimals=from_token_decimals,
+            to_token_symbol=to_token_symbol,
+            to_token_decimals=to_token_decimals,
+            direction=normalized_direction,
+            max_slippage_pct=slippage_pct,
+            latency_ms=quote_result.get("latency_ms"),
+        )
+        return {
+            "ok": bool(quote_result.get("ok")),
+            "direction": normalized_direction,
+            "chain_id": chain_id,
+            "from_token_address": from_token_address,
+            "to_token_address": to_token_address,
+            "from_token_symbol": from_token_symbol,
+            "to_token_symbol": to_token_symbol,
+            "amount_display": float(Decimal(str(amount_display))),
+            "from_token_amount": str(amount),
+            "from_amount_display": parsed_quote.get("from_amount_display"),
+            "to_amount_display": parsed_quote.get("to_amount_display"),
+            "implied_price": parsed_quote.get("implied_price"),
+            "price_impact_pct": parsed_quote.get("price_impact_pct"),
+            "route": parsed_quote.get("route"),
+            "quote": quote_result.get("quote"),
+            "parsed_quote": parsed_quote,
+            "endpoint": quote_result.get("endpoint"),
+            "status_code": quote_result.get("status_code"),
+            "http_status": quote_result.get("http_status"),
+            "request_url": quote_result.get("request_url"),
+            "request_headers_present": quote_result.get("request_headers_present"),
+            "timestamp": quote_result.get("timestamp"),
+            "response_body": quote_result.get("response_body"),
+            "diagnostics": quote_result.get("diagnostics"),
+            "latency_ms": quote_result.get("latency_ms"),
+            "error": quote_result.get("error"),
+            "message": quote_result.get("message"),
+            "quote_only": True,
         }
