@@ -244,6 +244,15 @@ Onchain Bot 目前只处于 quote + paper 阶段，用来验证 Binance Futures 
 
 真实链上交易必须进入后续阶段后再设计和验收。当前所有 Onchain 执行都必须保持 paper-only。
 
+## Onchain Execution
+
+Onchain 的执行信号来源是 Futures signal。当前阶段只做两件事：
+
+- Paper：根据 Futures signal、mapping、quote、risk、trade limit 和 safety 做模拟开平仓。
+- Manual live assist：生成 live preview / dry run，记录用户在 OKX Web3 Wallet 手动完成后的 tx hash，并查询 tx status。
+
+自动 live swap 尚未启用。机器人不会保存私钥，不会签名，不会 approve，不会广播交易，也不会自动真实 swap。
+
 相关参数：
 
 - `rsi_overheat`

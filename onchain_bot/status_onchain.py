@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from decimal import Decimal, InvalidOperation
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -12,7 +13,7 @@ if __package__ in {None, ""}:
 
 from onchain_bot.config_loader import load_onchain_settings_config, load_onchain_symbols_config, onchain_symbols_payload  # noqa: E402
 from onchain_bot.executable_check import check_onchain_executable, quote_is_stale  # noqa: E402
-from onchain_bot.manual_trade_log import load_manual_trades  # noqa: E402
+from onchain_bot.manual_trade_log import DEFAULT_MANUAL_TRADES_PATH, load_manual_trades  # noqa: E402
 from onchain_bot.okx_dex_client import OkxDexQuoteClient  # noqa: E402
 from onchain_bot.paper_state import DEFAULT_PAPER_STATE_PATH, load_paper_state  # noqa: E402
 from onchain_bot.quote_cache import DEFAULT_QUOTE_CACHE_PATH, get_cached_quote, load_quote_cache  # noqa: E402
@@ -60,6 +61,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--manual-trades",
         action="store_true",
         help="Show manually recorded onchain trades.",
+    )
+    parser.add_argument(
+        "--manual-live-health",
+        action="store_true",
+        help="Show manual onchain live assist readiness without signing or broadcasting.",
     )
     parser.add_argument(
         "--tx-status",
@@ -395,6 +401,115 @@ def build_health_payload() -> dict[str, Any]:
     }
 
 
+def _module_importable(module_name: str) -> bool:
+    try:
+        importlib.import_module(module_name)
+    except Exception:
+        return False
+    return True
+
+
+def _manual_trades_file_corrupt(path: Path = DEFAULT_MANUAL_TRADES_PATH) -> bool:
+    if not path.exists():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return True
+    return not isinstance(payload, dict) or not isinstance(payload.get("trades", []), list)
+
+
+def _onchain_sensitive_env_reads() -> list[str]:
+    suspicious: list[str] = []
+    sensitive_words = ("private", "private_key", "seed", "seed_phrase", "mnemonic")
+    for path in sorted((Path(__file__).resolve().parent).glob("*.py")):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for lineno, line in enumerate(lines, start=1):
+            lowered = line.lower()
+            if ("os.getenv" not in lowered and "os.environ" not in lowered) or not any(word in lowered for word in sensitive_words):
+                continue
+            suspicious.append(f"{path.name}:{lineno}")
+    return suspicious
+
+
+def build_manual_live_health_payload() -> dict[str, Any]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    live_preview_ok = _module_importable("onchain_bot.live_preview")
+    tx_preview_ok = _module_importable("onchain_bot.tx_preview")
+    manual_trade_log_ok = _module_importable("onchain_bot.manual_trade_log")
+    tx_status_ok = _module_importable("onchain_bot.tx_status")
+
+    if not tx_preview_ok:
+        errors.append("tx_preview_module_import_failed")
+    if not manual_trade_log_ok:
+        errors.append("manual_trade_log_module_import_failed")
+    if _manual_trades_file_corrupt():
+        errors.append("manual_trades_file_corrupt")
+
+    sensitive_reads = _onchain_sensitive_env_reads()
+    if sensitive_reads:
+        errors.append("sensitive_key_env_read_detected")
+
+    trades_payload = load_manual_trades()
+    trades = [trade for trade in trades_payload.get("trades", []) if isinstance(trade, dict)]
+    statuses = [str(trade.get("status", "")).lower() for trade in trades]
+    pending_count = sum(1 for status in statuses if status in {"pending", "unknown", ""})
+    confirmed_count = sum(1 for status in statuses if status in {"confirmed", "success", "succeeded"})
+    failed_count = sum(1 for status in statuses if status in {"failed", "error"})
+    if not trades:
+        warnings.append("no_manual_trades")
+
+    try:
+        symbols = load_onchain_symbols_config()
+        if not any(symbol.enabled for symbol in symbols.values()):
+            warnings.append("no_enabled_onchain_mappings")
+    except Exception as exc:
+        errors.append(f"onchain_symbols_error: {exc}")
+
+    try:
+        safety_config = load_runtime_safety_config()
+        auto_swap_enabled = False
+        if safety_config.onchain_trading_enabled:
+            warnings.append("onchain_trading_enabled_true")
+        else:
+            warnings.append("onchain_trading_enabled_false_expected")
+    except Exception as exc:
+        auto_swap_enabled = False
+        errors.append(f"runtime_safety_error: {exc}")
+
+    if auto_swap_enabled:
+        errors.append("auto_swap_enabled_true")
+    warnings.append("tx_status_not_fully_implemented")
+
+    return {
+        "ok": not errors,
+        "features": {
+            "live_preview": live_preview_ok,
+            "tx_preview": tx_preview_ok,
+            "manual_trade_log": manual_trade_log_ok,
+            "tx_status": tx_status_ok,
+        },
+        "safety": {
+            "no_private_key_required": not sensitive_reads,
+            "no_wallet_signing": True,
+            "no_transaction_broadcast": True,
+            "auto_swap_enabled": auto_swap_enabled,
+        },
+        "manual_trades": {
+            "count": len(trades),
+            "pending_count": pending_count,
+            "confirmed_count": confirmed_count,
+            "failed_count": failed_count,
+        },
+        "warnings": list(dict.fromkeys(warnings)),
+        "errors": list(dict.fromkeys(errors)),
+    }
+
+
 def main() -> int:
     args = parse_args(sys.argv[1:])
     selected_modes = sum(
@@ -407,6 +522,7 @@ def main() -> int:
             args.quote_cache,
             args.health,
             args.manual_trades,
+            args.manual_live_health,
             args.tx_status,
         )
     )
@@ -417,7 +533,7 @@ def main() -> int:
                     "error": "missing_mode",
                     "message": (
                         "use --symbols, --quote, --live-preview, --readiness, --quote-cache, "
-                        "--health, --manual-trades, or --tx-status"
+                        "--health, --manual-trades, --manual-live-health, or --tx-status"
                     ),
                 },
                 indent=2,
@@ -462,6 +578,8 @@ def main() -> int:
             payload = build_health_payload()
         elif args.manual_trades:
             payload = load_manual_trades()
+        elif args.manual_live_health:
+            payload = build_manual_live_health_payload()
         elif args.tx_status:
             payload = get_tx_status(args.tx_status[0], args.tx_status[1])
         elif args.live_preview:

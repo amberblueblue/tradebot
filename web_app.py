@@ -67,7 +67,7 @@ from onchain_bot.paper_state import get_closed_trades, get_positions, load_paper
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache
 from onchain_bot.run_onchain_paper_once import run_once as run_onchain_paper_once
 from onchain_bot.signal_reader import read_signal_for_mapping
-from onchain_bot.status_onchain import build_health_payload, build_quote_payload
+from onchain_bot.status_onchain import build_health_payload, build_manual_live_health_payload, build_quote_payload
 from observability.event_logger import LogRouter, StructuredLogger
 from runtime.bot_state import ERROR, PAUSED, RUNNING, STOPPED
 from runtime.safety import (
@@ -2521,6 +2521,7 @@ def _onchain_view(
         "symbols": symbols,
         "symbols_count": len(symbols),
         "onchain_health": build_health_payload(),
+        "manual_live_health": build_manual_live_health_payload(),
         "manual_trades": load_manual_trades().get("trades", []),
         "onchain_session_warning": session_warning,
         "onchain_safety": safety_status_payload(account_equity=None),

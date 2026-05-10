@@ -200,6 +200,80 @@
   <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+          <div>
+            <h2 class="h5 mb-1">Manual Live Health</h2>
+            <p class="text-secondary mb-0">手动链上交易辅助能力检查；机器人不会签名、广播或自动 swap。</p>
+          </div>
+          {% if manual_live_health.ok %}
+          <span class="badge text-bg-success">通过</span>
+          {% else %}
+          <span class="badge text-bg-danger">未通过</span>
+          {% endif %}
+        </div>
+        <div class="row g-3">
+          <div class="col-md-3">
+            <div class="text-secondary small">Live Preview</div>
+            <div class="fw-semibold">{{ manual_live_health.features.live_preview }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">Tx Preview</div>
+            <div class="fw-semibold">{{ manual_live_health.features.tx_preview }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">Manual Trade Log</div>
+            <div class="fw-semibold">{{ manual_live_health.features.manual_trade_log }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">Tx Status</div>
+            <div class="fw-semibold">{{ manual_live_health.features.tx_status }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">是否需要私钥</div>
+            <div class="fw-semibold">{{ not manual_live_health.safety.no_private_key_required }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">是否自动签名</div>
+            <div class="fw-semibold">{{ not manual_live_health.safety.no_wallet_signing }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">是否自动广播</div>
+            <div class="fw-semibold">{{ not manual_live_health.safety.no_transaction_broadcast }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">自动 Swap 是否启用</div>
+            <div class="fw-semibold">{{ manual_live_health.safety.auto_swap_enabled }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">手动交易记录</div>
+            <div class="fw-semibold">{{ manual_live_health.manual_trades.count }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">pending / confirmed / failed</div>
+            <div class="fw-semibold">
+              {{ manual_live_health.manual_trades.pending_count }} /
+              {{ manual_live_health.manual_trades.confirmed_count }} /
+              {{ manual_live_health.manual_trades.failed_count }}
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">warnings</div>
+            <div class="fw-semibold">{{ manual_live_health.warnings | join(", ") if manual_live_health.warnings else "无" }}</div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">errors</div>
+            <div class="{% if manual_live_health.errors %}text-danger fw-semibold{% else %}fw-semibold{% endif %}">
+              {{ manual_live_health.errors | join(", ") if manual_live_health.errors else "无" }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
         <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
           <div>
             <h2 class="h5 mb-1">Onchain Safety</h2>
