@@ -16,6 +16,7 @@ from onchain_bot.paper_broker import (  # noqa: E402
     open_paper_position,
 )
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache  # noqa: E402
+from onchain_bot.risk import check_onchain_quote_risk  # noqa: E402
 from onchain_bot.session_filter import get_execution_session_status  # noqa: E402
 from onchain_bot.signal_reader import read_signal_for_mapping  # noqa: E402
 from onchain_bot.status_onchain import build_quote_payload  # noqa: E402
@@ -103,6 +104,18 @@ def run_once() -> dict[str, Any]:
                 if cached_buy_quote is None or not bool(cached_buy_quote.get("ok")):
                     actions.append(_skip_action(symbol, "quote_not_ok", signal_action=signal_action))
                     continue
+                risk_result = check_onchain_quote_risk(symbol, mapping, cached_buy_quote, "buy")
+                if not risk_result["ok"]:
+                    actions.append(
+                        _skip_action(
+                            symbol,
+                            "risk_failed",
+                            signal_action=signal_action,
+                            risk_reason=risk_result["reason"],
+                            risk_failures=risk_result["failures"],
+                        )
+                    )
+                    continue
                 actions.append(open_paper_position(symbol, mapping, cached_buy_quote))
                 continue
 
@@ -118,6 +131,18 @@ def run_once() -> dict[str, Any]:
                         cached_sell_quote = update_quote_cache(symbol, sell_quote, direction="sell")
                 if cached_sell_quote is None or not bool(cached_sell_quote.get("ok")):
                     actions.append(_skip_action(symbol, "sell_quote_not_available", signal_action=signal_action))
+                    continue
+                risk_result = check_onchain_quote_risk(symbol, mapping, cached_sell_quote, "sell")
+                if not risk_result["ok"]:
+                    actions.append(
+                        _skip_action(
+                            symbol,
+                            "risk_failed",
+                            signal_action=signal_action,
+                            risk_reason=risk_result["reason"],
+                            risk_failures=risk_result["failures"],
+                        )
+                    )
                     continue
                 actions.append(close_paper_position(symbol, cached_sell_quote))
                 continue

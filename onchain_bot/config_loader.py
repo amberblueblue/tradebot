@@ -23,6 +23,11 @@ class OnchainSettings:
     quote_default_amount_usdt: float
     safety_allow_live_trading: bool
     safety_live_execute_enabled: bool
+    risk_max_price_impact_pct: float
+    risk_max_slippage_pct: float
+    risk_max_gas_raw: float
+    risk_quote_stale_seconds: int
+    risk_max_token_tax_rate_pct: float
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -47,6 +52,7 @@ class OnchainSymbolConfig:
     max_trade_usdt: float
     max_slippage_pct: float
     max_gas_usdt: float
+    risk: dict[str, float]
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -125,6 +131,33 @@ def _optional_execution_session_filter(raw: dict[str, Any], symbol: str) -> str:
     return normalized
 
 
+RISK_KEYS = (
+    "max_price_impact_pct",
+    "max_slippage_pct",
+    "max_gas_raw",
+    "quote_stale_seconds",
+    "max_token_tax_rate_pct",
+)
+
+
+def _optional_risk_overrides(raw: dict[str, Any], symbol: str) -> dict[str, float]:
+    risk = raw.get("risk")
+    if risk is None:
+        return {}
+    risk_mapping = _require_mapping(risk, f"symbols.{symbol}.risk")
+    parsed: dict[str, float] = {}
+    for key in RISK_KEYS:
+        if key not in risk_mapping or risk_mapping[key] in (None, ""):
+            continue
+        value = risk_mapping[key]
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise ValueError(f"symbols.{symbol}.risk.{key} must be a number")
+        if value < 0:
+            raise ValueError(f"symbols.{symbol}.risk.{key} must be greater than or equal to 0")
+        parsed[key] = float(value)
+    return parsed
+
+
 def _validate_symbol_config(symbol: str, raw_config: Any) -> OnchainSymbolConfig:
     if not isinstance(symbol, str) or not symbol:
         raise ValueError("symbols keys must be non-empty strings")
@@ -163,6 +196,7 @@ def _validate_symbol_config(symbol: str, raw_config: Any) -> OnchainSymbolConfig
         max_trade_usdt=_require_positive_number(raw, "max_trade_usdt", normalized_symbol),
         max_slippage_pct=_require_non_negative_number(raw, "max_slippage_pct", normalized_symbol),
         max_gas_usdt=_require_non_negative_number(raw, "max_gas_usdt", normalized_symbol),
+        risk=_optional_risk_overrides(raw, normalized_symbol),
     )
 
 
@@ -209,6 +243,15 @@ def _settings_positive_number(raw: dict[str, Any], key: str, section: str) -> fl
     return float(value)
 
 
+def _settings_non_negative_number(raw: dict[str, Any], key: str, section: str, default: float) -> float:
+    value = raw.get(key, default)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f"{section}.{key} must be a number greater than or equal to 0")
+    if value < 0:
+        raise ValueError(f"{section}.{key} must be greater than or equal to 0")
+    return float(value)
+
+
 def load_onchain_settings_config(
     settings_path: Path | None = None,
 ) -> OnchainSettings:
@@ -217,6 +260,8 @@ def load_onchain_settings_config(
     app = _require_mapping(raw_config.get("app"), "app")
     quote = _require_mapping(raw_config.get("quote"), "quote")
     safety = _require_mapping(raw_config.get("safety"), "safety")
+    risk = raw_config.get("risk")
+    risk = risk if isinstance(risk, dict) else {}
 
     mode = app.get("mode")
     if not isinstance(mode, str) or not mode:
@@ -230,6 +275,15 @@ def load_onchain_settings_config(
         quote_default_amount_usdt=_settings_positive_number(quote, "default_amount_usdt", "quote"),
         safety_allow_live_trading=_settings_bool(safety, "allow_live_trading", "safety"),
         safety_live_execute_enabled=_settings_bool(safety, "live_execute_enabled", "safety"),
+        risk_max_price_impact_pct=_settings_non_negative_number(risk, "max_price_impact_pct", "risk", 1.0),
+        risk_max_slippage_pct=_settings_non_negative_number(risk, "max_slippage_pct", "risk", 1.0),
+        risk_max_gas_raw=_settings_non_negative_number(risk, "max_gas_raw", "risk", 500000),
+        risk_quote_stale_seconds=_settings_positive_int(
+            {"quote_stale_seconds": risk.get("quote_stale_seconds", 600)},
+            "quote_stale_seconds",
+            "risk",
+        ),
+        risk_max_token_tax_rate_pct=_settings_non_negative_number(risk, "max_token_tax_rate_pct", "risk", 0.0),
     )
 
 
@@ -269,6 +323,11 @@ def dump_onchain_symbols_yaml(symbols: dict[str, OnchainSymbolConfig]) -> str:
                 f"    max_gas_usdt: {_format_yaml_scalar(symbol_config.max_gas_usdt)}",
             ]
         )
+        if symbol_config.risk:
+            lines.append("    risk:")
+            for key in RISK_KEYS:
+                if key in symbol_config.risk:
+                    lines.append(f"      {key}: {_format_yaml_scalar(symbol_config.risk[key])}")
     return "\n".join(lines) + "\n"
 
 

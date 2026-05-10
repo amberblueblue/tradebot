@@ -167,6 +167,12 @@
                 <th>最近报价</th>
                 <th>报价时间</th>
                 <th>报价错误</th>
+                <th>风控状态</th>
+                <th>风控失败原因</th>
+                <th>价格冲击</th>
+                <th>Gas 原始值</th>
+                <th>交易税率</th>
+                <th>是否蜜罐</th>
                 <th>是否具备执行条件</th>
                 <th class="text-end">操作</th>
               </tr>
@@ -225,6 +231,43 @@
                 <td>{{ symbol.cached_quote_time or "未测试" }}</td>
                 <td>{{ symbol.cached_quote_error or "无" }}</td>
                 <td>
+                  {% if symbol.risk_ok %}
+                  <span class="badge text-bg-success">通过</span>
+                  {% else %}
+                  <span class="badge text-bg-danger">失败</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {{ symbol.risk_reason or "ok" }}
+                  {% if symbol.risk_failures %}
+                  <div class="text-secondary small">{{ symbol.risk_failures | join(", ") }}</div>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if symbol.risk_price_impact_pct is not none %}
+                  {{ symbol.risk_price_impact_pct }}%
+                  {% else %}
+                  n/a
+                  {% endif %}
+                </td>
+                <td>{{ symbol.risk_gas_raw if symbol.risk_gas_raw is not none else "n/a" }}</td>
+                <td>
+                  {% if symbol.risk_tax_rates %}
+                  {{ symbol.risk_tax_rates | join(", ") }}
+                  {% else %}
+                  n/a
+                  {% endif %}
+                </td>
+                <td>
+                  {% if symbol.risk_is_honeypot %}
+                  <span class="badge text-bg-danger">true</span>
+                  {% elif symbol.risk_is_honeypot is sameas false %}
+                  <span class="badge text-bg-success">false</span>
+                  {% else %}
+                  n/a
+                  {% endif %}
+                </td>
+                <td>
                   {% if symbol.executable %}
                   <span class="badge text-bg-success">true</span>
                   {% else %}
@@ -251,7 +294,7 @@
               </tr>
               {% else %}
               <tr>
-                <td colspan="19" class="text-secondary">暂无映射</td>
+                <td colspan="25" class="text-secondary">暂无映射</td>
               </tr>
               {% endfor %}
             </tbody>

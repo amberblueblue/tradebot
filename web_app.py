@@ -2336,6 +2336,7 @@ def _onchain_symbol_rows() -> tuple[list[dict[str, object]], str | None]:
             buy_quote_result=cached_buy_quote,
             sell_quote_result=cached_sell_quote,
         )
+        risk_details = executable_check.get("risk_details") or {}
         row.update(
             {
                 "futures_signal": futures_signal,
@@ -2356,6 +2357,14 @@ def _onchain_symbol_rows() -> tuple[list[dict[str, object]], str | None]:
                 "session_allowed": executable_check["session_allowed"],
                 "session_name": executable_check["session_name"],
                 "session_time_now": executable_check["session_time_now"],
+                "risk_ok": executable_check["risk_ok"],
+                "risk_reason": executable_check["risk_reason"],
+                "risk_failures": executable_check["risk_failures"],
+                "risk_details": risk_details,
+                "risk_price_impact_pct": risk_details.get("price_impact_pct"),
+                "risk_gas_raw": risk_details.get("gas_raw"),
+                "risk_tax_rates": risk_details.get("tax_rates"),
+                "risk_is_honeypot": risk_details.get("is_honeypot"),
             }
         )
         rows.append(row)
@@ -2461,6 +2470,15 @@ def _onchain_view(
                 )
                 symbol["executable"] = executable_check["executable"]
                 symbol["executable_reasons"] = executable_check["reasons"]
+                risk_details = executable_check.get("risk_details") or {}
+                symbol["risk_ok"] = executable_check["risk_ok"]
+                symbol["risk_reason"] = executable_check["risk_reason"]
+                symbol["risk_failures"] = executable_check["risk_failures"]
+                symbol["risk_details"] = risk_details
+                symbol["risk_price_impact_pct"] = risk_details.get("price_impact_pct")
+                symbol["risk_gas_raw"] = risk_details.get("gas_raw")
+                symbol["risk_tax_rates"] = risk_details.get("tax_rates")
+                symbol["risk_is_honeypot"] = risk_details.get("is_honeypot")
                 break
     session_warning = any(
         row.get("execution_session_filter") == "us_regular" and not row.get("session_allowed", True)
@@ -2684,6 +2702,9 @@ async def onchain_symbol_edit_save(request: Request, symbol: str):
         if new_symbol != normalized_symbol and new_symbol in updated_symbols:
             raise ValueError(f"{new_symbol} already exists")
         parsed_config = _onchain_config_from_form(form)
+        existing_risk = updated_symbols[normalized_symbol].get("risk")
+        if isinstance(existing_risk, dict) and existing_risk:
+            parsed_config["risk"] = existing_risk
         updated_symbols.pop(normalized_symbol)
         updated_symbols[new_symbol] = parsed_config
         save_onchain_symbols_config(updated_symbols)

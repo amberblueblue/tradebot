@@ -10,3 +10,10 @@ quote:
 safety:
   allow_live_trading: false
   live_execute_enabled: false
+
+risk:
+  max_price_impact_pct: 1.0
+  max_slippage_pct: 1.0
+  max_gas_raw: 500000
+  quote_stale_seconds: 600
+  max_token_tax_rate_pct: 0.0

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from onchain_bot.risk import check_onchain_quote_risk
 from onchain_bot.session_filter import get_execution_session_status
 
 
@@ -66,10 +67,14 @@ def check_onchain_executable(
         reasons.append("outside_us_regular_session")
 
     action = _signal_action(futures_signal)
+    risk_quote = quote_result
+    risk_direction = "buy"
     if action == "HOLD":
         reasons.append("signal_hold")
     elif action == "LONG":
         buy_quote = buy_quote_result or quote_result
+        risk_quote = buy_quote
+        risk_direction = "buy"
         if buy_quote is None:
             reasons.append("buy_quote_not_available")
         elif not bool(buy_quote.get("ok", False)):
@@ -78,6 +83,8 @@ def check_onchain_executable(
             reasons.append("quote_stale")
     elif action.startswith("CLOSE"):
         sell_quote = sell_quote_result or quote_result
+        risk_quote = sell_quote
+        risk_direction = "sell"
         if sell_quote is None:
             reasons.append("sell_quote_not_available")
         elif not bool(sell_quote.get("ok", False)):
@@ -89,9 +96,22 @@ def check_onchain_executable(
 
     if futures_signal and not bool(futures_signal.get("ok", False)):
         reasons.append("signal_error")
+    risk_result = check_onchain_quote_risk(
+        getattr(mapping, "symbol", ""),
+        mapping,
+        risk_quote,
+        risk_direction,
+    )
+    if action in {"LONG"} or action.startswith("CLOSE"):
+        if not risk_result["ok"]:
+            reasons.append("risk_failed")
 
     return {
         "executable": not reasons,
         "reasons": reasons,
+        "risk_ok": risk_result["ok"],
+        "risk_reason": risk_result["reason"],
+        "risk_failures": risk_result["failures"],
+        "risk_details": risk_result["details"],
         **session_status,
     }
