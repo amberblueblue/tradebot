@@ -61,6 +61,7 @@ from onchain_bot.config_loader import (
 )
 from onchain_bot.executable_check import check_onchain_executable
 from onchain_bot.live_preview import build_live_swap_preview
+from onchain_bot.loop_state import load_loop_state
 from onchain_bot.manual_trade_log import add_manual_trade, load_manual_trades, refresh_manual_trade_statuses
 from onchain_bot.paper_pnl import update_paper_positions_with_latest_quotes
 from onchain_bot.paper_state import get_closed_trades, get_positions, load_paper_state
@@ -2522,6 +2523,7 @@ def _onchain_view(
         "symbols_count": len(symbols),
         "onchain_health": build_health_payload(),
         "manual_live_health": build_manual_live_health_payload(),
+        "onchain_loop_state": load_loop_state(),
         "manual_trades": load_manual_trades().get("trades", []),
         "onchain_session_warning": session_warning,
         "onchain_safety": safety_status_payload(account_equity=None),

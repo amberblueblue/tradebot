@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ if __package__ in {None, ""}:
 
 from onchain_bot.config_loader import load_onchain_settings_config, load_onchain_symbols_config  # noqa: E402
 from onchain_bot.executable_check import quote_is_stale  # noqa: E402
+from onchain_bot.loop_state import write_loop_state  # noqa: E402
 from onchain_bot.paper_state import load_paper_state  # noqa: E402
 from onchain_bot.quote_cache import get_cached_quote, update_quote_cache  # noqa: E402
 from onchain_bot.run_onchain_paper_once import run_once  # noqa: E402
@@ -244,18 +246,41 @@ def _print_summary(payload: dict[str, Any]) -> None:
     print(f"{LOG_PREFIX} {json.dumps(payload, ensure_ascii=False, sort_keys=True)}", flush=True)
 
 
+def _loop_state_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    actions = payload.get("actions", [])
+    errors = payload.get("errors", [])
+    return {
+        "ok": payload.get("ok"),
+        "enabled_symbols_count": payload.get("enabled_symbols_count", 0),
+        "actions_count": len(actions) if isinstance(actions, list) else 0,
+        "positions_count": payload.get("positions_count", 0),
+        "errors": errors if isinstance(errors, list) else [],
+        "polling_interval_seconds": payload.get("polling_interval_seconds"),
+    }
+
+
 def main() -> int:
     args = parse_args(sys.argv[1:])
     loop_count = 0
-    while True:
-        payload = run_loop_iteration()
-        _print_summary(payload)
-        if not payload.get("ok"):
-            return 1
-        loop_count += 1
-        if args.max_loops is not None and loop_count >= args.max_loops:
-            return 0
-        time.sleep(int(payload.get("polling_interval_seconds") or 60))
+    try:
+        while True:
+            payload = run_loop_iteration()
+            last_loop_at = datetime.now(timezone.utc).isoformat()
+            write_loop_state(
+                running=True,
+                pid=os.getpid(),
+                last_loop_at=last_loop_at,
+                last_summary=_loop_state_summary(payload),
+            )
+            _print_summary(payload)
+            if not payload.get("ok"):
+                return 1
+            loop_count += 1
+            if args.max_loops is not None and loop_count >= args.max_loops:
+                return 0
+            time.sleep(int(payload.get("polling_interval_seconds") or 60))
+    finally:
+        write_loop_state(running=False, last_loop_at=datetime.now(timezone.utc).isoformat())
 
 
 if __name__ == "__main__":

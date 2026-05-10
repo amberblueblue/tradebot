@@ -14,6 +14,7 @@ if __package__ in {None, ""}:
 from onchain_bot.config_loader import load_onchain_settings_config, load_onchain_symbols_config, onchain_symbols_payload  # noqa: E402
 from onchain_bot.executable_check import check_onchain_executable, quote_is_stale  # noqa: E402
 from onchain_bot.live_guard import assert_onchain_live_allowed  # noqa: E402
+from onchain_bot.loop_state import load_loop_state  # noqa: E402
 from onchain_bot.manual_trade_log import DEFAULT_MANUAL_TRADES_PATH, load_manual_trades  # noqa: E402
 from onchain_bot.okx_dex_client import OkxDexQuoteClient  # noqa: E402
 from onchain_bot.paper_state import DEFAULT_PAPER_STATE_PATH, load_paper_state  # noqa: E402
@@ -72,6 +73,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--live-guard",
         action="store_true",
         help="Show the onchain auto live guard status. Auto live swap is not supported.",
+    )
+    parser.add_argument(
+        "--loop-status",
+        action="store_true",
+        help="Show Onchain paper loop heartbeat status.",
     )
     parser.add_argument(
         "--tx-status",
@@ -534,6 +540,7 @@ def main() -> int:
             args.manual_trades,
             args.manual_live_health,
             args.live_guard,
+            args.loop_status,
             args.tx_status,
         )
     )
@@ -544,7 +551,8 @@ def main() -> int:
                     "error": "missing_mode",
                     "message": (
                         "use --symbols, --quote, --live-preview, --readiness, --quote-cache, "
-                        "--health, --manual-trades, --manual-live-health, --live-guard, or --tx-status"
+                        "--health, --manual-trades, --manual-live-health, --live-guard, "
+                        "--loop-status, or --tx-status"
                     ),
                 },
                 indent=2,
@@ -593,6 +601,8 @@ def main() -> int:
             payload = build_manual_live_health_payload()
         elif args.live_guard:
             payload = assert_onchain_live_allowed("status_check")
+        elif args.loop_status:
+            payload = load_loop_state()
         elif args.tx_status:
             payload = get_tx_status(args.tx_status[0], args.tx_status[1])
         elif args.live_preview:
