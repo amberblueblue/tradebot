@@ -58,8 +58,8 @@ def check_onchain_executable(
         reasons.append("missing_token_address")
     if getattr(mapping, "quote_token_address", "") == ZERO_ADDRESS:
         reasons.append("missing_quote_token_address")
-    if float(getattr(mapping, "max_trade_usdt", 0.0)) <= 0:
-        reasons.append("invalid_max_trade_usdt")
+    if float(getattr(mapping, "max_trade_usdc", getattr(mapping, "max_trade_usdt", 0.0))) <= 0:
+        reasons.append("invalid_max_trade_usdc")
     if float(getattr(mapping, "max_slippage_pct", -1.0)) < 0:
         reasons.append("invalid_max_slippage_pct")
     session_status = get_execution_session_status(getattr(mapping, "execution_session_filter", "us_regular"))

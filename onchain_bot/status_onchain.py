@@ -120,9 +120,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Query a transaction hash status without signing or broadcasting.",
     )
     parser.add_argument(
+        "--amount-usdc",
+        type=str,
+        help="USDC amount to pay for onchain buy quote and live preview commands.",
+    )
+    parser.add_argument(
         "--amount-usdt",
         type=str,
-        help="Quote token amount, currently intended for USDC/USDT stablecoin quotes.",
+        help="Deprecated onchain alias for --amount-usdc.",
     )
     parser.add_argument(
         "--amount-token",
@@ -138,23 +143,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _parse_amount(amount_usdt: str) -> Decimal:
+def _parse_amount(amount_usdc: str) -> Decimal:
     try:
-        amount = Decimal(amount_usdt)
+        amount = Decimal(amount_usdc)
     except InvalidOperation as exc:
-        raise ValueError("--amount-usdt must be a number greater than 0") from exc
+        raise ValueError("--amount-usdc must be a number greater than 0") from exc
     if amount <= 0:
-        raise ValueError("--amount-usdt must be greater than 0")
+        raise ValueError("--amount-usdc must be greater than 0")
     return amount
 
 
-def _amount_to_base_units(amount_usdt: str, decimals: int) -> int:
-    amount = _parse_amount(amount_usdt)
+def _amount_to_base_units(amount_usdc: str, decimals: int) -> int:
+    amount = _parse_amount(amount_usdc)
     scale = Decimal(10) ** decimals
     return int(amount * scale)
 
 
-def build_quote_payload(symbol: str, amount_usdt: str, direction: str = "buy") -> dict[str, Any]:
+def build_quote_payload(symbol: str, amount_usdc: str, direction: str = "buy") -> dict[str, Any]:
     normalized_symbol = symbol.strip().upper()
     normalized_direction = direction.strip().lower()
     if normalized_direction not in {"buy", "sell"}:
@@ -170,12 +175,13 @@ def build_quote_payload(symbol: str, amount_usdt: str, direction: str = "buy") -
             "token_address": None,
             "quote_token_symbol": None,
             "quote_token_address": None,
-            "amount_usdt": amount_usdt,
+            "amount_usdc": amount_usdc,
+            "amount_usdt": amount_usdc,
             "quote": None,
             "error": "onchain_symbol_not_configured",
         }
 
-    amount_value = float(_parse_amount(amount_usdt))
+    amount_value = float(_parse_amount(amount_usdc))
     if symbol_config.quote_token_symbol.upper() not in SUPPORTED_QUOTE_TOKENS:
         return {
             "ok": False,
@@ -185,10 +191,11 @@ def build_quote_payload(symbol: str, amount_usdt: str, direction: str = "buy") -
             "token_address": symbol_config.token_address,
             "quote_token_symbol": symbol_config.quote_token_symbol,
             "quote_token_address": symbol_config.quote_token_address,
+            "amount_usdc": amount_value,
             "amount_usdt": amount_value,
             "quote": None,
             "error": "unsupported_quote_token",
-            "message": "Current quote-only mode supports USDC/USDT quote tokens only.",
+            "message": "Current quote-only mode expects USDC as the default quote token.",
         }
 
     if normalized_direction == "buy":
@@ -212,7 +219,7 @@ def build_quote_payload(symbol: str, amount_usdt: str, direction: str = "buy") -
         to_token_address=to_token_address,
         from_token_decimals=from_token_decimals,
         to_token_decimals=to_token_decimals,
-        amount_display=amount_usdt,
+        amount_display=amount_usdc,
         slippage_pct=symbol_config.max_slippage_pct,
         direction=normalized_direction,
         from_token_symbol=from_token_symbol,
@@ -227,6 +234,7 @@ def build_quote_payload(symbol: str, amount_usdt: str, direction: str = "buy") -
         "token_address": symbol_config.token_address,
         "quote_token_symbol": symbol_config.quote_token_symbol,
         "quote_token_address": symbol_config.quote_token_address,
+        "amount_usdc": amount_value,
         "amount_usdt": amount_value,
         "amount_display": amount_value,
         "from_token_symbol": from_token_symbol,
@@ -292,6 +300,7 @@ def build_readiness_payload() -> dict[str, Any]:
                 "cached_quote_ok": readiness_quote.get("ok") if readiness_quote else None,
                 "cached_quote_time": readiness_quote.get("quoted_at") if readiness_quote else None,
                 "cached_quote_error": cached_quote_error,
+                "cached_quote_amount_usdc": readiness_quote.get("amount_usdc", readiness_quote.get("amount_usdt")) if readiness_quote else None,
                 "cached_quote_amount_usdt": readiness_quote.get("amount_usdt") if readiness_quote else None,
                 "cached_buy_quote_ok": cached_buy_quote.get("ok") if cached_buy_quote else None,
                 "cached_buy_quote_time": cached_buy_quote.get("quoted_at") if cached_buy_quote else None,
@@ -563,6 +572,25 @@ def build_manual_live_health_payload() -> dict[str, Any]:
     }
 
 
+def _buy_amount_arg(args: argparse.Namespace) -> tuple[str | None, list[str]]:
+    if args.amount_usdc is not None:
+        return args.amount_usdc, []
+    if args.amount_usdt is not None:
+        return args.amount_usdt, ["amount-usdt is deprecated for onchain; use amount-usdc"]
+    return None, []
+
+
+def _attach_warnings(payload: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+    if not warnings:
+        return payload
+    existing = payload.get("warnings")
+    if isinstance(existing, list):
+        payload["warnings"] = list(dict.fromkeys([*existing, *warnings]))
+    else:
+        payload["warnings"] = warnings
+    return payload
+
+
 def refresh_live_trades_payload() -> dict[str, Any]:
     payload = load_live_trades()
     trades = [trade for trade in payload.get("trades", []) if isinstance(trade, dict)]
@@ -651,14 +679,15 @@ def main() -> int:
     if selected_modes > 1:
         print(json.dumps({"error": "invalid_mode", "message": "use only one mode"}, indent=2, sort_keys=True))
         return 1
-    if args.quote and args.amount_usdt is None:
-        print(json.dumps({"error": "missing_amount", "message": "--quote requires --amount-usdt"}, indent=2, sort_keys=True))
+    buy_amount, amount_warnings = _buy_amount_arg(args)
+    if args.quote and buy_amount is None:
+        print(json.dumps({"error": "missing_amount", "message": "--quote requires --amount-usdc"}, indent=2, sort_keys=True))
         return 1
     if args.live_preview:
-        if args.direction == "buy" and args.amount_usdt is None:
+        if args.direction == "buy" and buy_amount is None:
             print(
                 json.dumps(
-                    {"error": "missing_amount", "message": "--live-preview --direction buy requires --amount-usdt"},
+                    {"error": "missing_amount", "message": "--live-preview --direction buy requires --amount-usdc"},
                     indent=2,
                     sort_keys=True,
                 )
@@ -674,10 +703,10 @@ def main() -> int:
             )
             return 1
     if args.unsigned_tx:
-        if args.direction == "buy" and args.amount_usdt is None:
+        if args.direction == "buy" and buy_amount is None:
             print(
                 json.dumps(
-                    {"error": "missing_amount", "message": "--unsigned-tx --direction buy requires --amount-usdt"},
+                    {"error": "missing_amount", "message": "--unsigned-tx --direction buy requires --amount-usdc"},
                     indent=2,
                     sort_keys=True,
                 )
@@ -693,10 +722,10 @@ def main() -> int:
             )
             return 1
     if args.allowance:
-        if args.direction == "buy" and args.amount_usdt is None:
+        if args.direction == "buy" and buy_amount is None:
             print(
                 json.dumps(
-                    {"error": "missing_amount", "message": "--allowance --direction buy requires --amount-usdt"},
+                    {"error": "missing_amount", "message": "--allowance --direction buy requires --amount-usdc"},
                     indent=2,
                     sort_keys=True,
                 )
@@ -740,22 +769,22 @@ def main() -> int:
         elif args.unsigned_tx:
             from onchain_bot.live_executor import prepare_unsigned_live_transactions
 
-            amount = args.amount_usdt if args.direction == "buy" else args.amount_token
-            payload = prepare_unsigned_live_transactions(args.unsigned_tx, args.direction, amount)
+            amount = buy_amount if args.direction == "buy" else args.amount_token
+            payload = _attach_warnings(prepare_unsigned_live_transactions(args.unsigned_tx, args.direction, amount), amount_warnings)
         elif args.allowance:
             from onchain_bot.live_executor import build_allowance_status
 
-            amount = args.amount_usdt if args.direction == "buy" else args.amount_token
-            payload = build_allowance_status(args.allowance, args.direction, amount)
+            amount = buy_amount if args.direction == "buy" else args.amount_token
+            payload = _attach_warnings(build_allowance_status(args.allowance, args.direction, amount), amount_warnings)
         elif args.tx_status:
             payload = get_tx_status(args.tx_status[0], args.tx_status[1])
         elif args.live_preview:
             from onchain_bot.live_preview import build_live_swap_preview
 
-            amount = args.amount_usdt if args.direction == "buy" else args.amount_token
-            payload = build_live_swap_preview(args.live_preview, args.direction, amount)
+            amount = buy_amount if args.direction == "buy" else args.amount_token
+            payload = _attach_warnings(build_live_swap_preview(args.live_preview, args.direction, amount), amount_warnings)
         else:
-            payload = build_quote_payload(args.quote, args.amount_usdt, direction=args.direction)
+            payload = _attach_warnings(build_quote_payload(args.quote, buy_amount, direction=args.direction), amount_warnings)
     except Exception as exc:
         print(json.dumps({"error": "onchain_config_error", "message": str(exc)}, indent=2, sort_keys=True))
         return 1

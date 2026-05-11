@@ -77,6 +77,7 @@ def _quote_cache_entry(
         "direction": direction,
         "ok": bool(result.get("ok")),
         "amount_display": result.get("amount_display"),
+        "amount_usdc": result.get("amount_usdc", result.get("amount_usdt")),
         "amount_usdt": result.get("amount_usdt"),
         "quoted_at": datetime.now(timezone.utc).isoformat(),
         "chain_id": result.get("chain_id"),

@@ -75,8 +75,8 @@ def assert_onchain_live_allowed(
 ) -> dict[str, Any]:
     settings = load_onchain_settings_config()
     safety = _runtime_safety()
-    amount = _amount_decimal(amount_usdt or settings.live_default_order_amount_usdt)
-    max_amount = min(Decimal(str(settings.live_max_live_order_usdt)), Decimal(str(settings.risk_max_live_order_usdt)))
+    amount = _amount_decimal(amount_usdt or settings.live_default_order_amount_usdc)
+    max_amount = min(Decimal(str(settings.live_max_live_order_usdc)), Decimal(str(settings.risk_max_live_order_usdc)))
 
     reason = "ok"
     allowed = True
@@ -101,7 +101,7 @@ def assert_onchain_live_allowed(
     elif validation_required and not settings.live_validation_mode:
         reason = "validation_mode_disabled"
         allowed = False
-    elif settings.live_validation_mode and amount > Decimal(str(settings.live_validation_max_order_usdt)):
+    elif settings.live_validation_mode and amount > Decimal(str(settings.live_validation_max_order_usdc)):
         reason = "validation_amount_exceeds_limit"
         allowed = False
 
@@ -109,11 +109,14 @@ def assert_onchain_live_allowed(
         "allowed": allowed,
         "reason": reason,
         "action": action,
+        "amount_usdc": float(amount),
         "amount_usdt": float(amount),
+        "max_live_order_usdc": float(max_amount),
         "max_live_order_usdt": float(max_amount),
         "validation_mode": bool(settings.live_validation_mode),
         "validation_required": bool(validation_required),
-        "validation_max_order_usdt": float(settings.live_validation_max_order_usdt),
+        "validation_max_order_usdc": float(settings.live_validation_max_order_usdc),
+        "validation_max_order_usdt": float(settings.live_validation_max_order_usdc),
         "auto_live_supported": True,
         "auto_live_enabled": bool(settings.live_auto_live_enabled),
         "require_manual_confirm_env": bool(settings.live_require_manual_confirm_env),

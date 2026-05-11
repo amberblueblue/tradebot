@@ -249,6 +249,7 @@ def prepare_live_swap(
         "symbol": normalized_symbol,
         "direction": normalized_direction,
         "amount": float(_parse_amount(amount_text)),
+        "amount_usdc": float(_parse_amount(amount_text)),
         "mapping": mapping.to_dict(),
         "futures_signal": futures_signal,
         "session": session,
@@ -298,6 +299,7 @@ def prepare_unsigned_live_transactions(
         "symbol": str(preview.get("symbol") or symbol).upper(),
         "direction": str(preview.get("direction") or direction),
         "amount": preview.get("amount"),
+        "amount_usdc": preview.get("amount_usdc", preview.get("amount")),
         "mapping": mapping,
         "approve_transaction": unsigned.get("approve_transaction"),
         "swap_transaction": unsigned.get("swap_transaction"),
@@ -379,6 +381,7 @@ def build_allowance_status(symbol: str, direction: str, amount: str | int | floa
         "spender": allowance_result.get("spender"),
         "required_amount": allowance_result.get("required_amount"),
         "allowance": allowance_result.get("current_allowance"),
+        "amount_usdc": quote_result.get("amount_usdc", quote_result.get("amount_usdt")),
         "sufficient": allowance_result.get("sufficient"),
         "approve_enabled": allowance_result.get("approve_enabled"),
         "approve_mode": allowance_result.get("approve_mode"),
@@ -511,7 +514,7 @@ def execute_live_swap(
             }
         signed_approve = sign_live_transaction(
             approve_transaction,
-            amount_usdt=amount if str(direction).lower() == "buy" else unsigned.get("amount"),
+            amount_usdc=amount if str(direction).lower() == "buy" else unsigned.get("amount"),
             action=f"approve_{direction}",
         )
         if not signed_approve.get("ok"):
@@ -598,7 +601,7 @@ def execute_live_swap(
         }
     signed = sign_live_transaction(
         swap_transaction,
-        amount_usdt=amount if str(direction).lower() == "buy" else unsigned.get("amount"),
+        amount_usdc=amount if str(direction).lower() == "buy" else unsigned.get("amount"),
         action=f"execute_{direction}",
     )
     if not signed.get("ok"):

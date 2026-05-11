@@ -127,10 +127,11 @@ def _build_evm_transaction(tx: dict[str, Any], wallet_address: str, web3: Any) -
 def sign_transaction(
     tx: dict[str, Any],
     *,
+    amount_usdc: float | int | str | None = None,
     amount_usdt: float | int | str | None = None,
     action: str = "sign_live_transaction",
 ) -> dict[str, Any]:
-    guard = assert_onchain_live_allowed(action, amount_usdt=amount_usdt, emit_log=False)
+    guard = assert_onchain_live_allowed(action, amount_usdt=amount_usdc if amount_usdc is not None else amount_usdt, emit_log=False)
     if not guard.get("allowed"):
         return {"ok": False, "reason": guard.get("reason"), "live_guard": guard}
     wallet_guard = check_wallet_environment(emit_log=False)

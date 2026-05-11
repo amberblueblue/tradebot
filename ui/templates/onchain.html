@@ -87,16 +87,16 @@
         </div>
 
         <div class="col-md-4 col-xl-3">
-          <label class="form-label" for="{{ title }}-max-trade">单笔最大交易金额 <span class="text-secondary small">max_trade_usdt</span></label>
-          <input id="{{ title }}-max-trade" name="max_trade_usdt" type="number" min="0.0001" step="0.0001" class="form-control" value="{{ config.max_trade_usdt }}" required>
+          <label class="form-label" for="{{ title }}-max-trade">单笔最大交易金额 USDC <span class="text-secondary small">max_trade_usdc</span></label>
+          <input id="{{ title }}-max-trade" name="max_trade_usdc" type="number" min="0.0001" step="0.0001" class="form-control" value="{{ config.max_trade_usdc or config.max_trade_usdt }}" required>
         </div>
         <div class="col-md-4 col-xl-3">
           <label class="form-label" for="{{ title }}-slippage">最大滑点 <span class="text-secondary small">max_slippage_pct</span></label>
           <input id="{{ title }}-slippage" name="max_slippage_pct" type="number" min="0" step="0.0001" class="form-control" value="{{ config.max_slippage_pct }}" required>
         </div>
         <div class="col-md-4 col-xl-3">
-          <label class="form-label" for="{{ title }}-gas">最大 Gas 成本 <span class="text-secondary small">max_gas_usdt</span></label>
-          <input id="{{ title }}-gas" name="max_gas_usdt" type="number" min="0" step="0.0001" class="form-control" value="{{ config.max_gas_usdt }}" required>
+          <label class="form-label" for="{{ title }}-gas">最大 Gas 成本 USDC <span class="text-secondary small">max_gas_usdc</span></label>
+          <input id="{{ title }}-gas" name="max_gas_usdc" type="number" min="0" step="0.0001" class="form-control" value="{{ config.max_gas_usdc or config.max_gas_usdt }}" required>
         </div>
 
         <div class="col-12">
@@ -282,8 +282,8 @@
             </select>
           </div>
           <div class="col-md-2">
-            <label class="form-label" for="single-live-amount">amount_usdt</label>
-            <input id="single-live-amount" name="amount_usdt" type="number" min="0.000001" max="{{ onchain_settings.live_validation_max_order_usdt or 5 }}" step="0.000001" class="form-control" value="5" required>
+            <label class="form-label" for="single-live-amount">amount_usdc</label>
+            <input id="single-live-amount" name="amount_usdc" type="number" min="0.000001" max="{{ onchain_settings.live_validation_max_order_usdc or 5 }}" step="0.000001" class="form-control" value="5" required>
           </div>
           <div class="col-md-3">
             <label class="form-label" for="single-live-confirm">确认</label>
@@ -360,8 +360,8 @@
             </select>
           </div>
           <div class="col-md-2">
-            <label class="form-label" for="live-execute-amount">amount</label>
-            <input id="live-execute-amount" name="amount" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_default_order_amount_usdt or 20 }}" required>
+            <label class="form-label" for="live-execute-amount">amount USDC</label>
+            <input id="live-execute-amount" name="amount" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_default_order_amount_usdc or 20 }}" required>
           </div>
           <div class="col-md-3">
             <label class="form-label" for="live-execute-confirm">确认</label>
@@ -718,8 +718,8 @@
             </select>
           </div>
           <div class="col-md-3">
-            <label class="form-label" for="default-order-amount">默认下单金额 <span class="text-secondary small">default_order_amount_usdt</span></label>
-            <input id="default-order-amount" name="default_order_amount_usdt" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_default_order_amount_usdt or 20 }}" required>
+            <label class="form-label" for="default-order-amount">默认下单金额 USDC <span class="text-secondary small">default_order_amount_usdc</span></label>
+            <input id="default-order-amount" name="default_order_amount_usdc" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_default_order_amount_usdc or 20 }}" required>
           </div>
           <div class="col-md-3">
             <label class="form-label" for="validation-mode">验证模式 <span class="text-secondary small">validation_mode</span></label>
@@ -729,12 +729,12 @@
             </select>
           </div>
           <div class="col-md-3">
-            <label class="form-label" for="validation-max-order">验证最大金额 <span class="text-secondary small">validation_max_order_usdt</span></label>
-            <input id="validation-max-order" name="validation_max_order_usdt" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_validation_max_order_usdt or 5 }}" required>
+            <label class="form-label" for="validation-max-order">小额验证最大金额 USDC <span class="text-secondary small">validation_max_order_usdc</span></label>
+            <input id="validation-max-order" name="validation_max_order_usdc" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_validation_max_order_usdc or 5 }}" required>
           </div>
           <div class="col-md-3">
-            <label class="form-label" for="max-live-order">单笔最大实盘金额 <span class="text-secondary small">max_live_order_usdt</span></label>
-            <input id="max-live-order" name="max_live_order_usdt" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_max_live_order_usdt or 20 }}" required>
+            <label class="form-label" for="max-live-order">单笔最大实盘金额 USDC <span class="text-secondary small">max_live_order_usdc</span></label>
+            <input id="max-live-order" name="max_live_order_usdc" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_max_live_order_usdc or 20 }}" required>
           </div>
           <div class="col-md-3">
             <label class="form-label" for="max-live-trades">每日最大实盘次数 <span class="text-secondary small">max_live_trades_per_day</span></label>
@@ -876,7 +876,7 @@
                 <th>代币符号</th>
                 <th>代币合约地址</th>
                 <th>报价币</th>
-                <th>单笔最大交易金额</th>
+                <th>单笔最大交易金额 USDC</th>
                 <th>最大滑点</th>
                 <th>是否启用</th>
                 <th>执行时段</th>
@@ -906,7 +906,7 @@
                 <td>{{ symbol.token_symbol }}</td>
                 <td><code>{{ symbol.token_address }}</code></td>
                 <td>{{ symbol.quote_token_symbol }}</td>
-                <td>{{ symbol.max_trade_usdt }}</td>
+                <td>{{ symbol.max_trade_usdc or symbol.max_trade_usdt }}</td>
                 <td>{{ symbol.max_slippage_pct }}%</td>
                 <td>
                   {% if symbol.enabled %}
@@ -943,7 +943,7 @@
                   <span class="badge text-bg-success">成功</span>
                   {% elif symbol.quote_status == "error" %}
                   <span class="badge text-bg-danger">失败</span>
-                  <div class="text-secondary small">{{ symbol.cached_quote_amount_usdt }}</div>
+                  <div class="text-secondary small">{{ symbol.cached_quote_amount_usdc or symbol.cached_quote_amount_usdt }}</div>
                   {% else %}
                   <span class="badge text-bg-secondary">未测试</span>
                   {% endif %}
@@ -1367,8 +1367,8 @@
             </select>
           </div>
           <div class="col-md-4 col-xl-3">
-            <label class="form-label" for="quote-amount">测试数量 <span class="text-secondary small">amount</span></label>
-            <input id="quote-amount" name="amount_usdt" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ quote_amount_usdt or '10' }}" required>
+            <label class="form-label" for="quote-amount">测试金额 USDC <span class="text-secondary small">amount_usdc</span></label>
+            <input id="quote-amount" name="amount_usdc" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ quote_amount_usdc or '10' }}" required>
           </div>
           <div class="col-md-8 col-xl-6">
             <button class="btn btn-primary" type="submit">查询</button>
@@ -1404,11 +1404,11 @@
             <div class="fw-semibold">{% if quote_result.direction == "sell" %}卖出报价{% else %}买入报价{% endif %}</div>
           </div>
           <div class="col-md-3">
-            <div class="text-secondary small">测试金额</div>
-            <div class="fw-semibold">{{ quote_result.amount_display or quote_result.amount_usdt }}</div>
+            <div class="text-secondary small">测试金额 USDC</div>
+            <div class="fw-semibold">{{ quote_result.amount_display or quote_result.amount_usdc }}</div>
           </div>
           <div class="col-md-3">
-            <div class="text-secondary small">支付金额</div>
+            <div class="text-secondary small">支付金额 USDC</div>
             <div class="fw-semibold">{{ parsed.from_amount_display or "n/a" }}</div>
           </div>
           <div class="col-md-3">
@@ -1629,7 +1629,7 @@
             </div>
           </div>
           <div class="col-md-3">
-            <div class="text-secondary small">支付金额</div>
+            <div class="text-secondary small">支付金额 USDC</div>
             <div class="fw-semibold">{{ parsed.from_amount_display or "n/a" }}</div>
           </div>
           <div class="col-md-3">

@@ -61,7 +61,7 @@ def _refresh_quote_if_needed(
     symbol: str,
     signal_action: str,
     stale_seconds: int,
-    default_amount_usdt: float,
+    default_amount_usdc: float,
     auto_refresh_enabled: bool,
     amount_display: float | int | str | None = None,
     direction: str = "buy",
@@ -80,7 +80,7 @@ def _refresh_quote_if_needed(
             "quote_refresh_error": None,
         }
 
-    quote_amount = amount_display if amount_display is not None else default_amount_usdt
+    quote_amount = amount_display if amount_display is not None else default_amount_usdc
     quote_result = build_quote_payload(symbol, str(quote_amount), direction=normalized_direction)
     cached_quote = update_quote_cache(symbol, quote_result, direction=normalized_direction)
     if not bool(cached_quote.get("ok")):
@@ -192,7 +192,7 @@ def run_loop_iteration() -> dict[str, Any]:
             symbol=symbol,
             signal_action=action,
             stale_seconds=settings.quote_stale_seconds,
-            default_amount_usdt=settings.quote_default_amount_usdt,
+            default_amount_usdc=settings.quote_default_amount_usdc,
             auto_refresh_enabled=settings.quote_auto_refresh_enabled and (direction == "buy" or amount_display is not None),
             amount_display=amount_display,
             direction=direction,

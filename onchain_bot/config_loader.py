@@ -20,18 +20,18 @@ class OnchainSettings:
     polling_interval_seconds: int
     quote_auto_refresh_enabled: bool
     quote_stale_seconds: int
-    quote_default_amount_usdt: float
+    quote_default_amount_usdc: float
     live_auto_live_enabled: bool
     live_validation_mode: bool
-    live_validation_max_order_usdt: float
-    live_default_order_amount_usdt: float
+    live_validation_max_order_usdc: float
+    live_default_order_amount_usdc: float
     live_require_manual_confirm_env: bool
     live_wallet_signing_enabled: bool
     live_broadcast_enabled: bool
     live_approve_enabled: bool
     live_approve_mode: str
     live_require_wallet_env: bool
-    live_max_live_order_usdt: float
+    live_max_live_order_usdc: float
     live_max_live_trades_per_day: int
     safety_allow_live_trading: bool
     safety_live_execute_enabled: bool
@@ -40,8 +40,8 @@ class OnchainSettings:
     risk_max_gas_raw: float
     risk_quote_stale_seconds: int
     risk_max_token_tax_rate_pct: float
-    risk_max_trade_usdt: float
-    risk_max_live_order_usdt: float
+    risk_max_trade_usdc: float
+    risk_max_live_order_usdc: float
     risk_max_live_trades_per_day: int
     risk_max_open_positions: int
     risk_max_opens_per_day: int
@@ -52,7 +52,42 @@ class OnchainSettings:
     rpc_arbitrum: str
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data.update(
+            {
+                "quote_default_amount_usdt": self.quote_default_amount_usdc,
+                "live_validation_max_order_usdt": self.live_validation_max_order_usdc,
+                "live_default_order_amount_usdt": self.live_default_order_amount_usdc,
+                "live_max_live_order_usdt": self.live_max_live_order_usdc,
+                "risk_max_trade_usdt": self.risk_max_trade_usdc,
+                "risk_max_live_order_usdt": self.risk_max_live_order_usdc,
+            }
+        )
+        return data
+
+    @property
+    def quote_default_amount_usdt(self) -> float:
+        return self.quote_default_amount_usdc
+
+    @property
+    def live_validation_max_order_usdt(self) -> float:
+        return self.live_validation_max_order_usdc
+
+    @property
+    def live_default_order_amount_usdt(self) -> float:
+        return self.live_default_order_amount_usdc
+
+    @property
+    def live_max_live_order_usdt(self) -> float:
+        return self.live_max_live_order_usdc
+
+    @property
+    def risk_max_trade_usdt(self) -> float:
+        return self.risk_max_trade_usdc
+
+    @property
+    def risk_max_live_order_usdt(self) -> float:
+        return self.risk_max_live_order_usdc
 
 
 @dataclass(frozen=True)
@@ -71,13 +106,28 @@ class OnchainSymbolConfig:
     quote_token_symbol: str
     quote_token_address: str
     quote_token_decimals: int
-    max_trade_usdt: float
+    max_trade_usdc: float
     max_slippage_pct: float
-    max_gas_usdt: float
+    max_gas_usdc: float
     risk: dict[str, float]
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data.update(
+            {
+                "max_trade_usdt": self.max_trade_usdc,
+                "max_gas_usdt": self.max_gas_usdc,
+            }
+        )
+        return data
+
+    @property
+    def max_trade_usdt(self) -> float:
+        return self.max_trade_usdc
+
+    @property
+    def max_gas_usdt(self) -> float:
+        return self.max_gas_usdc
 
 
 def _require_mapping(value: Any, field_name: str) -> dict[str, Any]:
@@ -159,6 +209,7 @@ RISK_KEYS = (
     "max_gas_raw",
     "quote_stale_seconds",
     "max_token_tax_rate_pct",
+    "max_trade_usdc",
     "max_trade_usdt",
     "min_trade_interval_seconds",
 )
@@ -176,7 +227,7 @@ def _optional_risk_overrides(raw: dict[str, Any], symbol: str) -> dict[str, floa
         value = risk_mapping[key]
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             raise ValueError(f"symbols.{symbol}.risk.{key} must be a number")
-        if key == "max_trade_usdt" and value <= 0:
+        if key in {"max_trade_usdc", "max_trade_usdt"} and value <= 0:
             raise ValueError(f"symbols.{symbol}.risk.{key} must be greater than 0")
         if value < 0:
             raise ValueError(f"symbols.{symbol}.risk.{key} must be greater than or equal to 0")
@@ -219,9 +270,17 @@ def _validate_symbol_config(symbol: str, raw_config: Any) -> OnchainSymbolConfig
             normalized_symbol,
         ),
         quote_token_decimals=_require_positive_int(raw, "quote_token_decimals", normalized_symbol),
-        max_trade_usdt=_require_positive_number(raw, "max_trade_usdt", normalized_symbol),
+        max_trade_usdc=_require_positive_number(
+            {"max_trade_usdc": raw.get("max_trade_usdc", raw.get("max_trade_usdt"))},
+            "max_trade_usdc",
+            normalized_symbol,
+        ),
         max_slippage_pct=_require_non_negative_number(raw, "max_slippage_pct", normalized_symbol),
-        max_gas_usdt=_require_non_negative_number(raw, "max_gas_usdt", normalized_symbol),
+        max_gas_usdc=_require_non_negative_number(
+            {"max_gas_usdc": raw.get("max_gas_usdc", raw.get("max_gas_usdt"))},
+            "max_gas_usdc",
+            normalized_symbol,
+        ),
         risk=_optional_risk_overrides(raw, normalized_symbol),
     )
 
@@ -302,17 +361,21 @@ def load_onchain_settings_config(
         polling_interval_seconds=_settings_positive_int(app, "polling_interval_seconds", "app"),
         quote_auto_refresh_enabled=_settings_bool(quote, "auto_refresh_enabled", "quote"),
         quote_stale_seconds=_settings_positive_int(quote, "quote_stale_seconds", "quote"),
-        quote_default_amount_usdt=_settings_positive_number(quote, "default_amount_usdt", "quote"),
+        quote_default_amount_usdc=_settings_positive_number(
+            {"default_amount_usdc": quote.get("default_amount_usdc", quote.get("default_amount_usdt"))},
+            "default_amount_usdc",
+            "quote",
+        ),
         live_auto_live_enabled=bool(live.get("auto_live_enabled", False)),
         live_validation_mode=bool(live.get("validation_mode", True)),
-        live_validation_max_order_usdt=_settings_positive_number(
-            {"validation_max_order_usdt": live.get("validation_max_order_usdt", 5)},
-            "validation_max_order_usdt",
+        live_validation_max_order_usdc=_settings_positive_number(
+            {"validation_max_order_usdc": live.get("validation_max_order_usdc", live.get("validation_max_order_usdt", 5))},
+            "validation_max_order_usdc",
             "live",
         ),
-        live_default_order_amount_usdt=_settings_positive_number(
-            {"default_order_amount_usdt": live.get("default_order_amount_usdt", 20)},
-            "default_order_amount_usdt",
+        live_default_order_amount_usdc=_settings_positive_number(
+            {"default_order_amount_usdc": live.get("default_order_amount_usdc", live.get("default_order_amount_usdt", 20))},
+            "default_order_amount_usdc",
             "live",
         ),
         live_require_manual_confirm_env=bool(live.get("require_manual_confirm_env", True)),
@@ -321,9 +384,14 @@ def load_onchain_settings_config(
         live_approve_enabled=bool(live.get("approve_enabled", False)),
         live_approve_mode=str(live.get("approve_mode", "exact_amount") or "exact_amount"),
         live_require_wallet_env=bool(live.get("require_wallet_env", True)),
-        live_max_live_order_usdt=_settings_positive_number(
-            {"max_live_order_usdt": live.get("max_live_order_usdt", risk.get("max_live_order_usdt", 20))},
-            "max_live_order_usdt",
+        live_max_live_order_usdc=_settings_positive_number(
+            {
+                "max_live_order_usdc": live.get(
+                    "max_live_order_usdc",
+                    live.get("max_live_order_usdt", risk.get("max_live_order_usdc", risk.get("max_live_order_usdt", 20))),
+                )
+            },
+            "max_live_order_usdc",
             "live",
         ),
         live_max_live_trades_per_day=_settings_positive_int(
@@ -342,10 +410,14 @@ def load_onchain_settings_config(
             "risk",
         ),
         risk_max_token_tax_rate_pct=_settings_non_negative_number(risk, "max_token_tax_rate_pct", "risk", 0.0),
-        risk_max_trade_usdt=_settings_positive_number({"max_trade_usdt": risk.get("max_trade_usdt", 50)}, "max_trade_usdt", "risk"),
-        risk_max_live_order_usdt=_settings_positive_number(
-            {"max_live_order_usdt": risk.get("max_live_order_usdt", 20)},
-            "max_live_order_usdt",
+        risk_max_trade_usdc=_settings_positive_number(
+            {"max_trade_usdc": risk.get("max_trade_usdc", risk.get("max_trade_usdt", 50))},
+            "max_trade_usdc",
+            "risk",
+        ),
+        risk_max_live_order_usdc=_settings_positive_number(
+            {"max_live_order_usdc": risk.get("max_live_order_usdc", risk.get("max_live_order_usdt", 20))},
+            "max_live_order_usdc",
             "risk",
         ),
         risk_max_live_trades_per_day=_settings_positive_int(
@@ -389,20 +461,20 @@ def dump_onchain_settings_yaml(settings: OnchainSettings) -> str:
         "quote": {
             "auto_refresh_enabled": settings.quote_auto_refresh_enabled,
             "quote_stale_seconds": settings.quote_stale_seconds,
-            "default_amount_usdt": settings.quote_default_amount_usdt,
+            "default_amount_usdc": settings.quote_default_amount_usdc,
         },
         "live": {
             "auto_live_enabled": settings.live_auto_live_enabled,
             "validation_mode": settings.live_validation_mode,
-            "validation_max_order_usdt": settings.live_validation_max_order_usdt,
-            "default_order_amount_usdt": settings.live_default_order_amount_usdt,
+            "validation_max_order_usdc": settings.live_validation_max_order_usdc,
+            "default_order_amount_usdc": settings.live_default_order_amount_usdc,
             "require_manual_confirm_env": settings.live_require_manual_confirm_env,
             "wallet_signing_enabled": settings.live_wallet_signing_enabled,
             "broadcast_enabled": settings.live_broadcast_enabled,
             "approve_enabled": settings.live_approve_enabled,
             "approve_mode": settings.live_approve_mode,
             "require_wallet_env": settings.live_require_wallet_env,
-            "max_live_order_usdt": settings.live_max_live_order_usdt,
+            "max_live_order_usdc": settings.live_max_live_order_usdc,
             "max_live_trades_per_day": settings.live_max_live_trades_per_day,
         },
         "safety": {
@@ -415,8 +487,8 @@ def dump_onchain_settings_yaml(settings: OnchainSettings) -> str:
             "max_gas_raw": settings.risk_max_gas_raw,
             "quote_stale_seconds": settings.risk_quote_stale_seconds,
             "max_token_tax_rate_pct": settings.risk_max_token_tax_rate_pct,
-            "max_trade_usdt": settings.risk_max_trade_usdt,
-            "max_live_order_usdt": settings.risk_max_live_order_usdt,
+            "max_trade_usdc": settings.risk_max_trade_usdc,
+            "max_live_order_usdc": settings.risk_max_live_order_usdc,
             "max_live_trades_per_day": settings.risk_max_live_trades_per_day,
             "max_open_positions": settings.risk_max_open_positions,
             "max_opens_per_day": settings.risk_max_opens_per_day,
@@ -450,9 +522,9 @@ def save_onchain_settings_config(
     settings_path: Path | None = None,
 ) -> dict[str, Any]:
     path = settings_path or DEFAULT_ONCHAIN_SETTINGS_PATH
-    hard_max = min(settings.live_max_live_order_usdt, settings.risk_max_live_order_usdt)
-    if settings.live_default_order_amount_usdt > hard_max:
-        raise ValueError("live.default_order_amount_usdt cannot exceed max_live_order_usdt")
+    hard_max = min(settings.live_max_live_order_usdc, settings.risk_max_live_order_usdc)
+    if settings.live_default_order_amount_usdc > hard_max:
+        raise ValueError("live.default_order_amount_usdc cannot exceed max_live_order_usdc")
     if settings.live_approve_mode != "exact_amount":
         raise ValueError("live.approve_mode must be exact_amount")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -494,9 +566,9 @@ def dump_onchain_symbols_yaml(symbols: dict[str, OnchainSymbolConfig]) -> str:
                 f"    quote_token_symbol: {_format_yaml_scalar(symbol_config.quote_token_symbol)}",
                 f"    quote_token_address: {_format_yaml_scalar(symbol_config.quote_token_address)}",
                 f"    quote_token_decimals: {_format_yaml_scalar(symbol_config.quote_token_decimals)}",
-                f"    max_trade_usdt: {_format_yaml_scalar(symbol_config.max_trade_usdt)}",
+                f"    max_trade_usdc: {_format_yaml_scalar(symbol_config.max_trade_usdc)}",
                 f"    max_slippage_pct: {_format_yaml_scalar(symbol_config.max_slippage_pct)}",
-                f"    max_gas_usdt: {_format_yaml_scalar(symbol_config.max_gas_usdt)}",
+                f"    max_gas_usdc: {_format_yaml_scalar(symbol_config.max_gas_usdc)}",
             ]
         )
         if symbol_config.risk:

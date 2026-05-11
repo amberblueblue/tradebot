@@ -53,7 +53,9 @@ def _parsed_quote(quote_result: dict[str, Any]) -> dict[str, Any]:
 
 def _quote_amount(quote_result: dict[str, Any]) -> float | None:
     parsed = _parsed_quote(quote_result)
-    return _float_from_text(parsed.get("from_amount_display")) or _float_from_text(quote_result.get("amount_usdt"))
+    return _float_from_text(parsed.get("from_amount_display")) or _float_from_text(
+        quote_result.get("amount_usdc", quote_result.get("amount_usdt"))
+    )
 
 
 def _token_amount(quote_result: dict[str, Any]) -> float | None:

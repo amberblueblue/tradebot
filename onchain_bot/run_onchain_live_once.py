@@ -48,7 +48,7 @@ def run_onchain_live_once() -> dict[str, Any]:
             futures_signal = read_signal_for_mapping(mapping)
             action = _signal_action(futures_signal)
             if action == "LONG":
-                preview = prepare_live_swap(symbol, "buy", settings.live_default_order_amount_usdt)
+                preview = prepare_live_swap(symbol, "buy", settings.live_default_order_amount_usdc)
                 actions.append(
                     {
                         "ok": bool(preview.get("ok")),
@@ -95,7 +95,8 @@ def run_onchain_live_once() -> dict[str, Any]:
         "ok": not errors,
         "mode": "auto_live_check_only",
         "auto_live_enabled": settings.live_auto_live_enabled,
-        "default_order_amount_usdt": settings.live_default_order_amount_usdt,
+        "default_order_amount_usdc": settings.live_default_order_amount_usdc,
+        "default_order_amount_usdt": settings.live_default_order_amount_usdc,
         "actions": actions,
         "errors": errors,
         "signing": "not_implemented",

@@ -8,6 +8,7 @@ from onchain_bot.paper_state import normalize_paper_state
 
 
 DEFAULT_TRADE_LIMITS = {
+    "max_trade_usdc": 50.0,
     "max_trade_usdt": 50.0,
     "max_open_positions": 3,
     "max_opens_per_day": 5,
@@ -48,7 +49,8 @@ def effective_trade_limits(mapping: Any) -> dict[str, float | int]:
     try:
         settings = load_onchain_settings_config()
         global_limits: dict[str, float | int] = {
-            "max_trade_usdt": settings.risk_max_trade_usdt,
+            "max_trade_usdc": settings.risk_max_trade_usdc,
+            "max_trade_usdt": settings.risk_max_trade_usdc,
             "max_open_positions": settings.risk_max_open_positions,
             "max_opens_per_day": settings.risk_max_opens_per_day,
             "max_closes_per_day": settings.risk_max_closes_per_day,
@@ -60,7 +62,7 @@ def effective_trade_limits(mapping: Any) -> dict[str, float | int]:
     limits: dict[str, float | int] = {**DEFAULT_TRADE_LIMITS, **global_limits}
     symbol_risk = getattr(mapping, "risk", None)
     if isinstance(symbol_risk, dict):
-        for key in ("max_trade_usdt", "min_trade_interval_seconds"):
+        for key in ("max_trade_usdc", "max_trade_usdt", "min_trade_interval_seconds"):
             if key in symbol_risk and symbol_risk[key] is not None:
                 limits[key] = float(symbol_risk[key])
     return limits
@@ -85,10 +87,10 @@ def check_onchain_trade_limits(
     failures: list[str] = []
     has_position = normalized_symbol in positions
     current_positions_count = len(positions) if isinstance(positions, dict) else 0
-    trade_amount = float(getattr(mapping, "max_trade_usdt", 0.0) or 0.0)
+    trade_amount = float(getattr(mapping, "max_trade_usdc", getattr(mapping, "max_trade_usdt", 0.0)) or 0.0)
 
     if action_kind == "open":
-        if trade_amount > float(limits["max_trade_usdt"]):
+        if trade_amount > float(limits["max_trade_usdc"]):
             failures.append("trade_amount_exceeds_max")
         if has_position:
             failures.append("position_exists")
@@ -117,6 +119,7 @@ def check_onchain_trade_limits(
         "details": {
             "symbol": normalized_symbol,
             "action": action_kind,
+            "trade_amount_usdc": trade_amount,
             "trade_amount_usdt": trade_amount,
             "current_positions_count": current_positions_count,
             "daily_stats": daily_stats,

@@ -41,30 +41,33 @@ def explorer_link(chain_id: str | int | None, tx_hash: str | None) -> str | None
     return f"{base_url}{tx_hash}"
 
 
-def run_single_live_validation(symbol: str, direction: str, amount_usdt: str | int | float | Decimal = "5") -> dict[str, Any]:
+def run_single_live_validation(symbol: str, direction: str, amount_usdc: str | int | float | Decimal = "5") -> dict[str, Any]:
     settings = load_onchain_settings_config()
     normalized_symbol = symbol.strip().upper()
     normalized_direction = direction.strip().lower()
     if normalized_direction not in {"buy", "sell"}:
         raise ValueError("direction must be buy or sell")
-    amount = _parse_amount(amount_usdt)
+    amount = _parse_amount(amount_usdc)
     if not settings.live_validation_mode:
         return {
             "ok": False,
             "symbol": normalized_symbol,
             "direction": normalized_direction,
             "amount": float(amount),
+            "amount_usdc": float(amount),
             "reason": "validation_mode_disabled",
             "status": "blocked",
         }
-    if amount > Decimal(str(settings.live_validation_max_order_usdt)):
+    if amount > Decimal(str(settings.live_validation_max_order_usdc)):
         return {
             "ok": False,
             "symbol": normalized_symbol,
             "direction": normalized_direction,
             "amount": float(amount),
+            "amount_usdc": float(amount),
             "reason": "validation_amount_exceeds_limit",
-            "validation_max_order_usdt": settings.live_validation_max_order_usdt,
+            "validation_max_order_usdc": settings.live_validation_max_order_usdc,
+            "validation_max_order_usdt": settings.live_validation_max_order_usdc,
             "status": "blocked",
         }
 
@@ -79,6 +82,7 @@ def run_single_live_validation(symbol: str, direction: str, amount_usdt: str | i
             "symbol": normalized_symbol,
             "direction": normalized_direction,
             "amount": float(amount),
+            "amount_usdc": float(amount),
             "reason": guard.get("reason"),
             "status": "blocked",
             "live_guard": guard,
@@ -103,6 +107,7 @@ def run_single_live_validation(symbol: str, direction: str, amount_usdt: str | i
         "single_run_only": True,
         "unattended_trading": False,
         "amount": float(amount),
+        "amount_usdc": float(amount),
         "status": result.get("reason") or ("submitted" if result.get("ok") else "blocked"),
         "gas": parsed_quote.get("estimated_gas_raw"),
         "explorer_link": explorer_link(chain_id, tx_hash),
@@ -113,13 +118,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run one guarded Onchain live validation trade.")
     parser.add_argument("symbol")
     parser.add_argument("--direction", choices=("buy", "sell"), default="buy")
-    parser.add_argument("--amount-usdt", default="5")
+    parser.add_argument("--amount-usdc", default=None)
+    parser.add_argument("--amount-usdt", default=None, help="Deprecated onchain alias for --amount-usdc.")
     return parser.parse_args(argv)
 
 
 def main() -> int:
     args = parse_args(sys.argv[1:])
-    payload = run_single_live_validation(args.symbol, args.direction, args.amount_usdt)
+    amount = args.amount_usdc if args.amount_usdc is not None else args.amount_usdt if args.amount_usdt is not None else "5"
+    payload = run_single_live_validation(args.symbol, args.direction, amount)
+    if args.amount_usdc is None and args.amount_usdt is not None:
+        payload["warnings"] = list(dict.fromkeys([*(payload.get("warnings") or []), "amount-usdt is deprecated for onchain; use amount-usdc"]))
     print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True, default=str))
     return 0 if payload.get("ok") else 1
 

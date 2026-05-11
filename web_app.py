@@ -2327,8 +2327,10 @@ def _onchain_form_defaults() -> dict[str, object]:
         "quote_token_symbol": "USDC",
         "quote_token_address": "",
         "quote_token_decimals": 6,
+        "max_trade_usdc": 20,
         "max_trade_usdt": 20,
         "max_slippage_pct": 1.0,
+        "max_gas_usdc": 5,
         "max_gas_usdt": 5,
     }
 
@@ -2368,6 +2370,7 @@ def _onchain_symbol_rows() -> tuple[list[dict[str, object]], str | None]:
                 "sell_quote_status": "not_tested" if cached_sell_quote is None else "ok" if cached_sell_quote.get("ok") else "error",
                 "cached_quote_time": cached_quote.get("quoted_at") if cached_quote else None,
                 "cached_quote_error": cached_quote.get("error") if cached_quote else None,
+                "cached_quote_amount_usdc": cached_quote.get("amount_usdc", cached_quote.get("amount_usdt")) if cached_quote else None,
                 "cached_quote_amount_usdt": cached_quote.get("amount_usdt") if cached_quote else None,
                 "executable": executable_check["executable"],
                 "executable_reasons": executable_check["reasons"],
@@ -2482,7 +2485,7 @@ def _onchain_view(
     edit_config: dict[str, object] | None = None,
     edit_error: str | None = None,
     quote_symbol: str | None = None,
-    quote_amount_usdt: str = "10",
+    quote_amount_usdc: str = "10",
     quote_direction: str = "buy",
     quote_result: dict[str, object] | None = None,
     quote_error: str | None = None,
@@ -2514,6 +2517,7 @@ def _onchain_view(
                 symbol["quote_status"] = quote_status
                 symbol["cached_quote_time"] = quote_result.get("quoted_at") or symbol.get("cached_quote_time")
                 symbol["cached_quote_error"] = quote_result.get("error") or quote_result.get("message")
+                symbol["cached_quote_amount_usdc"] = quote_result.get("amount_usdc", quote_result.get("amount_usdt"))
                 symbol["cached_quote_amount_usdt"] = quote_result.get("amount_usdt")
                 if quote_result.get("direction") == "sell":
                     symbol["sell_quote_status"] = quote_status
@@ -2565,7 +2569,8 @@ def _onchain_view(
         "edit_error": edit_error,
         "form_defaults": _onchain_form_defaults(),
         "quote_symbol": quote_symbol,
-        "quote_amount_usdt": quote_amount_usdt,
+        "quote_amount_usdc": quote_amount_usdc,
+        "quote_amount_usdt": quote_amount_usdc,
         "quote_direction": quote_direction,
         "quote_result": quote_result,
         "quote_result_json": json.dumps(quote_result, indent=2, ensure_ascii=False) if quote_result else "",
@@ -2670,9 +2675,9 @@ def _onchain_config_from_form(form: dict[str, str]) -> dict[str, object]:
         "quote_token_symbol": quote_token_symbol,
         "quote_token_address": _parse_onchain_address(form, "quote_token_address"),
         "quote_token_decimals": _parse_onchain_positive_int(form, "quote_token_decimals"),
-        "max_trade_usdt": _parse_onchain_number(form, "max_trade_usdt"),
+        "max_trade_usdc": _parse_onchain_number(form, "max_trade_usdc" if "max_trade_usdc" in form else "max_trade_usdt"),
         "max_slippage_pct": _parse_onchain_number(form, "max_slippage_pct", allow_zero=True),
-        "max_gas_usdt": _parse_onchain_number(form, "max_gas_usdt", allow_zero=True),
+        "max_gas_usdc": _parse_onchain_number(form, "max_gas_usdc" if "max_gas_usdc" in form else "max_gas_usdt", allow_zero=True),
     }
 
 
@@ -2913,7 +2918,7 @@ def onchain_live_trade_refresh():
 def onchain_quote_page(request: Request, symbol: str):
     try:
         normalized_symbol = _ensure_onchain_symbol(symbol)
-        context = _onchain_view(quote_symbol=normalized_symbol, quote_amount_usdt="10")
+        context = _onchain_view(quote_symbol=normalized_symbol, quote_amount_usdc="10")
         status_code = 200
     except Exception as exc:
         normalized_symbol = symbol.strip().upper()
@@ -2932,14 +2937,14 @@ def onchain_quote_page(request: Request, symbol: str):
 async def onchain_quote_submit(request: Request, symbol: str):
     normalized_symbol = symbol.strip().upper()
     form = await _read_form_data(request)
-    amount_usdt = form.get("amount_usdt", "10").strip() or "10"
+    amount_usdc = form.get("amount_usdc", form.get("amount_usdt", "10")).strip() or "10"
     quote_direction = form.get("quote_direction", "buy").strip().lower() or "buy"
     quote_result = None
     quote_error = None
     status_code = 200
     try:
         normalized_symbol = _ensure_onchain_symbol(symbol)
-        quote_result = build_quote_payload(normalized_symbol, amount_usdt, direction=quote_direction)
+        quote_result = build_quote_payload(normalized_symbol, amount_usdc, direction=quote_direction)
         cached_quote = update_quote_cache(normalized_symbol, quote_result, direction=quote_direction)
         quote_result = dict(quote_result)
         quote_result["quoted_at"] = cached_quote.get("quoted_at")
@@ -2948,7 +2953,7 @@ async def onchain_quote_submit(request: Request, symbol: str):
         status_code = 400
     context = _onchain_view(
         quote_symbol=normalized_symbol,
-        quote_amount_usdt=amount_usdt,
+        quote_amount_usdc=amount_usdc,
         quote_direction=quote_direction,
         quote_result=quote_result,
         quote_error=quote_error,
@@ -3131,9 +3136,9 @@ async def onchain_live_settings_save(request: Request):
     validation_mode = _parse_onchain_bool(form, "validation_mode")
     confirm_text = form.get("auto_live_confirm", "").strip()
     try:
-        default_order_amount = float(form.get("default_order_amount_usdt", current.live_default_order_amount_usdt))
-        validation_max_order = float(form.get("validation_max_order_usdt", current.live_validation_max_order_usdt))
-        max_live_order = float(form.get("max_live_order_usdt", current.risk_max_live_order_usdt))
+        default_order_amount = float(form.get("default_order_amount_usdc", form.get("default_order_amount_usdt", current.live_default_order_amount_usdc)))
+        validation_max_order = float(form.get("validation_max_order_usdc", form.get("validation_max_order_usdt", current.live_validation_max_order_usdc)))
+        max_live_order = float(form.get("max_live_order_usdc", form.get("max_live_order_usdt", current.risk_max_live_order_usdc)))
         max_live_trades = int(float(form.get("max_live_trades_per_day", current.risk_max_live_trades_per_day)))
         if auto_live_enabled and confirm_text != "YES":
             raise ValueError("开启链上自动实盘必须输入 YES 二次确认")
@@ -3157,18 +3162,18 @@ async def onchain_live_settings_save(request: Request):
                 polling_interval_seconds=current.polling_interval_seconds,
                 quote_auto_refresh_enabled=current.quote_auto_refresh_enabled,
                 quote_stale_seconds=current.quote_stale_seconds,
-                quote_default_amount_usdt=current.quote_default_amount_usdt,
+                quote_default_amount_usdc=current.quote_default_amount_usdc,
                 live_auto_live_enabled=auto_live_enabled,
                 live_validation_mode=validation_mode,
-                live_validation_max_order_usdt=validation_max_order,
-                live_default_order_amount_usdt=default_order_amount,
+                live_validation_max_order_usdc=validation_max_order,
+                live_default_order_amount_usdc=default_order_amount,
                 live_require_manual_confirm_env=current.live_require_manual_confirm_env,
                 live_wallet_signing_enabled=wallet_signing_enabled,
                 live_broadcast_enabled=broadcast_enabled,
                 live_approve_enabled=approve_enabled,
                 live_approve_mode=approve_mode,
                 live_require_wallet_env=current.live_require_wallet_env,
-                live_max_live_order_usdt=max_live_order,
+                live_max_live_order_usdc=max_live_order,
                 live_max_live_trades_per_day=max_live_trades,
                 safety_allow_live_trading=current.safety_allow_live_trading,
                 safety_live_execute_enabled=current.safety_live_execute_enabled,
@@ -3177,8 +3182,8 @@ async def onchain_live_settings_save(request: Request):
                 risk_max_gas_raw=current.risk_max_gas_raw,
                 risk_quote_stale_seconds=current.risk_quote_stale_seconds,
                 risk_max_token_tax_rate_pct=current.risk_max_token_tax_rate_pct,
-                risk_max_trade_usdt=current.risk_max_trade_usdt,
-                risk_max_live_order_usdt=max_live_order,
+                risk_max_trade_usdc=current.risk_max_trade_usdc,
+                risk_max_live_order_usdc=max_live_order,
                 risk_max_live_trades_per_day=max_live_trades,
                 risk_max_open_positions=current.risk_max_open_positions,
                 risk_max_opens_per_day=current.risk_max_opens_per_day,
@@ -3298,7 +3303,7 @@ async def onchain_single_live_validation(request: Request):
     confirm_text = form.get("single_live_validation_confirm", "").strip()
     symbol = form.get("symbol", "").strip().upper()
     direction = form.get("direction", "buy").strip().lower() or "buy"
-    amount = form.get("amount_usdt", "5").strip() or "5"
+    amount = form.get("amount_usdc", form.get("amount_usdt", "5")).strip() or "5"
     result = None
     error = None
     status_code = 200
