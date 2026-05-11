@@ -22,6 +22,8 @@ class OnchainSettings:
     quote_stale_seconds: int
     quote_default_amount_usdt: float
     live_auto_live_enabled: bool
+    live_validation_mode: bool
+    live_validation_max_order_usdt: float
     live_default_order_amount_usdt: float
     live_require_manual_confirm_env: bool
     live_wallet_signing_enabled: bool
@@ -302,6 +304,12 @@ def load_onchain_settings_config(
         quote_stale_seconds=_settings_positive_int(quote, "quote_stale_seconds", "quote"),
         quote_default_amount_usdt=_settings_positive_number(quote, "default_amount_usdt", "quote"),
         live_auto_live_enabled=bool(live.get("auto_live_enabled", False)),
+        live_validation_mode=bool(live.get("validation_mode", True)),
+        live_validation_max_order_usdt=_settings_positive_number(
+            {"validation_max_order_usdt": live.get("validation_max_order_usdt", 5)},
+            "validation_max_order_usdt",
+            "live",
+        ),
         live_default_order_amount_usdt=_settings_positive_number(
             {"default_order_amount_usdt": live.get("default_order_amount_usdt", 20)},
             "default_order_amount_usdt",
@@ -385,6 +393,8 @@ def dump_onchain_settings_yaml(settings: OnchainSettings) -> str:
         },
         "live": {
             "auto_live_enabled": settings.live_auto_live_enabled,
+            "validation_mode": settings.live_validation_mode,
+            "validation_max_order_usdt": settings.live_validation_max_order_usdt,
             "default_order_amount_usdt": settings.live_default_order_amount_usdt,
             "require_manual_confirm_env": settings.live_require_manual_confirm_env,
             "wallet_signing_enabled": settings.live_wallet_signing_enabled,

@@ -121,7 +121,13 @@ def _allowance_from_unsigned(unsigned: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def prepare_live_swap(symbol: str, direction: str, amount: str | int | float | Decimal) -> dict[str, Any]:
+def prepare_live_swap(
+    symbol: str,
+    direction: str,
+    amount: str | int | float | Decimal,
+    *,
+    validation_required: bool = False,
+) -> dict[str, Any]:
     normalized_symbol = symbol.strip().upper()
     normalized_direction = direction.strip().lower()
     if normalized_direction not in {"buy", "sell"}:
@@ -160,6 +166,7 @@ def prepare_live_swap(symbol: str, direction: str, amount: str | int | float | D
     guard = assert_onchain_live_allowed(
         f"auto_{normalized_direction}",
         amount_usdt=_guard_amount(normalized_direction, amount_text, quote_result),
+        validation_required=validation_required,
     )
     write_live_audit(
         "preflight_checks",
@@ -261,8 +268,14 @@ def prepare_live_swap(symbol: str, direction: str, amount: str | int | float | D
     return result
 
 
-def prepare_unsigned_live_transactions(symbol: str, direction: str, amount: str | int | float | Decimal) -> dict[str, Any]:
-    preview = prepare_live_swap(symbol, direction, amount)
+def prepare_unsigned_live_transactions(
+    symbol: str,
+    direction: str,
+    amount: str | int | float | Decimal,
+    *,
+    validation_required: bool = False,
+) -> dict[str, Any]:
+    preview = prepare_live_swap(symbol, direction, amount, validation_required=validation_required)
     wallet_guard = check_wallet_environment()
     live_guard = preview.get("live_guard") if isinstance(preview.get("live_guard"), dict) else {}
     mapping = preview.get("mapping") if isinstance(preview.get("mapping"), dict) else {}
@@ -384,9 +397,15 @@ def broadcast_live_transaction(*args: Any, **kwargs: Any) -> dict[str, Any]:
     return broadcast_signed_transaction(*args, **kwargs)
 
 
-def execute_live_swap(symbol: str, direction: str, amount: str | int | float | Decimal) -> dict[str, Any]:
+def execute_live_swap(
+    symbol: str,
+    direction: str,
+    amount: str | int | float | Decimal,
+    *,
+    validation_required: bool = False,
+) -> dict[str, Any]:
     settings = load_onchain_settings_config()
-    unsigned = prepare_unsigned_live_transactions(symbol, direction, amount)
+    unsigned = prepare_unsigned_live_transactions(symbol, direction, amount, validation_required=validation_required)
     if unsigned.get("failures"):
         write_live_audit(
             "preflight_failed",

@@ -265,6 +265,84 @@
   <div class="col-12">
     <div class="card shadow-sm border-danger">
       <div class="card-body">
+        <h2 class="h5 mb-2">Single Live Validation Panel</h2>
+        <div class="alert alert-danger">
+          这是一次真实链上交易。会真实消耗资金。当前仅用于小额验证；不会启动自动循环或后台交易。
+        </div>
+        <form class="row g-3 align-items-end" method="post" action="/onchain/single-live-validation#single-live-validation-result">
+          <div class="col-md-3">
+            <label class="form-label" for="single-live-symbol">symbol</label>
+            <input id="single-live-symbol" name="symbol" class="form-control" value="GOOGLUSDT" required>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label" for="single-live-direction">direction</label>
+            <select id="single-live-direction" name="direction" class="form-select">
+              <option value="buy">buy</option>
+              <option value="sell">sell</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label" for="single-live-amount">amount_usdt</label>
+            <input id="single-live-amount" name="amount_usdt" type="number" min="0.000001" max="{{ onchain_settings.live_validation_max_order_usdt or 5 }}" step="0.000001" class="form-control" value="5" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="single-live-confirm">确认</label>
+            <input id="single-live-confirm" name="single_live_validation_confirm" class="form-control" placeholder="输入 YES 才会执行">
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-danger w-100" type="submit">执行一次真实链上验证</button>
+          </div>
+        </form>
+        {% if single_live_validation_error %}
+        <div class="alert alert-danger mt-3 mb-0">{{ single_live_validation_error }}</div>
+        {% endif %}
+        {% if single_live_validation_result %}
+        <div class="mt-3" id="single-live-validation-result">
+          <div class="alert {% if single_live_validation_result.ok %}alert-success{% else %}alert-danger{% endif %}">
+            状态：{{ single_live_validation_result.status or single_live_validation_result.reason or "unknown" }}
+          </div>
+          <div class="row g-3">
+            <div class="col-md-3">
+              <div class="text-secondary small">交易哈希</div>
+              <code>{{ single_live_validation_result.tx_hash or "无" }}</code>
+            </div>
+            <div class="col-md-3">
+              <div class="text-secondary small">金额</div>
+              <div>{{ single_live_validation_result.amount }}</div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-secondary small">Gas</div>
+              <div>{{ single_live_validation_result.gas or "n/a" }}</div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-secondary small">区块浏览器链接</div>
+              {% if single_live_validation_result.explorer_link %}
+              <a href="{{ single_live_validation_result.explorer_link }}" target="_blank" rel="noopener">打开</a>
+              {% else %}
+              <span class="text-secondary">无</span>
+              {% endif %}
+            </div>
+            <div class="col-md-6">
+              <div class="text-secondary small">报价</div>
+              <div>{{ single_live_validation_result.parsed_quote.from_amount_display if single_live_validation_result.parsed_quote else "" }} → {{ single_live_validation_result.parsed_quote.to_amount_display if single_live_validation_result.parsed_quote else "" }}</div>
+            </div>
+            <div class="col-md-6">
+              <div class="text-secondary small">失败原因</div>
+              <div class="{% if single_live_validation_result.failures %}text-danger{% else %}text-secondary{% endif %}">{{ single_live_validation_result.failures | join(", ") if single_live_validation_result.failures else "无" }}</div>
+            </div>
+            <div class="col-12">
+              <pre class="bg-light border rounded p-3 mb-0 overflow-auto"><code>{{ single_live_validation_result_json }}</code></pre>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm border-danger">
+      <div class="card-body">
         <h2 class="h5 mb-2">Auto Live Execute Panel</h2>
         <div class="alert alert-danger">
           这会真实发送链上交易。必须开启 auto live、钱包签名、广播，并设置 ONCHAIN_CONFIRM_LIVE=YES。
@@ -642,6 +720,17 @@
           <div class="col-md-3">
             <label class="form-label" for="default-order-amount">默认下单金额 <span class="text-secondary small">default_order_amount_usdt</span></label>
             <input id="default-order-amount" name="default_order_amount_usdt" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_default_order_amount_usdt or 20 }}" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="validation-mode">验证模式 <span class="text-secondary small">validation_mode</span></label>
+            <select id="validation-mode" name="validation_mode" class="form-select">
+              <option value="true" {% if onchain_settings.live_validation_mode %}selected{% endif %}>true</option>
+              <option value="false" {% if not onchain_settings.live_validation_mode %}selected{% endif %}>false</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="validation-max-order">验证最大金额 <span class="text-secondary small">validation_max_order_usdt</span></label>
+            <input id="validation-max-order" name="validation_max_order_usdt" type="number" min="0.000001" step="0.000001" class="form-control" value="{{ onchain_settings.live_validation_max_order_usdt or 5 }}" required>
           </div>
           <div class="col-md-3">
             <label class="form-label" for="max-live-order">单笔最大实盘金额 <span class="text-secondary small">max_live_order_usdt</span></label>

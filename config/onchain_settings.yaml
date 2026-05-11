@@ -9,6 +9,8 @@ quote:
 
 live:
   auto_live_enabled: false
+  validation_mode: true
+  validation_max_order_usdt: 5
   default_order_amount_usdt: 20
   require_manual_confirm_env: true
   wallet_signing_enabled: false

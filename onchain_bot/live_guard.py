@@ -70,6 +70,7 @@ def assert_onchain_live_allowed(
     action: str | None = None,
     *,
     amount_usdt: float | int | str | Decimal | None = None,
+    validation_required: bool = False,
     emit_log: bool = True,
 ) -> dict[str, Any]:
     settings = load_onchain_settings_config()
@@ -97,6 +98,12 @@ def assert_onchain_live_allowed(
     elif amount > max_amount:
         reason = "live_order_amount_exceeds_max"
         allowed = False
+    elif validation_required and not settings.live_validation_mode:
+        reason = "validation_mode_disabled"
+        allowed = False
+    elif settings.live_validation_mode and amount > Decimal(str(settings.live_validation_max_order_usdt)):
+        reason = "validation_amount_exceeds_limit"
+        allowed = False
 
     result = {
         "allowed": allowed,
@@ -104,6 +111,9 @@ def assert_onchain_live_allowed(
         "action": action,
         "amount_usdt": float(amount),
         "max_live_order_usdt": float(max_amount),
+        "validation_mode": bool(settings.live_validation_mode),
+        "validation_required": bool(validation_required),
+        "validation_max_order_usdt": float(settings.live_validation_max_order_usdt),
         "auto_live_supported": True,
         "auto_live_enabled": bool(settings.live_auto_live_enabled),
         "require_manual_confirm_env": bool(settings.live_require_manual_confirm_env),

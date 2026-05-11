@@ -73,6 +73,7 @@ from onchain_bot.quote_cache import get_cached_quote, update_quote_cache
 from onchain_bot.live_executor import execute_live_swap, prepare_unsigned_live_transactions
 from onchain_bot.run_onchain_live_once import run_onchain_live_once
 from onchain_bot.run_onchain_paper_once import run_once as run_onchain_paper_once
+from onchain_bot.run_single_live_validation import run_single_live_validation
 from onchain_bot.signal_reader import read_signal_for_mapping
 from onchain_bot.status_onchain import (
     build_health_payload,
@@ -2500,6 +2501,8 @@ def _onchain_view(
     unsigned_tx_error: str | None = None,
     live_execute_result: dict[str, object] | None = None,
     live_execute_error: str | None = None,
+    single_live_validation_result: dict[str, object] | None = None,
+    single_live_validation_error: str | None = None,
 ) -> dict[str, object]:
     symbols, config_error = _onchain_symbol_rows()
     paper_positions, paper_closed_trades = _onchain_paper_rows()
@@ -2586,6 +2589,9 @@ def _onchain_view(
         "live_execute_result": live_execute_result,
         "live_execute_result_json": json.dumps(live_execute_result, indent=2, ensure_ascii=False) if live_execute_result else "",
         "live_execute_error": live_execute_error,
+        "single_live_validation_result": single_live_validation_result,
+        "single_live_validation_result_json": json.dumps(single_live_validation_result, indent=2, ensure_ascii=False) if single_live_validation_result else "",
+        "single_live_validation_error": single_live_validation_error,
     }
 
 
@@ -3122,9 +3128,11 @@ async def onchain_live_settings_save(request: Request):
     broadcast_enabled = _parse_onchain_bool(form, "broadcast_enabled")
     approve_enabled = _parse_onchain_bool(form, "approve_enabled")
     approve_mode = form.get("approve_mode", current.live_approve_mode).strip() or "exact_amount"
+    validation_mode = _parse_onchain_bool(form, "validation_mode")
     confirm_text = form.get("auto_live_confirm", "").strip()
     try:
         default_order_amount = float(form.get("default_order_amount_usdt", current.live_default_order_amount_usdt))
+        validation_max_order = float(form.get("validation_max_order_usdt", current.live_validation_max_order_usdt))
         max_live_order = float(form.get("max_live_order_usdt", current.risk_max_live_order_usdt))
         max_live_trades = int(float(form.get("max_live_trades_per_day", current.risk_max_live_trades_per_day)))
         if auto_live_enabled and confirm_text != "YES":
@@ -3135,6 +3143,8 @@ async def onchain_live_settings_save(request: Request):
             raise ValueError("开启自动授权必须输入 YES 二次确认")
         if approve_mode != "exact_amount":
             raise ValueError("当前只允许 exact_amount 授权模式")
+        if validation_max_order <= 0:
+            raise ValueError("验证模式最大金额必须大于 0")
         if default_order_amount <= 0 or max_live_order <= 0:
             raise ValueError("默认下单金额和单笔最大实盘金额必须大于 0")
         if max_live_trades <= 0:
@@ -3149,6 +3159,8 @@ async def onchain_live_settings_save(request: Request):
                 quote_stale_seconds=current.quote_stale_seconds,
                 quote_default_amount_usdt=current.quote_default_amount_usdt,
                 live_auto_live_enabled=auto_live_enabled,
+                live_validation_mode=validation_mode,
+                live_validation_max_order_usdt=validation_max_order,
                 live_default_order_amount_usdt=default_order_amount,
                 live_require_manual_confirm_env=current.live_require_manual_confirm_env,
                 live_wallet_signing_enabled=wallet_signing_enabled,
@@ -3276,6 +3288,32 @@ async def onchain_live_execute(request: Request):
         error = str(exc)
         status_code = 400
     context = _onchain_view(live_execute_result=result, live_execute_error=error)
+    context.update({"request": request, "project_name": "TraderBot Local Console"})
+    return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
+
+
+@app.post("/onchain/single-live-validation", response_class=HTMLResponse)
+async def onchain_single_live_validation(request: Request):
+    form = await _read_form_data(request)
+    confirm_text = form.get("single_live_validation_confirm", "").strip()
+    symbol = form.get("symbol", "").strip().upper()
+    direction = form.get("direction", "buy").strip().lower() or "buy"
+    amount = form.get("amount_usdt", "5").strip() or "5"
+    result = None
+    error = None
+    status_code = 200
+    try:
+        if confirm_text != "YES":
+            raise ValueError("单次真实链上验证必须输入 YES")
+        normalized_symbol = _ensure_onchain_symbol(symbol)
+        result = run_single_live_validation(normalized_symbol, direction, amount)
+    except Exception as exc:
+        error = str(exc)
+        status_code = 400
+    context = _onchain_view(
+        single_live_validation_result=result,
+        single_live_validation_error=error,
+    )
     context.update({"request": request, "project_name": "TraderBot Local Console"})
     return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
 
