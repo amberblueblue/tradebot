@@ -11,6 +11,15 @@ TX_FIELD_ALIASES = {
     "gas": ("gas", "gasLimit", "gasLimitRaw"),
     "gas_price": ("gasPrice", "gas_price", "maxFeePerGas"),
 }
+SPENDER_KEYS = (
+    "dexContractAddress",
+    "spender",
+    "spenderAddress",
+    "approveAddress",
+    "approveContractAddress",
+    "router",
+    "routerAddress",
+)
 
 
 def _first_mapping(value: Any) -> dict[str, Any] | None:
@@ -32,6 +41,24 @@ def _extract_data(payload: Any) -> Any:
     if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
         return payload["data"]
     return payload
+
+
+def _find_first_key(data: Any, keys: tuple[str, ...]) -> Any:
+    if isinstance(data, dict):
+        for key in keys:
+            value = data.get(key)
+            if isinstance(value, str) and value.startswith("0x"):
+                return value
+        for value in data.values():
+            found = _find_first_key(value, keys)
+            if found is not None:
+                return found
+    elif isinstance(data, list):
+        for item in data:
+            found = _find_first_key(item, keys)
+            if found is not None:
+                return found
+    return None
 
 
 def _find_named_tx(data: Any, names: tuple[str, ...]) -> dict[str, Any] | None:
@@ -146,3 +173,20 @@ def build_unsigned_transactions(
     }
     print(f"[ONCHAIN_UNSIGNED_TX] {json.dumps({**result, 'raw_tx_omitted': True}, ensure_ascii=False, sort_keys=True)}")
     return result
+
+
+def extract_spender_address(
+    tx_preview: dict[str, Any] | None,
+    *,
+    approve_transaction: dict[str, Any] | None = None,
+    swap_transaction: dict[str, Any] | None = None,
+) -> str | None:
+    data = _extract_data(tx_preview)
+    explicit_spender = _find_first_key(data, SPENDER_KEYS)
+    if explicit_spender:
+        return explicit_spender
+    if isinstance(swap_transaction, dict) and isinstance(swap_transaction.get("to"), str):
+        return swap_transaction["to"]
+    if isinstance(approve_transaction, dict) and isinstance(approve_transaction.get("to"), str):
+        return approve_transaction["to"]
+    return None

@@ -5,11 +5,12 @@ import os
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from onchain_bot.allowance import build_allowance_result
 from onchain_bot.config_loader import load_onchain_settings_config, load_onchain_symbols_config
 from onchain_bot.executable_check import check_onchain_executable
 from onchain_bot.live_guard import assert_onchain_live_allowed
-from onchain_bot.live_trade_log import append_live_trade, write_live_audit
-from onchain_bot.live_transaction_builder import build_unsigned_transactions
+from onchain_bot.live_trade_log import append_live_trade, load_live_trades, write_live_audit
+from onchain_bot.live_transaction_builder import build_unsigned_transactions, extract_spender_address
 from onchain_bot.okx_dex_client import OkxDexQuoteClient
 from onchain_bot.paper_state import load_paper_state
 from onchain_bot.risk import check_onchain_quote_risk
@@ -18,11 +19,9 @@ from onchain_bot.signal_reader import read_signal_for_mapping
 from onchain_bot.status_onchain import build_quote_payload
 from onchain_bot.trade_limits import check_onchain_trade_limits
 from onchain_bot.wallet_guard import check_wallet_environment
+from onchain_bot.wallet_guard import ONCHAIN_WALLET_ADDRESS_ENV
 from onchain_bot.wallet_signer import broadcast_transaction as broadcast_signed_transaction
 from onchain_bot.wallet_signer import sign_transaction as sign_unsigned_transaction
-
-
-ONCHAIN_WALLET_ADDRESS_ENV = "ONCHAIN_WALLET_ADDRESS"
 
 
 def _parse_amount(value: str | int | float | Decimal) -> Decimal:
@@ -70,6 +69,56 @@ def _swap_addresses(mapping: Any, direction: str) -> tuple[str, str, str, str]:
         mapping.token_symbol,
         mapping.quote_token_symbol,
     )
+
+
+def _pending_approve_exists(symbol: str, token_address: str, spender: str) -> bool:
+    trades = load_live_trades().get("trades", [])
+    for trade in trades:
+        if not isinstance(trade, dict):
+            continue
+        if trade.get("type") != "approve":
+            continue
+        if str(trade.get("status") or "").lower() not in {"pending", "submitted"}:
+            continue
+        if str(trade.get("symbol") or "").upper() != symbol.upper():
+            continue
+        if str(trade.get("token_address") or "").lower() != str(token_address or "").lower():
+            continue
+        if str(trade.get("spender") or "").lower() == str(spender or "").lower():
+            return True
+    return False
+
+
+def _allowance_from_unsigned(unsigned: dict[str, Any]) -> dict[str, Any]:
+    mapping = unsigned.get("mapping") if isinstance(unsigned.get("mapping"), dict) else {}
+    quote = unsigned.get("quote") if isinstance(unsigned.get("quote"), dict) else {}
+    direction = str(unsigned.get("direction") or "").lower()
+    from_token_address = str(quote.get("from_token_address") or "")
+    from_token_symbol = str(quote.get("from_token_symbol") or "")
+    if not from_token_address and mapping:
+        if direction == "buy":
+            from_token_address = str(mapping.get("quote_token_address") or "")
+            from_token_symbol = str(mapping.get("quote_token_symbol") or "")
+        else:
+            from_token_address = str(mapping.get("token_address") or "")
+            from_token_symbol = str(mapping.get("token_symbol") or "")
+    spender = extract_spender_address(
+        unsigned.get("tx_preview") if isinstance(unsigned.get("tx_preview"), dict) else None,
+        approve_transaction=unsigned.get("approve_transaction") if isinstance(unsigned.get("approve_transaction"), dict) else None,
+        swap_transaction=unsigned.get("swap_transaction") if isinstance(unsigned.get("swap_transaction"), dict) else None,
+    )
+    required_amount = quote.get("from_token_amount") or 0
+    result = build_allowance_result(
+        chain_id=str(mapping.get("chain_id") or quote.get("chain_id") or ""),
+        token_address=from_token_address,
+        owner_address=os.environ.get(ONCHAIN_WALLET_ADDRESS_ENV, ""),
+        spender_address=str(spender or ""),
+        required_amount=required_amount,
+        token_symbol=from_token_symbol,
+    )
+    result["approve_enabled"] = load_onchain_settings_config().live_approve_enabled
+    result["approve_mode"] = load_onchain_settings_config().live_approve_mode
+    return result
 
 
 def prepare_live_swap(symbol: str, direction: str, amount: str | int | float | Decimal) -> dict[str, Any]:
@@ -236,6 +285,7 @@ def prepare_unsigned_live_transactions(symbol: str, direction: str, amount: str 
         "symbol": str(preview.get("symbol") or symbol).upper(),
         "direction": str(preview.get("direction") or direction),
         "amount": preview.get("amount"),
+        "mapping": mapping,
         "approve_transaction": unsigned.get("approve_transaction"),
         "swap_transaction": unsigned.get("swap_transaction"),
         "wallet_guard": wallet_guard,
@@ -253,6 +303,76 @@ def prepare_unsigned_live_transactions(symbol: str, direction: str, amount: str 
         "warnings": list(dict.fromkeys(warnings)),
         "signing": "not_implemented",
         "broadcast": "not_implemented",
+    }
+
+
+def build_allowance_status(symbol: str, direction: str, amount: str | int | float | Decimal) -> dict[str, Any]:
+    normalized_symbol = symbol.strip().upper()
+    normalized_direction = direction.strip().lower()
+    if normalized_direction not in {"buy", "sell"}:
+        raise ValueError("direction must be buy or sell")
+    symbols = load_onchain_symbols_config()
+    mapping = symbols.get(normalized_symbol)
+    if mapping is None:
+        return {
+            "ok": False,
+            "symbol": normalized_symbol,
+            "direction": normalized_direction,
+            "error": "mapping_not_found",
+        }
+    amount_text = str(_parse_amount(amount))
+    quote_result = build_quote_payload(normalized_symbol, amount_text, direction=normalized_direction)
+    if not quote_result.get("ok"):
+        return {
+            "ok": False,
+            "symbol": normalized_symbol,
+            "direction": normalized_direction,
+            "quote": quote_result,
+            "error": "quote_not_ok",
+        }
+    from_token_address, to_token_address, from_token_symbol, to_token_symbol = _swap_addresses(mapping, normalized_direction)
+    tx_preview = OkxDexQuoteClient().swap_tx_data(
+        chain_id=mapping.chain_id,
+        from_token_address=from_token_address,
+        to_token_address=to_token_address,
+        amount=int(quote_result.get("from_token_amount") or 0),
+        slippage_pct=mapping.max_slippage_pct,
+        user_wallet_address=os.environ.get(ONCHAIN_WALLET_ADDRESS_ENV, ""),
+    )
+    unsigned = build_unsigned_transactions(
+        tx_preview if isinstance(tx_preview, dict) else None,
+        chain_id=mapping.chain_id,
+        direction=normalized_direction,
+        symbol=normalized_symbol,
+    )
+    allowance_result = _allowance_from_unsigned(
+        {
+            "symbol": normalized_symbol,
+            "direction": normalized_direction,
+            "mapping": mapping.to_dict(),
+            "quote": quote_result,
+            "tx_preview": tx_preview,
+            "approve_transaction": unsigned.get("approve_transaction"),
+            "swap_transaction": unsigned.get("swap_transaction"),
+        }
+    )
+    return {
+        "ok": bool(tx_preview.get("ok")) and bool(allowance_result.get("ok")),
+        "symbol": normalized_symbol,
+        "direction": normalized_direction,
+        "from_token": from_token_symbol,
+        "to_token": to_token_symbol,
+        "token_address": allowance_result.get("token_address"),
+        "spender": allowance_result.get("spender"),
+        "required_amount": allowance_result.get("required_amount"),
+        "allowance": allowance_result.get("current_allowance"),
+        "sufficient": allowance_result.get("sufficient"),
+        "approve_enabled": allowance_result.get("approve_enabled"),
+        "approve_mode": allowance_result.get("approve_mode"),
+        "allowance_result": allowance_result,
+        "tx_preview_ok": bool(tx_preview.get("ok")),
+        "error": allowance_result.get("error") or tx_preview.get("error"),
+        "message": allowance_result.get("message") or tx_preview.get("message"),
     }
 
 
@@ -307,6 +427,156 @@ def execute_live_swap(symbol: str, direction: str, amount: str | int | float | D
             "reason": "swap_tx_data_missing",
             "tx_hash": None,
         }
+    allowance = _allowance_from_unsigned(unsigned)
+    write_live_audit(
+        "allowance_checked",
+        {
+            "symbol": unsigned.get("symbol"),
+            "direction": unsigned.get("direction"),
+            "token_address": allowance.get("token_address"),
+            "spender": allowance.get("spender"),
+            "required_amount": allowance.get("required_amount"),
+            "sufficient": allowance.get("sufficient"),
+            "error": allowance.get("error"),
+        },
+    )
+    if not allowance.get("ok"):
+        return {
+            **unsigned,
+            "ok": False,
+            "reason": allowance.get("error") or "allowance_check_failed",
+            "allowance": allowance,
+            "tx_hash": None,
+        }
+    if not allowance.get("sufficient"):
+        if _pending_approve_exists(
+            str(unsigned.get("symbol") or ""),
+            str(allowance.get("token_address") or ""),
+            str(allowance.get("spender") or ""),
+        ):
+            return {
+                **unsigned,
+                "ok": False,
+                "reason": "approve_pending_wait_confirmation",
+                "allowance": allowance,
+                "tx_hash": None,
+            }
+        if not settings.live_approve_enabled:
+            write_live_audit(
+                "approve_blocked",
+                {"symbol": unsigned.get("symbol"), "reason": "approve_required_but_disabled"},
+            )
+            return {
+                **unsigned,
+                "ok": False,
+                "reason": "approve_required_but_disabled",
+                "allowance": allowance,
+                "tx_hash": None,
+            }
+        if settings.live_approve_mode != "exact_amount":
+            return {
+                **unsigned,
+                "ok": False,
+                "reason": "unlimited_approve_not_allowed",
+                "allowance": allowance,
+                "tx_hash": None,
+            }
+        approve_transaction = unsigned.get("approve_transaction")
+        if not isinstance(approve_transaction, dict):
+            return {
+                **unsigned,
+                "ok": False,
+                "reason": "approve_tx_data_missing",
+                "allowance": allowance,
+                "tx_hash": None,
+            }
+        signed_approve = sign_live_transaction(
+            approve_transaction,
+            amount_usdt=amount if str(direction).lower() == "buy" else unsigned.get("amount"),
+            action=f"approve_{direction}",
+        )
+        if not signed_approve.get("ok"):
+            write_live_audit(
+                "approve_sign_failed",
+                {
+                    "symbol": unsigned.get("symbol"),
+                    "direction": unsigned.get("direction"),
+                    "reason": signed_approve.get("reason"),
+                    "message": signed_approve.get("message"),
+                },
+            )
+            return {
+                **unsigned,
+                "ok": False,
+                "reason": signed_approve.get("reason") or "approve_signing_failed",
+                "allowance": allowance,
+                "sign_result": {key: value for key, value in signed_approve.items() if key != "signed_tx"},
+                "tx_hash": None,
+            }
+        write_live_audit(
+            "approve_signed",
+            {
+                "symbol": unsigned.get("symbol"),
+                "direction": unsigned.get("direction"),
+                "tx_hash_preview": signed_approve.get("tx_hash_preview"),
+            },
+        )
+        approve_broadcast = broadcast_live_transaction(
+            signed_approve.get("signed_tx"),
+            chain_id=approve_transaction.get("chain_id"),
+        )
+        if not approve_broadcast.get("ok"):
+            write_live_audit(
+                "approve_broadcast_failed",
+                {
+                    "symbol": unsigned.get("symbol"),
+                    "direction": unsigned.get("direction"),
+                    "reason": approve_broadcast.get("reason"),
+                    "message": approve_broadcast.get("message"),
+                },
+            )
+            return {
+                **unsigned,
+                "ok": False,
+                "reason": approve_broadcast.get("reason") or "approve_broadcast_failed",
+                "allowance": allowance,
+                "broadcast_result": approve_broadcast,
+                "tx_hash": None,
+            }
+        approve_tx_hash = approve_broadcast.get("tx_hash")
+        append_live_trade(
+            {
+                "type": "approve",
+                "symbol": unsigned.get("symbol"),
+                "direction": unsigned.get("direction"),
+                "chain_id": approve_transaction.get("chain_id"),
+                "token_address": allowance.get("token_address"),
+                "spender": allowance.get("spender"),
+                "amount": allowance.get("required_amount"),
+                "tx_hash": approve_tx_hash,
+                "status": "pending",
+                "quote": unsigned.get("quote"),
+                "parsed_quote": unsigned.get("parsed_quote"),
+                "risk_result": unsigned.get("risk_result"),
+            }
+        )
+        write_live_audit(
+            "approve_broadcast_success",
+            {
+                "symbol": unsigned.get("symbol"),
+                "direction": unsigned.get("direction"),
+                "tx_hash": approve_tx_hash,
+            },
+        )
+        return {
+            **unsigned,
+            "ok": True,
+            "reason": "approve_submitted_wait_confirmation",
+            "allowance": allowance,
+            "tx_hash": approve_tx_hash,
+            "approve_tx_hash": approve_tx_hash,
+            "broadcast_result": approve_broadcast,
+        }
     signed = sign_live_transaction(
         swap_transaction,
         amount_usdt=amount if str(direction).lower() == "buy" else unsigned.get("amount"),
@@ -326,6 +596,7 @@ def execute_live_swap(symbol: str, direction: str, amount: str | int | float | D
             **unsigned,
             "ok": False,
             "reason": signed.get("reason") or "wallet_signing_failed",
+            "allowance": allowance,
             "sign_result": {key: value for key, value in signed.items() if key != "signed_tx"},
             "tx_hash": None,
         }
@@ -355,6 +626,7 @@ def execute_live_swap(symbol: str, direction: str, amount: str | int | float | D
             **unsigned,
             "ok": False,
             "reason": broadcast.get("reason") or "broadcast_failed",
+            "allowance": allowance,
             "broadcast_result": broadcast,
             "tx_hash": None,
         }
@@ -369,6 +641,7 @@ def execute_live_swap(symbol: str, direction: str, amount: str | int | float | D
     )
     append_live_trade(
         {
+            "type": "swap",
             "symbol": unsigned.get("symbol"),
             "direction": unsigned.get("direction"),
             "chain_id": swap_transaction.get("chain_id"),
@@ -384,6 +657,7 @@ def execute_live_swap(symbol: str, direction: str, amount: str | int | float | D
         **unsigned,
         "ok": True,
         "reason": "submitted",
+        "allowance": allowance,
         "tx_hash": tx_hash,
         "broadcast_result": broadcast,
     }

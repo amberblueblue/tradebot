@@ -26,6 +26,8 @@ class OnchainSettings:
     live_require_manual_confirm_env: bool
     live_wallet_signing_enabled: bool
     live_broadcast_enabled: bool
+    live_approve_enabled: bool
+    live_approve_mode: str
     live_require_wallet_env: bool
     live_max_live_order_usdt: float
     live_max_live_trades_per_day: int
@@ -308,6 +310,8 @@ def load_onchain_settings_config(
         live_require_manual_confirm_env=bool(live.get("require_manual_confirm_env", True)),
         live_wallet_signing_enabled=bool(live.get("wallet_signing_enabled", False)),
         live_broadcast_enabled=bool(live.get("broadcast_enabled", False)),
+        live_approve_enabled=bool(live.get("approve_enabled", False)),
+        live_approve_mode=str(live.get("approve_mode", "exact_amount") or "exact_amount"),
         live_require_wallet_env=bool(live.get("require_wallet_env", True)),
         live_max_live_order_usdt=_settings_positive_number(
             {"max_live_order_usdt": live.get("max_live_order_usdt", risk.get("max_live_order_usdt", 20))},
@@ -385,6 +389,8 @@ def dump_onchain_settings_yaml(settings: OnchainSettings) -> str:
             "require_manual_confirm_env": settings.live_require_manual_confirm_env,
             "wallet_signing_enabled": settings.live_wallet_signing_enabled,
             "broadcast_enabled": settings.live_broadcast_enabled,
+            "approve_enabled": settings.live_approve_enabled,
+            "approve_mode": settings.live_approve_mode,
             "require_wallet_env": settings.live_require_wallet_env,
             "max_live_order_usdt": settings.live_max_live_order_usdt,
             "max_live_trades_per_day": settings.live_max_live_trades_per_day,
@@ -437,6 +443,8 @@ def save_onchain_settings_config(
     hard_max = min(settings.live_max_live_order_usdt, settings.risk_max_live_order_usdt)
     if settings.live_default_order_amount_usdt > hard_max:
         raise ValueError("live.default_order_amount_usdt cannot exceed max_live_order_usdt")
+    if settings.live_approve_mode != "exact_amount":
+        raise ValueError("live.approve_mode must be exact_amount")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dump_onchain_settings_yaml(settings), encoding="utf-8")
     return {

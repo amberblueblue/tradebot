@@ -3120,6 +3120,8 @@ async def onchain_live_settings_save(request: Request):
     auto_live_enabled = _parse_onchain_bool(form, "auto_live_enabled")
     wallet_signing_enabled = _parse_onchain_bool(form, "wallet_signing_enabled")
     broadcast_enabled = _parse_onchain_bool(form, "broadcast_enabled")
+    approve_enabled = _parse_onchain_bool(form, "approve_enabled")
+    approve_mode = form.get("approve_mode", current.live_approve_mode).strip() or "exact_amount"
     confirm_text = form.get("auto_live_confirm", "").strip()
     try:
         default_order_amount = float(form.get("default_order_amount_usdt", current.live_default_order_amount_usdt))
@@ -3129,6 +3131,10 @@ async def onchain_live_settings_save(request: Request):
             raise ValueError("开启链上自动实盘必须输入 YES 二次确认")
         if (wallet_signing_enabled or broadcast_enabled) and confirm_text != "YES":
             raise ValueError("开启钱包签名或广播必须输入 YES 二次确认")
+        if approve_enabled and confirm_text != "YES":
+            raise ValueError("开启自动授权必须输入 YES 二次确认")
+        if approve_mode != "exact_amount":
+            raise ValueError("当前只允许 exact_amount 授权模式")
         if default_order_amount <= 0 or max_live_order <= 0:
             raise ValueError("默认下单金额和单笔最大实盘金额必须大于 0")
         if max_live_trades <= 0:
@@ -3147,6 +3153,8 @@ async def onchain_live_settings_save(request: Request):
                 live_require_manual_confirm_env=current.live_require_manual_confirm_env,
                 live_wallet_signing_enabled=wallet_signing_enabled,
                 live_broadcast_enabled=broadcast_enabled,
+                live_approve_enabled=approve_enabled,
+                live_approve_mode=approve_mode,
                 live_require_wallet_env=current.live_require_wallet_env,
                 live_max_live_order_usdt=max_live_order,
                 live_max_live_trades_per_day=max_live_trades,

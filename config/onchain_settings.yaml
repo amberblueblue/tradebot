@@ -13,6 +13,8 @@ live:
   require_manual_confirm_env: true
   wallet_signing_enabled: false
   broadcast_enabled: false
+  approve_enabled: false
+  approve_mode: exact_amount
   require_wallet_env: true
   max_live_order_usdt: 20
   max_live_trades_per_day: 3

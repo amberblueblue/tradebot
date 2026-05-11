@@ -44,11 +44,14 @@ def append_live_trade(record: dict[str, Any], path: Path = DEFAULT_LIVE_TRADES_P
     now = _now_iso()
     safe_record = {
         "id": record.get("id") or str(uuid.uuid4()),
+        "type": record.get("type", "swap"),
         "symbol": record.get("symbol"),
         "direction": record.get("direction"),
         "chain_id": str(record.get("chain_id") or ""),
         "tx_hash": record.get("tx_hash"),
         "status": record.get("status", "pending"),
+        "token_address": record.get("token_address"),
+        "spender": record.get("spender"),
         "amount": record.get("amount"),
         "quote": record.get("quote"),
         "parsed_quote": record.get("parsed_quote"),

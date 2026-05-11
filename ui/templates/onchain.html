@@ -169,8 +169,11 @@
                 <th>symbol</th>
                 <th>方向</th>
                 <th>交易哈希</th>
+                <th>类型</th>
                 <th>状态</th>
                 <th>金额</th>
+                <th>支付代币</th>
+                <th>授权合约</th>
                 <th>创建时间</th>
                 <th>更新时间</th>
                 <th>确认时间</th>
@@ -183,12 +186,15 @@
                 <td class="fw-semibold">{{ trade.symbol }}</td>
                 <td>{{ trade.direction }}</td>
                 <td><code>{{ trade.tx_hash }}</code></td>
+                <td>{{ trade.type or "swap" }}</td>
                 <td>
                   <span class="badge {% if trade.status == 'confirmed' %}text-bg-success{% elif trade.status == 'failed' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">
                     {{ trade.status }}
                   </span>
                 </td>
                 <td>{{ trade.amount }}</td>
+                <td><code>{{ trade.token_address or "" }}</code></td>
+                <td><code>{{ trade.spender or "" }}</code></td>
                 <td>{{ trade.created_at }}</td>
                 <td>{{ trade.updated_at }}</td>
                 <td>{{ trade.confirmed_at or "" }}</td>
@@ -196,7 +202,7 @@
               </tr>
               {% else %}
               <tr>
-                <td colspan="9" class="text-secondary">暂无链上真实交易记录</td>
+                <td colspan="12" class="text-secondary">暂无链上真实交易记录</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -308,6 +314,45 @@
               <div class="text-secondary small">warnings</div>
               <div class="{% if live_execute_result.warnings %}text-warning{% else %}text-secondary{% endif %}">{{ live_execute_result.warnings | join(", ") if live_execute_result.warnings else "无" }}</div>
             </div>
+            {% if live_execute_result.allowance %}
+            <div class="col-12">
+              <div class="border rounded p-3">
+                <div class="fw-semibold mb-2">Allowance / Approve 状态</div>
+                <div class="row g-3 small">
+                  <div class="col-md-3">
+                    <div class="text-secondary">支付代币</div>
+                    <code>{{ live_execute_result.allowance.token_address }}</code>
+                  </div>
+                  <div class="col-md-3">
+                    <div class="text-secondary">授权合约</div>
+                    <code>{{ live_execute_result.allowance.spender }}</code>
+                  </div>
+                  <div class="col-md-2">
+                    <div class="text-secondary">需要授权数量</div>
+                    <div>{{ live_execute_result.allowance.required_amount }}</div>
+                  </div>
+                  <div class="col-md-2">
+                    <div class="text-secondary">当前授权数量</div>
+                    <div>{{ live_execute_result.allowance.current_allowance or "n/a" }}</div>
+                  </div>
+                  <div class="col-md-2">
+                    <div class="text-secondary">授权是否足够</div>
+                    <span class="badge {% if live_execute_result.allowance.sufficient %}text-bg-success{% else %}text-bg-warning{% endif %}">
+                      {{ live_execute_result.allowance.sufficient }}
+                    </span>
+                  </div>
+                  <div class="col-md-3">
+                    <div class="text-secondary">是否允许自动授权</div>
+                    <div>{{ live_execute_result.allowance.approve_enabled }}</div>
+                  </div>
+                  <div class="col-md-3">
+                    <div class="text-secondary">授权模式</div>
+                    <div>{{ live_execute_result.allowance.approve_mode }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endif %}
             <div class="col-12">
               <pre class="bg-light border rounded p-3 mb-0 overflow-auto"><code>{{ live_execute_result_json }}</code></pre>
             </div>
@@ -620,9 +665,23 @@
               <option value="true" {% if onchain_settings.live_broadcast_enabled %}selected{% endif %}>true</option>
             </select>
           </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">是否允许自动授权 <span class="text-secondary small">approve_enabled</span></div>
+            <select name="approve_enabled" class="form-select">
+              <option value="false" {% if not onchain_settings.live_approve_enabled %}selected{% endif %}>false</option>
+              <option value="true" {% if onchain_settings.live_approve_enabled %}selected{% endif %}>true</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <div class="text-secondary small">授权模式 <span class="text-secondary small">approve_mode</span></div>
+            <select name="approve_mode" class="form-select">
+              <option value="exact_amount" selected>exact_amount</option>
+            </select>
+            <div class="form-text">不允许 unlimited approve。</div>
+          </div>
           <div class="col-md-4">
             <label class="form-label" for="auto-live-confirm">开启二次确认</label>
-            <input id="auto-live-confirm" name="auto_live_confirm" class="form-control" placeholder="开启 auto_live_enabled 时输入 YES">
+            <input id="auto-live-confirm" name="auto_live_confirm" class="form-control" placeholder="开启 auto/live/sign/broadcast/approve 时输入 YES">
           </div>
           <div class="col-md-8">
             <button class="btn btn-primary" type="submit">保存 Live Settings</button>

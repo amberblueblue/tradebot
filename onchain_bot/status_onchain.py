@@ -109,6 +109,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Build normalized unsigned live transaction objects from tx preview.",
     )
     parser.add_argument(
+        "--allowance",
+        metavar="SYMBOL",
+        help="Check ERC20 allowance for a mapped live swap direction without signing or broadcasting.",
+    )
+    parser.add_argument(
         "--tx-status",
         nargs=2,
         metavar=("CHAIN_ID", "TX_HASH"),
@@ -622,6 +627,7 @@ def main() -> int:
             args.paper_summary,
             args.wallet_guard,
             args.unsigned_tx,
+            args.allowance,
             args.tx_status,
         )
     )
@@ -634,7 +640,7 @@ def main() -> int:
                         "use --symbols, --quote, --live-preview, --readiness, --quote-cache, "
                         "--health, --manual-trades, --live-trades, --refresh-live-trades, "
                         "--manual-live-health, --live-guard, "
-                        "--loop-status, --paper-summary, --wallet-guard, --unsigned-tx, or --tx-status"
+                        "--loop-status, --paper-summary, --wallet-guard, --unsigned-tx, --allowance, or --tx-status"
                     ),
                 },
                 indent=2,
@@ -653,6 +659,15 @@ def main() -> int:
             print(
                 json.dumps(
                     {"error": "missing_amount", "message": "--live-preview --direction buy requires --amount-usdt"},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        if args.direction == "sell" and args.amount_token is None:
+            print(
+                json.dumps(
+                    {"error": "missing_amount", "message": "--live-preview --direction sell requires --amount-token"},
                     indent=2,
                     sort_keys=True,
                 )
@@ -677,10 +692,20 @@ def main() -> int:
                 )
             )
             return 1
+    if args.allowance:
+        if args.direction == "buy" and args.amount_usdt is None:
+            print(
+                json.dumps(
+                    {"error": "missing_amount", "message": "--allowance --direction buy requires --amount-usdt"},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
         if args.direction == "sell" and args.amount_token is None:
             print(
                 json.dumps(
-                    {"error": "missing_amount", "message": "--live-preview --direction sell requires --amount-token"},
+                    {"error": "missing_amount", "message": "--allowance --direction sell requires --amount-token"},
                     indent=2,
                     sort_keys=True,
                 )
@@ -717,6 +742,11 @@ def main() -> int:
 
             amount = args.amount_usdt if args.direction == "buy" else args.amount_token
             payload = prepare_unsigned_live_transactions(args.unsigned_tx, args.direction, amount)
+        elif args.allowance:
+            from onchain_bot.live_executor import build_allowance_status
+
+            amount = args.amount_usdt if args.direction == "buy" else args.amount_token
+            payload = build_allowance_status(args.allowance, args.direction, amount)
         elif args.tx_status:
             payload = get_tx_status(args.tx_status[0], args.tx_status[1])
         elif args.live_preview:
