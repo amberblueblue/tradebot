@@ -2480,6 +2480,7 @@ def _onchain_paper_summary() -> dict[str, object]:
 
 def _onchain_view(
     *,
+    active_tab: str = "overview",
     message: str | None = None,
     error: str | None = None,
     edit_config: dict[str, object] | None = None,
@@ -2507,6 +2508,9 @@ def _onchain_view(
     single_live_validation_result: dict[str, object] | None = None,
     single_live_validation_error: str | None = None,
 ) -> dict[str, object]:
+    valid_tabs = {"overview", "mappings", "quote", "paper", "live", "safety", "health"}
+    if active_tab not in valid_tabs:
+        active_tab = "overview"
     symbols, config_error = _onchain_symbol_rows()
     paper_positions, paper_closed_trades = _onchain_paper_rows()
     paper_summary = _onchain_paper_summary()
@@ -2548,6 +2552,7 @@ def _onchain_view(
     )
     return {
         "symbols": symbols,
+        "active_tab": active_tab,
         "symbols_count": len(symbols),
         "onchain_health": build_health_payload(),
         "manual_live_health": build_manual_live_health_payload(),
@@ -2602,10 +2607,11 @@ def _onchain_view(
 
 def _onchain_redirect(
     *,
+    tab: str = "overview",
     message: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
-    params = {}
+    params = {"tab": tab}
     if message:
         params["message"] = message
     if error:
@@ -2728,6 +2734,7 @@ def health_page(request: Request):
 @app.get("/onchain", response_class=HTMLResponse)
 def onchain_page(request: Request):
     context = _onchain_view(
+        active_tab=request.query_params.get("tab", "overview"),
         message=request.query_params.get("message"),
         error=request.query_params.get("error"),
     )
@@ -2751,8 +2758,8 @@ async def onchain_symbol_add(request: Request):
         updated_symbols[symbol] = _onchain_config_from_form(form)
         save_onchain_symbols_config(updated_symbols)
     except Exception as exc:
-        return _onchain_redirect(error=str(exc))
-    return _onchain_redirect(message=f"{symbol} added")
+        return _onchain_redirect(tab="mappings", error=str(exc))
+    return _onchain_redirect(tab="mappings", message=f"{symbol} added")
 
 
 @app.get("/onchain/symbols/{symbol}/edit", response_class=HTMLResponse)
@@ -2764,7 +2771,7 @@ def onchain_symbol_edit_page(request: Request, symbol: str):
             raise ValueError(f"标的不存在：{normalized_symbol}")
         edit_config = dict(symbols[normalized_symbol])
     except Exception as exc:
-        context = _onchain_view(error=str(exc))
+        context = _onchain_view(active_tab="mappings", error=str(exc))
         context.update(
             {
                 "request": request,
@@ -2773,7 +2780,7 @@ def onchain_symbol_edit_page(request: Request, symbol: str):
         )
         return templates.TemplateResponse(request, "onchain.html", context, status_code=404)
 
-    context = _onchain_view(edit_config=edit_config)
+    context = _onchain_view(active_tab="mappings", edit_config=edit_config)
     context.update(
         {
             "request": request,
@@ -2803,7 +2810,7 @@ async def onchain_symbol_edit_save(request: Request, symbol: str):
         updated_symbols[new_symbol] = parsed_config
         save_onchain_symbols_config(updated_symbols)
     except Exception as exc:
-        context = _onchain_view(edit_config=submitted_config, edit_error=str(exc))
+        context = _onchain_view(active_tab="mappings", edit_config=submitted_config, edit_error=str(exc))
         context.update(
             {
                 "request": request,
@@ -2811,7 +2818,7 @@ async def onchain_symbol_edit_save(request: Request, symbol: str):
             }
         )
         return templates.TemplateResponse(request, "onchain.html", context, status_code=400)
-    return _onchain_redirect(message=f"{new_symbol} saved")
+    return _onchain_redirect(tab="mappings", message=f"{new_symbol} saved")
 
 
 @app.post("/onchain/symbols/{symbol}/toggle")
@@ -2820,13 +2827,13 @@ def onchain_symbol_toggle(symbol: str):
     try:
         updated_symbols = _load_onchain_symbol_mappings()
         if normalized_symbol not in updated_symbols:
-            return _onchain_redirect(error=f"{normalized_symbol} not found")
+            return _onchain_redirect(tab="mappings", error=f"{normalized_symbol} not found")
         updated_symbols[normalized_symbol]["enabled"] = not bool(updated_symbols[normalized_symbol]["enabled"])
         save_onchain_symbols_config(updated_symbols)
         state = "enabled" if updated_symbols[normalized_symbol]["enabled"] else "disabled"
     except Exception as exc:
-        return _onchain_redirect(error=str(exc))
-    return _onchain_redirect(message=f"{normalized_symbol} {state}")
+        return _onchain_redirect(tab="mappings", error=str(exc))
+    return _onchain_redirect(tab="mappings", message=f"{normalized_symbol} {state}")
 
 
 @app.post("/onchain/symbols/{symbol}/delete")
@@ -2835,20 +2842,20 @@ def onchain_symbol_delete(symbol: str):
     try:
         updated_symbols = _load_onchain_symbol_mappings()
         if normalized_symbol not in updated_symbols:
-            return _onchain_redirect(error=f"{normalized_symbol} not found")
+            return _onchain_redirect(tab="mappings", error=f"{normalized_symbol} not found")
         updated_symbols.pop(normalized_symbol)
         save_onchain_symbols_config(updated_symbols)
     except Exception as exc:
-        return _onchain_redirect(error=str(exc))
-    return _onchain_redirect(message=f"{normalized_symbol} deleted")
+        return _onchain_redirect(tab="mappings", error=str(exc))
+    return _onchain_redirect(tab="mappings", message=f"{normalized_symbol} deleted")
 
 
 @app.post("/onchain/paper/refresh")
 def onchain_paper_refresh():
     result = update_paper_positions_with_latest_quotes()
     if not result.get("ok"):
-        return _onchain_redirect(error=f"Paper 状态刷新失败：{result.get('message') or result.get('error')}")
-    return _onchain_redirect(message=f"Paper 状态已刷新，更新 {len(result.get('updated_symbols', []))} 个持仓")
+        return _onchain_redirect(tab="paper", error=f"Paper 状态刷新失败：{result.get('message') or result.get('error')}")
+    return _onchain_redirect(tab="paper", message=f"Paper 状态已刷新，更新 {len(result.get('updated_symbols', []))} 个持仓")
 
 
 @app.post("/onchain/paper/run-once", response_class=HTMLResponse)
@@ -2869,6 +2876,7 @@ def onchain_paper_run_once(request: Request):
         error = f"Onchain Paper 运行失败：{exc}"
         status_code = 400
     context = _onchain_view(
+        active_tab="paper",
         message=message,
         error=error,
         paper_run_result=paper_run_result,
@@ -2894,35 +2902,35 @@ async def onchain_manual_trade_add(request: Request):
             note=form.get("note", ""),
         )
     except Exception as exc:
-        return _onchain_redirect(error=f"手动交易记录失败：{exc}")
-    return _onchain_redirect(message="手动交易已记录")
+        return _onchain_redirect(tab="live", error=f"手动交易记录失败：{exc}")
+    return _onchain_redirect(tab="live", message="手动交易已记录")
 
 
 @app.post("/onchain/manual-trades/refresh")
 def onchain_manual_trade_refresh():
     result = refresh_manual_trade_statuses()
     if not result.get("ok"):
-        return _onchain_redirect(error=f"交易状态刷新失败：{result.get('message') or result.get('write_error')}")
-    return _onchain_redirect(message=f"交易状态已刷新，更新 {result.get('updated_count', 0)} 笔")
+        return _onchain_redirect(tab="live", error=f"交易状态刷新失败：{result.get('message') or result.get('write_error')}")
+    return _onchain_redirect(tab="live", message=f"交易状态已刷新，更新 {result.get('updated_count', 0)} 笔")
 
 
 @app.post("/onchain/live-trades/refresh")
 def onchain_live_trade_refresh():
     result = refresh_live_trades_payload()
     if not result.get("ok"):
-        return _onchain_redirect(error=f"Live Trade 状态刷新失败：{result.get('errors')}")
-    return _onchain_redirect(message=f"Live Trade 状态已刷新，更新 {result.get('updated_count', 0)} 笔")
+        return _onchain_redirect(tab="live", error=f"Live Trade 状态刷新失败：{result.get('errors')}")
+    return _onchain_redirect(tab="live", message=f"Live Trade 状态已刷新，更新 {result.get('updated_count', 0)} 笔")
 
 
 @app.get("/onchain/quote/{symbol}", response_class=HTMLResponse)
 def onchain_quote_page(request: Request, symbol: str):
     try:
         normalized_symbol = _ensure_onchain_symbol(symbol)
-        context = _onchain_view(quote_symbol=normalized_symbol, quote_amount_usdc="10")
+        context = _onchain_view(active_tab="quote", quote_symbol=normalized_symbol, quote_amount_usdc="10")
         status_code = 200
     except Exception as exc:
         normalized_symbol = symbol.strip().upper()
-        context = _onchain_view(quote_symbol=normalized_symbol, quote_error=str(exc))
+        context = _onchain_view(active_tab="quote", quote_symbol=normalized_symbol, quote_error=str(exc))
         status_code = 404
     context.update(
         {
@@ -2952,6 +2960,7 @@ async def onchain_quote_submit(request: Request, symbol: str):
         quote_error = str(exc)
         status_code = 400
     context = _onchain_view(
+        active_tab="quote",
         quote_symbol=normalized_symbol,
         quote_amount_usdc=amount_usdc,
         quote_direction=quote_direction,
@@ -2975,6 +2984,7 @@ def onchain_live_preview_page(request: Request, symbol: str):
         normalized_symbol = _ensure_onchain_symbol(symbol)
         preview_result = build_live_swap_preview(normalized_symbol, direction, amount)
         context = _onchain_view(
+            active_tab="live",
             live_preview_symbol=normalized_symbol,
             live_preview_direction=direction,
             live_preview_amount=amount,
@@ -2984,6 +2994,7 @@ def onchain_live_preview_page(request: Request, symbol: str):
     except Exception as exc:
         normalized_symbol = symbol.strip().upper()
         context = _onchain_view(
+            active_tab="live",
             live_preview_symbol=normalized_symbol,
             live_preview_direction=direction,
             live_preview_amount=amount,
@@ -3015,6 +3026,7 @@ async def onchain_live_preview_submit(request: Request, symbol: str):
         preview_error = str(exc)
         status_code = 400
     context = _onchain_view(
+        active_tab="live",
         live_preview_symbol=normalized_symbol,
         live_preview_direction=direction,
         live_preview_amount=amount,
@@ -3121,7 +3133,7 @@ async def onchain_safety_save(request: Request):
             max_open_trades_per_hour=current.max_open_trades_per_hour,
         )
     )
-    return _onchain_redirect(message="Onchain safety saved")
+    return _onchain_redirect(tab="safety", message="Onchain safety saved")
 
 
 @app.post("/onchain/live-settings", response_class=HTMLResponse)
@@ -3195,10 +3207,10 @@ async def onchain_live_settings_save(request: Request):
             )
         )
     except Exception as exc:
-        context = _onchain_view(live_settings_error=str(exc))
+        context = _onchain_view(active_tab="live", live_settings_error=str(exc))
         context.update({"request": request, "project_name": "TraderBot Local Console"})
         return templates.TemplateResponse(request, "onchain.html", context, status_code=400)
-    return _onchain_redirect(message="Onchain live settings saved")
+    return _onchain_redirect(tab="live", message="Onchain live settings saved")
 
 
 @app.post("/onchain/auto-live-check", response_class=HTMLResponse)
@@ -3216,7 +3228,7 @@ async def onchain_auto_live_check(request: Request):
             "broadcast": "not_implemented",
         }
         status_code = 400
-    context = _onchain_view(auto_live_result=result)
+    context = _onchain_view(active_tab="live", auto_live_result=result)
     context.update({"request": request, "project_name": "TraderBot Local Console"})
     return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
 
@@ -3229,6 +3241,7 @@ def onchain_unsigned_tx_page(request: Request, symbol: str):
         normalized_symbol = _ensure_onchain_symbol(symbol)
         result = prepare_unsigned_live_transactions(normalized_symbol, direction, amount)
         context = _onchain_view(
+            active_tab="live",
             unsigned_tx_symbol=normalized_symbol,
             unsigned_tx_direction=direction,
             unsigned_tx_amount=amount,
@@ -3238,6 +3251,7 @@ def onchain_unsigned_tx_page(request: Request, symbol: str):
     except Exception as exc:
         normalized_symbol = symbol.strip().upper()
         context = _onchain_view(
+            active_tab="live",
             unsigned_tx_symbol=normalized_symbol,
             unsigned_tx_direction=direction,
             unsigned_tx_amount=amount,
@@ -3264,6 +3278,7 @@ async def onchain_unsigned_tx_submit(request: Request, symbol: str):
         error = str(exc)
         status_code = 400
     context = _onchain_view(
+        active_tab="live",
         unsigned_tx_symbol=normalized_symbol,
         unsigned_tx_direction=direction,
         unsigned_tx_amount=amount,
@@ -3292,7 +3307,7 @@ async def onchain_live_execute(request: Request):
     except Exception as exc:
         error = str(exc)
         status_code = 400
-    context = _onchain_view(live_execute_result=result, live_execute_error=error)
+    context = _onchain_view(active_tab="live", live_execute_result=result, live_execute_error=error)
     context.update({"request": request, "project_name": "TraderBot Local Console"})
     return templates.TemplateResponse(request, "onchain.html", context, status_code=status_code)
 
@@ -3316,6 +3331,7 @@ async def onchain_single_live_validation(request: Request):
         error = str(exc)
         status_code = 400
     context = _onchain_view(
+        active_tab="live",
         single_live_validation_result=result,
         single_live_validation_error=error,
     )
